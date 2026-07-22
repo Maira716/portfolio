@@ -1,46 +1,41 @@
 "use client";
 
 import React from "react";
-import { Code2, Heart, ExternalLink } from "lucide-react";
+import { Smartphone, Heart, ArrowUp } from "lucide-react";
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();
 
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   return (
-    <footer className="border-t border-white/10 py-10 px-4 lg:px-8 mt-20">
+    <footer className="border-t border-white/10 py-12 px-4 lg:px-8 mt-20 bg-slate-950/60 backdrop-blur-lg">
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6 text-center md:text-left">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white">
-            <Code2 size={18} />
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center text-white shadow-md">
+            <Smartphone size={18} />
           </div>
-          <span className="font-semibold text-gradient text-sm">
-            Portfólio &copy; {currentYear}
-          </span>
+          <div className="flex flex-col">
+            <span className="font-bold text-sm text-white">
+              Maira Reis <span className="text-gradient">UX/UI & Mobile</span>
+            </span>
+            <span className="text-xs text-gray-400">&copy; {currentYear} Maira Reis. Todos os direitos reservados</span>
+          </div>
         </div>
 
-        <p className="text-xs text-gray-400 flex items-center gap-1">
-          Desenvolvido com <Heart size={14} className="text-pink-500 fill-pink-500" /> utilizando Next.js, TypeScript e Vercel.
+        <p className="text-xs text-gray-400 flex items-center gap-1.5 justify-center">
+          Transformando ideias em experiências digitais memoráveis com <Heart size={14} className="text-pink-500 fill-pink-500" />
         </p>
 
-        <div className="flex items-center gap-4 text-xs text-gray-400">
-          <a
-            href="https://github.com"
-            target="_blank"
-            rel="noreferrer"
-            className="hover:text-indigo-400 transition-colors flex items-center gap-1"
-          >
-            GitHub <ExternalLink size={12} />
-          </a>
-          <span>•</span>
-          <a
-            href="https://vercel.com"
-            target="_blank"
-            rel="noreferrer"
-            className="hover:text-indigo-400 transition-colors flex items-center gap-1"
-          >
-            Vercel <ExternalLink size={12} />
-          </a>
-        </div>
+        <button
+          onClick={scrollToTop}
+          className="p-3 rounded-xl glass-panel text-gray-300 hover:text-white border border-white/10 hover:border-indigo-500/40 transition-all flex items-center gap-2 text-xs font-semibold"
+        >
+          <span>Voltar ao topo</span>
+          <ArrowUp size={14} />
+        </button>
       </div>
     </footer>
   );

@@ -1,156 +1,85 @@
 "use client";
 
-import React, { useState } from "react";
-import { Mail, Send, MapPin, CheckCircle2, MessageSquare } from "lucide-react";
-import { GithubIcon, LinkedinIcon } from "./Icons";
+import React from "react";
+import { motion } from "framer-motion";
+import { Mail, MapPin, MessageSquare, Sparkles, ArrowUpRight } from "lucide-react";
 
 export default function Contact() {
-  const [submitted, setSubmitted] = useState(false);
-  const [formData, setFormData] = useState({ name: "", email: "", message: "" });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (formData.name && formData.email && formData.message) {
-      setSubmitted(true);
-      setTimeout(() => {
-        setSubmitted(false);
-        setFormData({ name: "", email: "", message: "" });
-      }, 5000);
-    }
-  };
-
   return (
-    <section id="contato" className="py-20 px-4 lg:px-8 max-w-7xl mx-auto scroll-mt-24">
-      <div className="glass-panel rounded-3xl p-8 md:p-12 relative overflow-hidden">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-          {/* Contact Information */}
-          <div className="space-y-8">
-            <div>
-              <div className="flex items-center gap-2 text-indigo-400 font-semibold text-sm mb-3">
-                <MessageSquare size={18} />
-                <span>VAMOS CONVERSAR</span>
-              </div>
-              <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight mb-4">
-                Entre em <span className="text-gradient">Contato</span>
-              </h2>
-              <p className="text-gray-300 text-base leading-relaxed">
-                Estou disponível para novas oportunidades, projetos freelance ou parcerias de desenvolvimento. Envie uma mensagem!
-              </p>
-            </div>
+    <section id="contato" className="py-24 px-4 lg:px-8 max-w-5xl mx-auto scroll-mt-24">
+      <motion.div
+        initial={{ opacity: 0, y: 30 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.6 }}
+        className="glass-panel rounded-3xl p-8 md:p-14 relative overflow-hidden border border-white/10 text-center flex flex-col items-center"
+      >
+        {/* Glow Orb background */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-indigo-600/15 rounded-full blur-3xl pointer-events-none -z-10" />
 
-            <div className="space-y-5">
-              <a
-                href="mailto:contato@exemplo.com"
-                className="flex items-center gap-4 p-4 rounded-2xl glass-panel hover:border-indigo-500/40 transition-all group"
-              >
-                <div className="p-3 rounded-xl bg-indigo-500/10 text-indigo-400 group-hover:scale-110 transition-transform">
-                  <Mail size={22} />
-                </div>
-                <div>
-                  <span className="text-xs text-gray-400 block font-medium">E-mail Direto</span>
-                  <span className="text-sm font-semibold text-gray-200 group-hover:text-indigo-400">
-                    contato@mairareis.dev
-                  </span>
-                </div>
-              </a>
-
-              <a
-                href="https://github.com"
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-4 p-4 rounded-2xl glass-panel hover:border-purple-500/40 transition-all group"
-              >
-                <div className="p-3 rounded-xl bg-purple-500/10 text-purple-400 group-hover:scale-110 transition-transform">
-                  <GithubIcon size={22} />
-                </div>
-                <div>
-                  <span className="text-xs text-gray-400 block font-medium">Repositórios</span>
-                  <span className="text-sm font-semibold text-gray-200 group-hover:text-purple-400">
-                    github.com
-                  </span>
-                </div>
-              </a>
-
-              <div className="flex items-center gap-4 p-4 rounded-2xl glass-panel">
-                <div className="p-3 rounded-xl bg-pink-500/10 text-pink-400">
-                  <MapPin size={22} />
-                </div>
-                <div>
-                  <span className="text-xs text-gray-400 block font-medium">Localização</span>
-                  <span className="text-sm font-semibold text-gray-200">Brasil (Remoto)</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Form */}
-          <div className="glass-panel p-8 rounded-3xl border border-white/10 relative">
-            {submitted ? (
-              <div className="py-12 flex flex-col items-center text-center space-y-4">
-                <div className="p-4 rounded-full bg-emerald-500/20 text-emerald-400 animate-bounce">
-                  <CheckCircle2 size={48} />
-                </div>
-                <h3 className="text-2xl font-bold text-gray-100">Mensagem Enviada!</h3>
-                <p className="text-gray-400 text-sm max-w-xs">
-                  Obrigado pelo contato! Responderei o mais breve possível.
-                </p>
-              </div>
-            ) : (
-              <form onSubmit={handleSubmit} className="space-y-5">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-2">
-                    Seu Nome
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Como gosta de ser chamado(a)?"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-4 py-3 rounded-xl glass-panel border border-white/10 text-gray-100 placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition-colors text-sm"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-2">
-                    Seu E-mail
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    placeholder="seu.email@exemplo.com"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full px-4 py-3 rounded-xl glass-panel border border-white/10 text-gray-100 placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition-colors text-sm"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-2">
-                    Mensagem
-                  </label>
-                  <textarea
-                    rows={4}
-                    required
-                    placeholder="Conte sobre seu projeto ou ideia..."
-                    value={formData.message}
-                    onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-                    className="w-full px-4 py-3 rounded-xl glass-panel border border-white/10 text-gray-100 placeholder-gray-500 focus:outline-none focus:border-indigo-500 transition-colors text-sm resize-none"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full py-4 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white font-semibold shadow-lg hover:shadow-indigo-500/25 transition-all flex items-center justify-center gap-2 group"
-                >
-                  <span>Enviar Mensagem</span>
-                  <Send size={16} className="group-hover:translate-x-1 transition-transform" />
-                </button>
-              </form>
-            )}
-          </div>
+        {/* Section Tag & Title */}
+        <div className="inline-flex items-center gap-2 text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-4 px-4 py-1.5 rounded-full glass-panel border border-indigo-500/30">
+          <MessageSquare size={16} />
+          <span>VAMOS CRIAR JUNTOS</span>
         </div>
-      </div>
+
+        <h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight mb-4 text-white max-w-2xl">
+          Vamos Falar Sobre o <span className="text-gradient">Seu Projeto?</span>
+        </h2>
+
+        <p className="text-gray-300 text-base md:text-lg max-w-xl mb-10 leading-relaxed">
+          Estou pronta para transformar sua ideia em um aplicativo ou plataforma impecável. Entre em contato diretamente pelos canais abaixo:
+        </p>
+
+        {/* Direct Action Redirect Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-3xl">
+          {/* Main WhatsApp Card */}
+          <a
+            href="https://wa.me/553598030543"
+            target="_blank"
+            rel="noreferrer"
+            className="p-6 rounded-2xl bg-gradient-to-br from-emerald-600/90 to-teal-700/90 hover:from-emerald-500 hover:to-teal-600 text-white shadow-xl shadow-emerald-600/20 transition-all hover:-translate-y-1 flex items-center justify-between border border-emerald-400/30 group"
+          >
+            <div className="flex items-center gap-4 text-left">
+              <div className="p-3.5 rounded-2xl bg-white/10 border border-white/10 group-hover:scale-110 transition-transform">
+                <MessageSquare size={26} />
+              </div>
+              <div>
+                <span className="block font-extrabold text-lg text-white">WhatsApp</span>
+                <span className="text-xs text-emerald-100 font-medium">+55 (35) 98030-543</span>
+              </div>
+            </div>
+            <div className="p-2.5 rounded-xl bg-white/10 group-hover:bg-white/20 transition-colors">
+              <ArrowUpRight size={20} className="text-white group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+            </div>
+          </a>
+
+          {/* Direct Email Card */}
+          <a
+            href="mailto:contato@mairareis.dev"
+            className="p-6 rounded-2xl glass-panel hover:border-indigo-500/40 text-white shadow-xl transition-all hover:-translate-y-1 flex items-center justify-between border border-white/10 group"
+          >
+            <div className="flex items-center gap-4 text-left">
+              <div className="p-3.5 rounded-2xl bg-indigo-500/15 text-indigo-400 border border-indigo-500/20 group-hover:scale-110 transition-transform">
+                <Mail size={26} />
+              </div>
+              <div>
+                <span className="block font-extrabold text-lg text-white">E-mail Direto</span>
+                <span className="text-xs text-gray-400 font-medium">contato@mairareis.dev</span>
+              </div>
+            </div>
+            <div className="p-2.5 rounded-xl glass-panel group-hover:border-indigo-500/40 transition-colors">
+              <ArrowUpRight size={20} className="text-gray-300 group-hover:text-white group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+            </div>
+          </a>
+        </div>
+
+        {/* Location Info Banner */}
+        <div className="mt-8 inline-flex items-center gap-3 px-5 py-2.5 rounded-2xl glass-panel border border-white/10 text-gray-300 text-xs sm:text-sm font-medium">
+          <MapPin size={16} className="text-purple-400" />
+          <span>Atendimento em todo o Brasil • Projetos Remotos</span>
+        </div>
+      </motion.div>
     </section>
   );
 }

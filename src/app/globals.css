@@ -3,58 +3,140 @@
 @layer base {
   html {
     scroll-behavior: smooth;
+    color-scheme: dark;
   }
 }
 
 :root {
-  --background: #0b0f19;
-  --foreground: #f3f4f6;
-  --card-bg: rgba(17, 24, 39, 0.75);
-  --card-border: rgba(255, 255, 255, 0.1);
+  --background: #070a12;
+  --foreground: #f8fafc;
+  --card-bg: rgba(15, 23, 42, 0.65);
+  --card-border: rgba(255, 255, 255, 0.08);
   --accent-primary: #6366f1;
   --accent-secondary: #a855f7;
   --accent-pink: #ec4899;
 }
 
-.light-theme {
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  --card-bg: rgba(255, 255, 255, 0.85);
-  --card-border: rgba(0, 0, 0, 0.08);
-  --accent-primary: #4f46e5;
-  --accent-secondary: #9333ea;
-  --accent-pink: #db2777;
-}
-
 body {
   background-color: var(--background);
   color: var(--foreground);
-  transition: background-color 0.3s ease, color 0.3s ease;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   overflow-x: hidden;
+  background-image: 
+    radial-gradient(circle at 15% 15%, rgba(99, 102, 241, 0.12) 0%, transparent 40%),
+    radial-gradient(circle at 85% 40%, rgba(168, 85, 247, 0.12) 0%, transparent 40%),
+    radial-gradient(circle at 50% 80%, rgba(236, 72, 153, 0.08) 0%, transparent 50%);
+  background-attachment: fixed;
 }
 
+/* Glassmorphism System */
 .glass-panel {
   background: var(--card-bg);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--card-border);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
 }
 
+.glass-nav {
+  background: rgba(7, 10, 18, 0.75);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-card-hover {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card-hover:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+  transform: translateY(-4px);
+  box-shadow: 0 20px 40px -15px rgba(99, 102, 241, 0.25);
+}
+
+/* Gradient Text */
 .text-gradient {
-  background: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
+  background: linear-gradient(135deg, #818cf8 0%, #c084fc 50%, #f472b6 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
-.glow-effect {
-  box-shadow: 0 0 40px -10px rgba(99, 102, 241, 0.3);
+.text-gradient-gold {
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #d97706 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
+/* Glow Effects */
+.glow-effect {
+  box-shadow: 0 0 50px -10px rgba(99, 102, 241, 0.35);
+}
+
+.glow-subtle {
+  box-shadow: 0 0 30px -5px rgba(168, 85, 247, 0.2);
+}
+
+/* Keyframe Animations */
 @keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-10px); }
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-12px) rotate(1deg); }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
 }
 
 .animate-float {
-  animation: float 4s ease-in-out infinite;
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-pulse-slow {
+  animation: pulseGlow 4s ease-in-out infinite;
+}
+
+/* Smartphone Mockup CSS Utilities */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.phone-frame {
+  position: relative;
+  width: 290px;
+  height: 600px;
+  background: #090d16;
+  border-radius: 44px;
+  border: 10px solid #1a2234;
+  box-shadow: 
+    0 25px 60px -15px rgba(0, 0, 0, 0.9),
+    0 0 50px rgba(99, 102, 241, 0.2),
+    inset 0 0 0 2px rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+@media (min-width: 640px) {
+  .phone-frame {
+    width: 320px;
+    height: 660px;
+    border-radius: 48px;
+    border-width: 11px;
+  }
+}
+
+.phone-island {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 90px;
+  height: 22px;
+  background: #000000;
+  border-radius: 20px;
+  z-index: 40;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.8);
 }
