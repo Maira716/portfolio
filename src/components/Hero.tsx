@@ -7,21 +7,21 @@ import { ArrowRight, Sparkles, Smartphone, CheckCircle, ShieldCheck, Zap, Messag
 export default function Hero() {
   return (
     <section className="relative pt-24 pb-12 md:pt-44 md:pb-32 px-4 lg:px-8 max-w-7xl mx-auto flex flex-col items-center text-center overflow-hidden">
-      {/* Ambient Glow Orbs */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-indigo-600/20 rounded-full blur-[120px] pointer-events-none -z-10 animate-pulse-slow" />
-      <div className="absolute top-1/3 left-1/4 w-[350px] h-[350px] bg-purple-600/20 rounded-full blur-[100px] pointer-events-none -z-10 animate-float" />
-      <div className="absolute top-1/2 right-1/4 w-[300px] h-[300px] bg-pink-600/15 rounded-full blur-[90px] pointer-events-none -z-10" />
+      {/* Ambient Glow Orbs - Hidden/lightweight on mobile for iOS performance */}
+      <div className="hidden sm:block absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-indigo-600/20 rounded-full blur-[120px] pointer-events-none -z-10 animate-pulse-slow" />
+      <div className="hidden sm:block absolute top-1/3 left-1/4 w-[350px] h-[350px] bg-purple-600/20 rounded-full blur-[100px] pointer-events-none -z-10 animate-float" />
+      <div className="sm:hidden absolute top-1/4 left-1/2 -translate-x-1/2 w-64 h-64 bg-indigo-600/15 rounded-full blur-2xl pointer-events-none -z-10" />
 
       {/* Trust Badge */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
-        className="inline-flex items-center gap-2.5 px-5 py-2.5 rounded-full glass-panel border border-indigo-500/30 text-indigo-300 text-xs sm:text-sm font-medium mb-8 shadow-xl shadow-indigo-500/10"
+        className="inline-flex items-center gap-2 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-full glass-panel border border-indigo-500/30 text-indigo-300 text-xs sm:text-sm font-medium mb-6 sm:mb-8 shadow-xl shadow-indigo-500/10 max-w-full"
       >
-        <Sparkles size={16} className="text-amber-400 animate-pulse" />
-        <span>Desenvolvimento Mobile & Web Sob Medida</span>
-        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+        <Sparkles size={15} className="text-amber-400 animate-pulse shrink-0" />
+        <span className="truncate">Desenvolvimento Mobile & Web Sob Medida</span>
+        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
       </motion.div>
 
       {/* Main Impact Headline */}
@@ -29,7 +29,7 @@ export default function Hero() {
         initial={{ opacity: 0, y: 25 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.7, delay: 0.1 }}
-        className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight max-w-5xl leading-[1.15] mb-6 text-white"
+        className="text-3xl sm:text-6xl md:text-7xl font-extrabold tracking-tight max-w-5xl leading-[1.18] sm:leading-[1.15] mb-5 sm:mb-6 text-white"
       >
         Transformando Ideias em{" "}
         <span className="text-gradient drop-shadow-sm">Experiências Digitais</span>{" "}
@@ -51,11 +51,11 @@ export default function Hero() {
         initial={{ opacity: 0, y: 25 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.7, delay: 0.3 }}
-        className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto mb-16"
+        className="flex flex-col sm:flex-row items-center justify-center gap-3.5 w-full max-w-sm sm:max-w-none mx-auto mb-12 sm:mb-16"
       >
         <a
           href="#projetos"
-          className="w-full sm:w-auto px-9 py-4 rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white font-bold text-base shadow-2xl shadow-indigo-500/30 hover:shadow-indigo-500/50 transition-all hover:-translate-y-1 flex items-center justify-center gap-3 group"
+          className="w-full sm:w-auto px-7 sm:px-9 py-3.5 sm:py-4 rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white font-bold text-base shadow-2xl shadow-indigo-500/30 hover:shadow-indigo-500/50 transition-all hover:-translate-y-1 flex items-center justify-center gap-3 group text-center"
         >
           <Smartphone size={20} />
           <span>Ver Projetos Mobile</span>
@@ -64,7 +64,7 @@ export default function Hero() {
 
         <a
           href="#contato"
-          className="w-full sm:w-auto px-9 py-4 rounded-2xl glass-panel text-gray-100 hover:text-white font-semibold text-base hover:bg-white/10 transition-all flex items-center justify-center gap-3 border border-white/15 hover:border-indigo-400/40"
+          className="w-full sm:w-auto px-7 sm:px-9 py-3.5 sm:py-4 rounded-2xl glass-panel text-gray-100 hover:text-white font-semibold text-base hover:bg-white/10 transition-all flex items-center justify-center gap-3 border border-white/15 hover:border-indigo-400/40 text-center"
         >
           <MessageSquare size={18} className="text-indigo-400" />
           <span>Iniciar Orçamento</span>

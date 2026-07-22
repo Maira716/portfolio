@@ -56,7 +56,7 @@ export default function Contact() {
 
           {/* Direct Email Card */}
           <a
-            href="mailto:contato@mairareis.dev"
+            href="mailto:mairareis2017@gmail.com"
             className="p-6 rounded-2xl glass-panel hover:border-indigo-500/40 text-white shadow-xl transition-all hover:-translate-y-1 flex items-center justify-between border border-white/10 group"
           >
             <div className="flex items-center gap-4 text-left">
@@ -65,7 +65,7 @@ export default function Contact() {
               </div>
               <div>
                 <span className="block font-extrabold text-lg text-white">E-mail Direto</span>
-                <span className="text-xs text-gray-400 font-medium">contato@mairareis.dev</span>
+                <span className="text-xs text-gray-400 font-medium">mairareis2017@gmail.com</span>
               </div>
             </div>
             <div className="p-2.5 rounded-xl glass-panel group-hover:border-indigo-500/40 transition-colors">

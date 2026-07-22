@@ -388,11 +388,25 @@ export default function Projects() {
   const [activeProjectIndex, setActiveProjectIndex] = useState(0);
   const [activeScreenIndex, setActiveScreenIndex] = useState(0);
 
+  // Preload all screenshot images in advance for instant zero-lag switching on mobile/iOS
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      projects.forEach((proj) => {
+        proj.mockupScreens.forEach((screen) => {
+          if (screen.image) {
+            const img = new Image();
+            img.src = screen.image;
+          }
+        });
+      });
+    }
+  }, [projects]);
+
   useEffect(() => {
     const currentProj = projects[activeProjectIndex];
     const timer = setInterval(() => {
       setActiveScreenIndex((prev) => (prev + 1) % currentProj.mockupScreens.length);
-    }, 3000);
+    }, 4000);
     return () => clearInterval(timer);
   }, [activeProjectIndex, projects]);
 
@@ -402,7 +416,7 @@ export default function Projects() {
   return (
     <section id="projetos" className="py-10 md:py-24 px-4 lg:px-8 max-w-7xl mx-auto scroll-mt-24 relative">
       {/* Glow Backdrop */}
-      <div className="absolute top-1/2 left-1/3 w-[450px] h-[450px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none -z-10" />
+      <div className="hidden sm:block absolute top-1/2 left-1/3 w-[450px] h-[450px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none -z-10" />
 
       {/* Header */}
       <div className="flex flex-col items-center text-center mb-8 md:mb-16">
@@ -412,8 +426,8 @@ export default function Projects() {
           viewport={{ once: true }}
           className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-panel border border-indigo-500/30 text-indigo-400 text-xs font-semibold uppercase tracking-wider mb-4"
         >
-          <Smartphone size={16} />
-          <span>Experiência Mobile Interativa</span>
+          <Sparkles size={16} className="text-amber-400" />
+          <span>PROJETOS EM DESTAQUE</span>
         </motion.div>
 
         <motion.h2
@@ -421,9 +435,9 @@ export default function Projects() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ delay: 0.1 }}
-          className="text-3xl md:text-5xl font-extrabold tracking-tight mb-4 text-white"
+          className="text-3xl sm:text-5xl font-extrabold tracking-tight mb-4 text-white"
         >
-          Aplicativos Criados para <span className="text-gradient">Gerar Resultados</span>
+          Conheça Meus <span className="text-gradient">Principais Projetos</span>
         </motion.h2>
 
         <motion.p
@@ -433,44 +447,46 @@ export default function Projects() {
           transition={{ delay: 0.2 }}
           className="text-gray-300 max-w-2xl text-base md:text-lg leading-relaxed"
         >
-          Navegue abaixo para testar as telas no celular e ver como o design transforma a experiência do usuário.
+          Selecione um projeto abaixo para ver na prática como o design e a tecnologia se unem para criar experiências memoráveis.
         </motion.p>
 
-        {/* Project Selector Buttons */}
-        <div className="flex flex-wrap justify-center gap-3 mt-8">
-          {projects.map((proj, idx) => (
-            <button
-              key={proj.id}
-              onClick={() => {
-                setActiveProjectIndex(idx);
-                setActiveScreenIndex(0);
-              }}
-              className={`px-6 py-3.5 rounded-2xl text-sm font-bold transition-all flex items-center gap-2.5 ${
-                activeProjectIndex === idx
-                  ? "bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white shadow-lg shadow-indigo-500/30 scale-105"
-                  : "glass-panel text-gray-300 hover:text-white border border-white/10 hover:border-white/20"
-              }`}
-            >
-              <Smartphone size={16} />
-              <span>{proj.shortName}</span>
-            </button>
-          ))}
+        {/* Project Selector - Modern Segmented Control Bar */}
+        <div className="mt-8 w-full max-w-xl mx-auto px-2">
+          <div className="p-1.5 rounded-2xl bg-slate-900/90 border border-white/10 shadow-inner flex flex-col sm:flex-row gap-1.5">
+            {projects.map((proj, idx) => (
+              <button
+                key={proj.id}
+                onClick={() => {
+                  setActiveProjectIndex(idx);
+                  setActiveScreenIndex(0);
+                }}
+                className={`py-3 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 text-center flex-1 active:scale-98 ${
+                  activeProjectIndex === idx
+                    ? "bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white shadow-md shadow-indigo-500/25"
+                    : "text-gray-300 hover:text-white hover:bg-white/5"
+                }`}
+              >
+                <Smartphone size={15} className="shrink-0" />
+                <span className="truncate">{proj.shortName}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
       {/* Main Interactive Showcase Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-12 items-center">
         
         {/* Left Column: Interactive Smartphone Mockup */}
         <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
+          initial={{ opacity: 0, scale: 0.98 }}
           whileInView={{ opacity: 1, scale: 1 }}
           viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
+          transition={{ duration: 0.4 }}
           className="lg:col-span-5 flex flex-col items-center justify-center relative"
         >
-          {/* Ambient Glow behind Smartphone */}
-          <div className="absolute inset-0 bg-gradient-to-tr from-indigo-500/20 via-purple-500/20 to-pink-500/20 rounded-full blur-3xl -z-10 animate-pulse-slow" />
+          {/* Ambient Glow behind Smartphone - Hidden on mobile to boost iOS WebKit frame rate */}
+          <div className="hidden sm:block absolute inset-0 bg-gradient-to-tr from-indigo-500/20 via-purple-500/20 to-pink-500/20 rounded-full blur-3xl -z-10 animate-pulse-slow" />
 
           {/* Smartphone Hardware Frame */}
           <div className="phone-frame relative flex flex-col bg-slate-950 rounded-[44px] sm:rounded-[48px] overflow-hidden border-[10px] sm:border-[11px] border-[#1a2234] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9),0_0_50px_rgba(99,102,241,0.2)]">
@@ -481,23 +497,25 @@ export default function Projects() {
 
             {/* Screen Content Animated Area */}
             <div className="w-full h-full flex-1 relative overflow-hidden bg-slate-950 flex flex-col justify-between">
-              <AnimatePresence mode="wait">
+              <AnimatePresence mode="popLayout">
                 <motion.div
                   key={`${activeProject.id}-${activeScreenIndex}`}
-                  initial={{ opacity: 0, scale: 0.98 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.98 }}
-                  transition={{ duration: 0.3 }}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
                   className="w-full h-full flex flex-col justify-between"
                 >
                   {activeScreen.image ? (
                     /* Real App Screenshot: Full Screen Display */
-                    <div className="w-full h-full relative overflow-hidden bg-slate-950 flex items-center justify-center">
+                    <div className="w-full h-full relative overflow-hidden bg-[#070a09] flex items-center justify-center pt-8 pb-1 px-1">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={activeScreen.image}
                         alt={activeScreen.screenTitle || "Celeste Exóticos Screen"}
-                        className="w-full h-full object-cover"
+                        decoding="async"
+                        loading="eager"
+                        className="w-full h-full object-contain rounded-b-[24px]"
                       />
                     </div>
                   ) : (
@@ -566,22 +584,22 @@ export default function Projects() {
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.5 }}
-          className="lg:col-span-7 flex flex-col justify-center space-y-6 lg:pl-6"
+          className="lg:col-span-7 flex flex-col justify-center items-center lg:items-start text-center lg:text-left space-y-6 lg:pl-6"
         >
           {/* Header Badges */}
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-xs font-bold uppercase tracking-wider text-indigo-300 bg-indigo-500/15 border border-indigo-500/30 px-3.5 py-1.5 rounded-full shadow-sm">
+          <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2.5 sm:gap-3 max-w-full">
+            <span className="text-xs font-bold uppercase tracking-wider text-indigo-300 bg-indigo-500/15 border border-indigo-500/30 px-3.5 py-1.5 rounded-full shadow-sm text-center">
               {activeProject.category}
             </span>
 
-            <span className="text-xs font-bold text-amber-300 bg-amber-500/10 border border-amber-500/30 px-3.5 py-1.5 rounded-full flex items-center gap-1.5 shadow-sm">
+            <span className="text-xs font-bold text-amber-300 bg-amber-500/10 border border-amber-500/30 px-3.5 py-1.5 rounded-full flex items-center justify-center gap-1.5 shadow-sm text-center">
               <TrendingUp size={14} />
               {activeProject.highlightMetric}
             </span>
           </div>
 
           {/* Title & Tagline */}
-          <div className="space-y-2">
+          <div className="space-y-2 text-center lg:text-left">
             <h3 className="text-3xl sm:text-4xl md:text-5xl font-black text-white tracking-tight leading-tight">
               {activeProject.title}
             </h3>
@@ -591,33 +609,33 @@ export default function Projects() {
           </div>
 
           {/* Clean Overview Paragraph */}
-          <p className="text-gray-300 text-sm sm:text-base leading-relaxed font-normal max-w-2xl">
+          <p className="text-gray-300 text-sm sm:text-base leading-relaxed font-normal max-w-2xl text-center lg:text-left mx-auto lg:mx-0">
             {activeProject.overview}
           </p>
 
           {/* 3 Modern Feature Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 w-full">
             {activeProject.featureCards.map((card, idx) => (
               <div
                 key={idx}
-                className="p-4 sm:p-5 rounded-2xl glass-panel border border-white/10 hover:border-indigo-500/40 transition-all flex flex-col justify-between space-y-3 glass-card-hover h-full"
+                className="p-4 sm:p-5 rounded-2xl glass-panel border border-white/10 hover:border-indigo-500/40 transition-all flex flex-col items-center lg:items-start text-center lg:text-left justify-between space-y-3 glass-card-hover h-full"
               >
-                <div className="p-2.5 rounded-xl bg-white/5 w-fit border border-white/10">
+                <div className="p-2.5 rounded-xl bg-white/5 w-fit border border-white/10 mx-auto lg:mx-0">
                   {card.icon}
                 </div>
-                <div className="flex-1 flex flex-col justify-start">
-                  <h4 className="font-bold text-sm text-white mb-1.5">{card.title}</h4>
-                  <p className="text-xs text-gray-300 leading-relaxed font-medium">{card.description}</p>
+                <div className="flex-1 flex flex-col justify-start w-full">
+                  <h4 className="font-bold text-sm text-white mb-1.5 text-center lg:text-left">{card.title}</h4>
+                  <p className="text-xs text-gray-300 leading-relaxed font-medium text-center lg:text-left">{card.description}</p>
                 </div>
               </div>
             ))}
           </div>
 
           {/* CTA Buttons */}
-          <div className="pt-3 flex flex-wrap items-center gap-4">
+          <div className="pt-3 flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-3.5 w-full max-w-sm sm:max-w-none mx-auto lg:mx-0">
             <a
               href="#contato"
-              className="px-7 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white font-semibold text-sm shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-2 active:scale-95"
+              className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white font-semibold text-sm shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 active:scale-95 text-center"
             >
               <span>Solicitar App Semelhante</span>
               <ArrowUpRight size={16} />
@@ -627,7 +645,7 @@ export default function Projects() {
               href="https://wa.me/553598030543"
               target="_blank"
               rel="noreferrer"
-              className="px-6 py-3.5 rounded-xl glass-panel text-gray-300 hover:text-white font-semibold text-sm transition-all border border-white/10 hover:border-emerald-500/40 flex items-center gap-2 active:scale-95"
+              className="w-full sm:w-auto px-6 py-3.5 rounded-xl glass-panel text-gray-300 hover:text-white font-semibold text-sm transition-all border border-white/10 hover:border-emerald-500/40 flex items-center justify-center gap-2 active:scale-95 text-center"
             >
               <MessageSquare size={16} className="text-emerald-400" />
               <span>Falar no WhatsApp</span>
