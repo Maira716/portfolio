@@ -24,7 +24,7 @@ export default function About() {
   ];
 
   return (
-    <section id="sobre" className="py-10 md:py-24 px-4 lg:px-8 max-w-7xl mx-auto scroll-mt-24">
+    <section id="sobre" className="py-6 md:py-10 px-4 lg:px-8 max-w-7xl mx-auto scroll-mt-24">
       <motion.div
         initial={{ opacity: 0, y: 30 }}
         whileInView={{ opacity: 1, y: 0 }}
