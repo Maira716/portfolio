@@ -427,7 +427,7 @@ export default function Projects() {
           className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-panel border border-indigo-500/30 text-indigo-400 text-xs font-semibold uppercase tracking-wider mb-4"
         >
           <Sparkles size={16} className="text-amber-400" />
-          <span>PROJETOS EM DESTAQUE</span>
+          <span>MEUS PRINCIPAIS PROJETOS</span>
         </motion.div>
 
         <motion.h2
