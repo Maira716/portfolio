@@ -8,14 +8,39 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Portfólio Profissional | Desenvolvedora Web",
-  description: "Portfólio de projetos, desenvolvimento web front-end e fullstack com React, Next.js, TypeScript e Vercel.",
-  keywords: ["Portfólio", "Desenvolvedora Web", "React", "Next.js", "TypeScript", "Tailwind CSS", "Vercel", "GitHub"],
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL || "https://mairareis.dev"
+  ),
+  title: "Maira Reis | Portfólio Profissional & Desenvolvimento Mobile/Web",
+  description:
+    "Maira Reis (MR) — Desenvolvedora Mobile e Web especializada em UX/UI, React, Next.js, React Native e TypeScript. Confira meus projetos e soluções digitais de alto nível.",
+  keywords: [
+    "Maira Reis",
+    "MR", "Portfólio Maira Reis",
+    "Desenvolvedora Mobile",
+    "Desenvolvedora Web",
+    "React",
+    "Next.js",
+    "React Native",
+    "TypeScript",
+    "UX/UI",
+  ],
   authors: [{ name: "Maira Reis" }],
+  creator: "Maira Reis",
+  publisher: "Maira Reis",
   openGraph: {
-    title: "Portfólio Profissional | Desenvolvedora Web",
-    description: "Projetos, habilidades e soluções web modernas.",
+    title: "Maira Reis | Portfólio Profissional (MR)",
+    description:
+      "Desenvolvimento Mobile & Web, UX/UI e soluções digitais de alto impacto por Maira Reis.",
+    siteName: "Maira Reis - Portfólio (MR)",
+    locale: "pt_BR",
     type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Maira Reis | Portfólio Profissional (MR)",
+    description:
+      "Desenvolvimento Mobile & Web, UX/UI e soluções digitais por Maira Reis.",
   },
 };
 
