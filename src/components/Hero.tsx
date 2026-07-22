@@ -6,7 +6,7 @@ import { ArrowRight, Sparkles, Smartphone, CheckCircle, ShieldCheck, Zap, Messag
 
 export default function Hero() {
   return (
-    <section className="relative pt-36 pb-24 md:pt-48 md:pb-36 px-4 lg:px-8 max-w-7xl mx-auto flex flex-col items-center text-center overflow-hidden">
+    <section className="relative pt-24 pb-12 md:pt-44 md:pb-32 px-4 lg:px-8 max-w-7xl mx-auto flex flex-col items-center text-center overflow-hidden">
       {/* Ambient Glow Orbs */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-indigo-600/20 rounded-full blur-[120px] pointer-events-none -z-10 animate-pulse-slow" />
       <div className="absolute top-1/3 left-1/4 w-[350px] h-[350px] bg-purple-600/20 rounded-full blur-[100px] pointer-events-none -z-10 animate-float" />

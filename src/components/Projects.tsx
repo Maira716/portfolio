@@ -400,12 +400,12 @@ export default function Projects() {
   const activeScreen = activeProject.mockupScreens[activeScreenIndex] || activeProject.mockupScreens[0];
 
   return (
-    <section id="projetos" className="py-24 px-4 lg:px-8 max-w-7xl mx-auto scroll-mt-24 relative">
+    <section id="projetos" className="py-10 md:py-24 px-4 lg:px-8 max-w-7xl mx-auto scroll-mt-24 relative">
       {/* Glow Backdrop */}
       <div className="absolute top-1/2 left-1/3 w-[450px] h-[450px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none -z-10" />
 
       {/* Header */}
-      <div className="flex flex-col items-center text-center mb-16">
+      <div className="flex flex-col items-center text-center mb-8 md:mb-16">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}

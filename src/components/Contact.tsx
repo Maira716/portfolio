@@ -6,13 +6,13 @@ import { Mail, MapPin, MessageSquare, Sparkles, ArrowUpRight } from "lucide-reac
 
 export default function Contact() {
   return (
-    <section id="contato" className="py-24 px-4 lg:px-8 max-w-5xl mx-auto scroll-mt-24">
+    <section id="contato" className="py-10 md:py-24 px-4 lg:px-8 max-w-5xl mx-auto scroll-mt-24">
       <motion.div
         initial={{ opacity: 0, y: 30 }}
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true }}
         transition={{ duration: 0.6 }}
-        className="glass-panel rounded-3xl p-8 md:p-14 relative overflow-hidden border border-white/10 text-center flex flex-col items-center"
+        className="glass-panel rounded-3xl p-6 sm:p-8 md:p-14 relative overflow-hidden border border-white/10 text-center flex flex-col items-center"
       >
         {/* Glow Orb background */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-indigo-600/15 rounded-full blur-3xl pointer-events-none -z-10" />

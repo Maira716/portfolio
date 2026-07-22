@@ -26,23 +26,44 @@ body {
     radial-gradient(circle at 15% 15%, rgba(99, 102, 241, 0.12) 0%, transparent 40%),
     radial-gradient(circle at 85% 40%, rgba(168, 85, 247, 0.12) 0%, transparent 40%),
     radial-gradient(circle at 50% 80%, rgba(236, 72, 153, 0.08) 0%, transparent 50%);
-  background-attachment: fixed;
+  background-attachment: scroll;
+}
+
+@media (min-width: 1024px) {
+  body {
+    background-attachment: fixed;
+  }
 }
 
 /* Glassmorphism System */
 .glass-panel {
   background: var(--card-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   border: 1px solid var(--card-border);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+@media (min-width: 768px) {
+  .glass-panel {
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+  }
 }
 
 .glass-nav {
-  background: rgba(7, 10, 18, 0.75);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  background: rgba(7, 10, 18, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+@media (min-width: 768px) {
+  .glass-nav {
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+  }
 }
 
 .glass-card-hover {
@@ -107,21 +128,23 @@ body {
 
 .phone-frame {
   position: relative;
-  width: 290px;
-  height: 600px;
+  width: 100%;
+  max-width: 270px;
+  height: 540px;
   background: #090d16;
-  border-radius: 44px;
-  border: 10px solid #1a2234;
+  border-radius: 36px;
+  border: 8px solid #1a2234;
   box-shadow: 
     0 25px 60px -15px rgba(0, 0, 0, 0.9),
     0 0 50px rgba(99, 102, 241, 0.2),
     inset 0 0 0 2px rgba(255, 255, 255, 0.12);
   overflow: hidden;
+  margin: 0 auto;
 }
 
 @media (min-width: 640px) {
   .phone-frame {
-    width: 320px;
+    max-width: 320px;
     height: 660px;
     border-radius: 48px;
     border-width: 11px;

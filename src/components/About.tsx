@@ -24,13 +24,13 @@ export default function About() {
   ];
 
   return (
-    <section id="sobre" className="py-24 px-4 lg:px-8 max-w-7xl mx-auto scroll-mt-24">
+    <section id="sobre" className="py-10 md:py-24 px-4 lg:px-8 max-w-7xl mx-auto scroll-mt-24">
       <motion.div
         initial={{ opacity: 0, y: 30 }}
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true }}
         transition={{ duration: 0.6 }}
-        className="glass-panel rounded-3xl p-8 md:p-14 relative overflow-hidden border border-white/10"
+        className="glass-panel rounded-3xl p-6 sm:p-8 md:p-14 relative overflow-hidden border border-white/10"
       >
         {/* Glow Orb inside About panel */}
         <div className="absolute -top-24 -right-24 w-80 h-80 bg-indigo-600/15 rounded-full blur-3xl pointer-events-none" />
