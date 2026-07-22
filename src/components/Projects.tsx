@@ -406,7 +406,7 @@ export default function Projects() {
     const currentProj = projects[activeProjectIndex];
     const timer = setInterval(() => {
       setActiveScreenIndex((prev) => (prev + 1) % currentProj.mockupScreens.length);
-    }, 4000);
+    }, 2500);
     return () => clearInterval(timer);
   }, [activeProjectIndex, projects]);
 
