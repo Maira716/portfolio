@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { Smartphone, Heart, ArrowUp } from "lucide-react";
 
 export default function Footer() {
@@ -28,6 +29,21 @@ export default function Footer() {
         <p className="text-xs text-gray-400 flex items-center gap-1.5 justify-center">
           Transformando ideias em experiências digitais memoráveis com <Heart size={14} className="text-pink-500 fill-pink-500" />
         </p>
+
+        <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-gray-400 font-medium">
+          <Link href="/" className="hover:text-white transition-colors">
+            Início
+          </Link>
+          <Link href="/#projetos" className="hover:text-white transition-colors">
+            Projetos
+          </Link>
+          <Link href="/valores" className="hover:text-indigo-300 font-bold text-indigo-400 transition-colors">
+            Valores & Planos
+          </Link>
+          <Link href="/#contato" className="hover:text-white transition-colors">
+            Contato
+          </Link>
+        </div>
 
         <button
           onClick={scrollToTop}

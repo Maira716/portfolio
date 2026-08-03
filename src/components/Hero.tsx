@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowRight, Sparkles, Smartphone, CheckCircle, ShieldCheck, Zap, MessageSquare } from "lucide-react";
 
@@ -62,13 +63,13 @@ export default function Hero() {
           <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
         </a>
 
-        <a
-          href="#contato"
-          className="w-full sm:w-auto px-7 sm:px-9 py-3.5 sm:py-4 rounded-2xl glass-panel text-gray-100 hover:text-white font-semibold text-base hover:bg-white/10 transition-all flex items-center justify-center gap-3 border border-white/15 hover:border-indigo-400/40 text-center"
+        <Link
+          href="/valores"
+          className="w-full sm:w-auto px-7 sm:px-9 py-3.5 sm:py-4 rounded-2xl glass-panel text-white font-bold text-base hover:bg-white/10 transition-all flex items-center justify-center gap-3 border border-indigo-500/40 hover:border-indigo-400 text-center shadow-lg shadow-indigo-500/10"
         >
-          <MessageSquare size={18} className="text-indigo-400" />
-          <span>Iniciar Orçamento</span>
-        </a>
+          <Sparkles size={18} className="text-amber-400" />
+          <span>Ver Valores & Planos</span>
+        </Link>
       </motion.div>
 
       {/* Value Badges for Non-Technical Clients */}

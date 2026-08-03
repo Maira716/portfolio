@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Sparkles,
@@ -12,25 +13,27 @@ import {
   Home,
   Workflow,
   User,
-  Mail
+  Mail,
+  DollarSign
 } from "lucide-react";
 
 export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navItems = [
-    { label: "Início", href: "#", icon: <Home size={18} className="text-indigo-400" /> },
-    { label: "Projetos Mobile", href: "#projetos", icon: <Smartphone size={18} className="text-purple-400" /> },
-    { label: "Como Eu Trabalho", href: "#como-trabalho", icon: <Workflow size={18} className="text-pink-400" /> },
-    { label: "Sobre Mim", href: "#sobre", icon: <User size={18} className="text-amber-400" /> },
-    { label: "Contato", href: "#contato", icon: <Mail size={18} className="text-emerald-400" /> },
+    { label: "Início", href: "/", icon: <Home size={18} className="text-indigo-400" /> },
+    { label: "Projetos Mobile", href: "/#projetos", icon: <Smartphone size={18} className="text-purple-400" /> },
+    { label: "Valores & Planos", href: "/valores", icon: <DollarSign size={18} className="text-emerald-400" /> },
+    { label: "Como Eu Trabalho", href: "/#como-trabalho", icon: <Workflow size={18} className="text-pink-400" /> },
+    { label: "Sobre Mim", href: "/#sobre", icon: <User size={18} className="text-amber-400" /> },
+    { label: "Contato", href: "/#contato", icon: <Mail size={18} className="text-emerald-400" /> },
   ];
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 px-3 sm:px-4 lg:px-8 py-3 sm:py-4 transition-all duration-300">
       <div className="max-w-7xl mx-auto glass-nav rounded-2xl px-3.5 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between shadow-2xl backdrop-blur-xl border border-white/10 relative z-50">
         {/* Logo */}
-        <a href="#" className="flex items-center gap-2.5 sm:gap-3 group min-w-0">
+        <Link href="/" className="flex items-center gap-2.5 sm:gap-3 group min-w-0">
           <div className="w-9 h-9 sm:w-10 sm:h-10 shrink-0 rounded-xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20 group-hover:scale-105 transition-transform">
             <Smartphone size={18} className="sm:w-5 sm:h-5" />
           </div>
@@ -40,30 +43,30 @@ export default function Header() {
             </span>
             <span className="text-[10px] sm:text-[11px] text-gray-400 font-medium truncate">Desenvolvimento Mobile & Web</span>
           </div>
-        </a>
+        </Link>
 
         {/* Desktop Navigation */}
-        <nav className="hidden md:flex items-center gap-8">
+        <nav className="hidden md:flex items-center gap-6 lg:gap-8">
           {navItems.map((item) => (
-            <a
+            <Link
               key={item.label}
               href={item.href}
               className="text-sm font-medium text-gray-300 hover:text-white transition-colors relative py-1 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-0 after:h-0.5 after:bg-gradient-to-r after:from-indigo-500 after:to-purple-500 hover:after:w-full after:transition-all"
             >
               {item.label}
-            </a>
+            </Link>
           ))}
         </nav>
 
         {/* Action Controls */}
         <div className="hidden md:flex items-center gap-4">
-          <a
-            href="#contato"
+          <Link
+            href="/#contato"
             className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white font-semibold text-sm shadow-lg shadow-indigo-500/20 transition-all hover:-translate-y-0.5 flex items-center gap-2"
           >
             <MessageSquare size={16} />
             <span>Solicitar Orçamento</span>
-          </a>
+          </Link>
         </div>
 
         {/* Mobile menu toggle */}
@@ -108,7 +111,7 @@ export default function Header() {
 
               <div className="flex flex-col gap-2 pt-1">
                 {navItems.map((item) => (
-                  <a
+                  <Link
                     key={item.label}
                     href={item.href}
                     onClick={() => setMobileMenuOpen(false)}
@@ -121,18 +124,18 @@ export default function Header() {
                       <span className="text-sm font-bold text-white">{item.label}</span>
                     </div>
                     <ChevronRight size={16} className="text-gray-400 group-hover:text-indigo-400 group-hover:translate-x-0.5 transition-all" />
-                  </a>
+                  </Link>
                 ))}
               </div>
 
-              <a
-                href="#contato"
+              <Link
+                href="/#contato"
                 onClick={() => setMobileMenuOpen(false)}
                 className="mt-2 text-center py-4 rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white font-extrabold text-sm shadow-xl shadow-indigo-600/30 flex items-center justify-center gap-2 active:scale-98 transition-transform"
               >
                 <MessageSquare size={18} />
                 <span>Solicitar Orçamento</span>
-              </a>
+              </Link>
             </motion.div>
           </>
         )}
