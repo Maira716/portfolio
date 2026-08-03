@@ -72,7 +72,7 @@ export default function PricingSection() {
       id: "app",
       name: "Aplicativo Mobile",
       tagline: "Experiência completa para iOS & Android",
-      price: "2.500",
+      price: "4.000",
       period: "a partir de / módulos essenciais",
       popular: true,
       icon: Smartphone,
@@ -88,7 +88,7 @@ export default function PricingSection() {
         "Auxílio no processo de publicação nas lojas (App Store / Google Play)",
         "Suporte pós-lançamento de 45 dias"
       ],
-      whatsappMsg: "Olá Maira! Tenho interesse no pacote de Aplicativo Mobile (a partir de R$ 2.500,00)."
+      whatsappMsg: "Olá Maira! Tenho interesse no pacote de Aplicativo Mobile (a partir de R$ 4.000,00)."
     },
     {
       id: "saas",
