@@ -17,6 +17,7 @@ import {
   AlertCircle,
   Calendar,
   Layers,
+  LayoutDashboard,
   ChevronRight,
   Send,
   FileText,
@@ -831,6 +832,21 @@ function ClientPortalContent() {
   const [activeReceiptData, setActiveReceiptData] = useState<ReceiptData | null>(null);
   const [copiedReceiptAuth, setCopiedReceiptAuth] = useState(false);
 
+  // Tab Menu Navigation State
+  const [activeTab, setActiveTab] = useState<
+    "overview" | "milestones" | "financial" | "updates" | "documents" | "support"
+  >("overview");
+
+  useEffect(() => {
+    const tabParam = searchParams.get("tab");
+    if (
+      tabParam &&
+      ["overview", "milestones", "financial", "updates", "documents", "support"].includes(tabParam)
+    ) {
+      setActiveTab(tabParam as any);
+    }
+  }, [searchParams]);
+
   // Contact & FAQ Widget State
   const [openFaqId, setOpenFaqId] = useState<string | null>("faq-1");
   const [copiedEmail, setCopiedEmail] = useState(false);
@@ -1542,7 +1558,52 @@ function ClientPortalContent() {
           </div>
         )}
 
-        {/* No active project state */}
+        {/* Menu de Navegação em Abas do Cliente */}
+        {selectedProject && (
+          <div className="mb-8 border-b border-white/10 pb-3 overflow-x-auto no-scrollbar">
+            <div className="flex items-center gap-2 min-w-max p-1.5 bg-slate-900/60 rounded-2xl border border-white/10 backdrop-blur-xl">
+              {[
+                { id: "overview", label: "Visão Geral", icon: LayoutDashboard, badge: null },
+                { id: "milestones", label: "Etapas & Entregas", icon: ListTodo, badge: milestones.length > 0 ? `${milestones.filter((m) => m.completed).length}/${milestones.length}` : null },
+                { id: "financial", label: "Financeiro & Recibos", icon: Receipt, badge: null },
+                { id: "updates", label: "Atualizações", icon: Sparkles, badge: updates.length > 0 ? `${updates.length}` : null },
+                { id: "documents", label: "Documentos", icon: FileText, badge: documents.length > 0 ? `${documents.length}` : null },
+                { id: "support", label: "Suporte & FAQ", icon: Headphones, badge: null },
+              ].map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveTab(tab.id as any)}
+                    className={`px-4 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2.5 transition-all duration-200 cursor-pointer ${
+                      isActive
+                        ? "bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white shadow-lg shadow-indigo-600/30 border border-indigo-400/30"
+                        : "text-gray-400 hover:text-white hover:bg-white/5 border border-transparent"
+                    }`}
+                  >
+                    <Icon size={16} className={isActive ? "text-white" : "text-gray-400"} />
+                    <span>{tab.label}</span>
+                    {tab.badge && (
+                      <span
+                        className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                          isActive
+                            ? "bg-white/25 text-white border border-white/30"
+                            : "bg-white/10 text-gray-300 border border-white/10"
+                        }`}
+                      >
+                        {tab.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+{/* No active project state */}
         {!selectedProject ? (
           <div className="p-12 text-center rounded-3xl bg-slate-900/50 border border-white/10 flex flex-col items-center justify-center">
             <Layers size={48} className="text-indigo-400 mb-4 opacity-50" />
@@ -1561,12 +1622,13 @@ function ClientPortalContent() {
             </a>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            
-            {/* Left Column (8 cols): Progress, Stepper, Milestones, Updates */}
-            <div className="lg:col-span-8 flex flex-col gap-8">
-              
-              {/* Card 1: Visão Geral e Barra de Progresso do Projeto */}
+          <div className="space-y-8">
+            {/* 1. ABA: VISÃO GERAL */}
+            {activeTab === "overview" && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                {/* Left Column (8 cols): Progress, Stepper & Quick Hub */}
+                <div className="lg:col-span-8 flex flex-col gap-8">
+                  {/* Card 1: Visão Geral e Barra de Progresso do Projeto */}
               {(() => {
                 const statusInfo = getPortalStatusInfo(selectedProject.status);
                 const completedMilestonesCount = milestones.filter((m) => m.completed).length;
@@ -1696,7 +1758,7 @@ function ClientPortalContent() {
                 );
               })()}
 
-              {/* Card 2: Interactive Phase Stepper */}
+                  {/* Card 2: Interactive Phase Stepper */}
               <div className="p-6 sm:p-7 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl">
                 <h3 className="text-base font-bold text-white flex items-center gap-2 mb-6">
                   <Layers size={18} className="text-indigo-400" />
@@ -1748,449 +1810,292 @@ function ClientPortalContent() {
                 </div>
               </div>
 
-              {/* Card 3: Módulo Financeiro do Cliente */}
-              {(() => {
-                const finSummary = calculateFinancialSummary(financialData);
-                const allInstallments = financialData?.installments || [];
-
-                const filteredInstallments = allInstallments.filter((inst) => {
-                  if (financeStatusFilter === "all") return true;
-                  const st = getInstallmentStatus(inst);
-                  return st.status === financeStatusFilter;
-                });
-
-                return (
-                  <div className="p-6 sm:p-8 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-2xl space-y-6 relative overflow-hidden">
-                    {/* Glowing background accent */}
-                    <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-
-                    {/* Section Header */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-white/10 relative z-10">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
-                            <DollarSign size={12} className="text-emerald-400" />
-                            <span>Módulo Financeiro do Cliente</span>
-                          </span>
-                          <span className="text-[10px] text-gray-400 bg-white/5 px-2 py-0.5 rounded-full border border-white/10 flex items-center gap-1">
-                            <Lock size={10} className="text-gray-400" />
-                            <span>Visualização Somente Leitura</span>
-                          </span>
-                        </div>
-                        <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
-                          <Receipt size={22} className="text-emerald-400" />
-                          <span>Extrato & Quitação do Contrato</span>
-                        </h3>
-                        <p className="text-xs sm:text-sm text-gray-300 mt-1">
-                          Acompanhamento transparente das parcelas contratadas, datas de vencimento e confirmações de quitação.
-                        </p>
-                      </div>
-
-                      <div className="shrink-0 flex items-center gap-2">
-                        <span className="text-xs font-bold px-3 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 flex items-center gap-1.5 shadow-sm">
-                          <ShieldCheck size={14} className="text-emerald-400" />
-                          <span>Contrato Ativo #{selectedProject.id.slice(0, 8)}</span>
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* 3 Top Cards */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 relative z-10">
-                      {/* 1. Valor Total Contratado */}
-                      <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/10 hover:border-indigo-500/30 transition-all shadow-lg flex flex-col justify-between gap-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                            Valor Total Contratado
-                          </span>
-                          <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                            <DollarSign size={18} />
-                          </div>
+                  {/* Hub de Acesso Rápido às Seções */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Card Atalho: Etapas */}
+                    <div className="p-5 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl hover:border-indigo-500/30 transition-all flex flex-col justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center justify-center shrink-0">
+                          <ListTodo size={20} />
                         </div>
                         <div>
-                          <p className="text-2xl sm:text-3xl font-black text-white tracking-tight font-mono">
-                            {formatBRL(finSummary.contractValue)}
+                          <h4 className="text-sm font-bold text-white">Etapas & Entregas</h4>
+                          <p className="text-xs text-gray-400">
+                            {milestones.filter((m) => m.completed).length} de {milestones.length} concluídas
                           </p>
-                          <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-gray-400">
-                            <span>Investimento Global</span>
-                            <span className="text-indigo-300 font-semibold">{finSummary.installmentsCount} parcelas</span>
-                          </div>
                         </div>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("milestones")}
+                        className="w-full py-2.5 px-3 rounded-xl bg-white/5 hover:bg-indigo-600/20 text-indigo-300 hover:text-white border border-indigo-500/20 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                      >
+                        <span>Ver Checklist Completo</span>
+                        <ArrowRight size={13} />
+                      </button>
+                    </div>
 
-                      {/* 2. Valor Já Pago */}
-                      <div className="p-5 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 hover:border-emerald-500/50 transition-all shadow-lg flex flex-col justify-between gap-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
-                            Valor Já Pago
-                          </span>
-                          <div className="p-2.5 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                            <CheckCircle2 size={18} />
-                          </div>
+                    {/* Card Atalho: Financeiro */}
+                    <div className="p-5 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl hover:border-emerald-500/30 transition-all flex flex-col justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center shrink-0">
+                          <Receipt size={20} />
                         </div>
                         <div>
-                          <p className="text-2xl sm:text-3xl font-black text-emerald-400 tracking-tight font-mono">
-                            {formatBRL(finSummary.totalPaid)}
+                          <h4 className="text-sm font-bold text-white">Financeiro & Recibos</h4>
+                          <p className="text-xs text-gray-400">
+                            {formatBRL(calculateFinancialSummary(financialData).totalPaid)} de {formatBRL(calculateFinancialSummary(financialData).contractValue)}
                           </p>
-                          <div className="mt-2 pt-2 border-t border-emerald-500/15 flex items-center justify-between text-[11px] text-emerald-300">
-                            <span>{finSummary.percentPaid}% do montante quitado</span>
-                            <span className="font-bold">{finSummary.paidCount} de {finSummary.installmentsCount} pagas</span>
-                          </div>
                         </div>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("financial")}
+                        className="w-full py-2.5 px-3 rounded-xl bg-white/5 hover:bg-emerald-600/20 text-emerald-300 hover:text-white border border-emerald-500/20 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                      >
+                        <span>Ver Extrato & Quitação</span>
+                        <ArrowRight size={13} />
+                      </button>
+                    </div>
 
-                      {/* 3. Saldo Restante */}
-                      <div className="p-5 rounded-2xl bg-purple-950/20 border border-purple-500/30 hover:border-purple-500/50 transition-all shadow-lg flex flex-col justify-between gap-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-purple-300 uppercase tracking-wider">
-                            Saldo Restante
-                          </span>
-                          <div className="p-2.5 rounded-xl bg-purple-500/15 text-purple-400 border border-purple-500/30">
-                            <Clock size={18} />
-                          </div>
+                    {/* Card Atalho: Atualizações */}
+                    <div className="p-5 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl hover:border-purple-500/30 transition-all flex flex-col justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-purple-500/10 text-purple-400 border border-purple-500/20 flex items-center justify-center shrink-0">
+                          <Sparkles size={20} />
                         </div>
                         <div>
-                          <p className="text-2xl sm:text-3xl font-black text-purple-300 tracking-tight font-mono">
-                            {formatBRL(finSummary.remainingBalance)}
+                          <h4 className="text-sm font-bold text-white">Atualizações & Notas</h4>
+                          <p className="text-xs text-gray-400">
+                            {updates.length} {updates.length === 1 ? "registro" : "registros"} na timeline
                           </p>
-                          <div className="mt-2 pt-2 border-t border-purple-500/15 flex items-center justify-between text-[11px] text-purple-300/80">
-                            <span>{100 - finSummary.percentPaid}% a faturar</span>
-                            <span className="font-semibold text-purple-200">Conforme entregas</span>
-                          </div>
                         </div>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("updates")}
+                        className="w-full py-2.5 px-3 rounded-xl bg-white/5 hover:bg-purple-600/20 text-purple-300 hover:text-white border border-purple-500/20 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                      >
+                        <span>Ver Linha do Tempo</span>
+                        <ArrowRight size={13} />
+                      </button>
                     </div>
 
-                    {/* Consolidated Financial Progress Bar */}
-                    <div className="p-4 sm:p-5 rounded-2xl bg-black/40 border border-white/10 space-y-2 relative z-10">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-bold text-gray-300 flex items-center gap-1.5">
-                          <Coins size={14} className="text-emerald-400" />
-                          <span>Status Geral de Quitação Contratual</span>
-                        </span>
-                        <span className="font-mono font-bold text-emerald-300">
-                          {finSummary.percentPaid}% Liquidado ({formatBRL(finSummary.totalPaid)} de {formatBRL(finSummary.contractValue)})
-                        </span>
-                      </div>
-                      <div className="w-full h-3 bg-white/5 rounded-full overflow-hidden p-0.5 border border-white/10">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${finSummary.percentPaid}%` }}
-                          transition={{ duration: 1, ease: "easeOut" }}
-                          className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-teal-500 to-indigo-500 shadow-md shadow-emerald-500/30"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Filter Pills */}
-                    <div className="flex flex-wrap items-center justify-between gap-3 pt-2 relative z-10">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-xs text-gray-400 font-semibold mr-1">Filtrar:</span>
-                        {[
-                          { key: "all", label: `Todas (${allInstallments.length})` },
-                          { key: "pago", label: `Quitadas (${finSummary.paidCount})` },
-                          { key: "em_dia", label: `A Vencer (${allInstallments.filter((i) => getInstallmentStatus(i).status === "em_dia").length})` },
-                          { key: "pendente", label: `Pendentes (${allInstallments.filter((i) => getInstallmentStatus(i).status === "pendente").length})` },
-                          ...(finSummary.totalOverdue > 0
-                            ? [{ key: "vencido", label: `Vencidas (${allInstallments.filter((i) => getInstallmentStatus(i).status === "vencido").length})` }]
-                            : []),
-                        ].map((filter) => (
-                          <button
-                            key={filter.key}
-                            onClick={() => setFinanceStatusFilter(filter.key as any)}
-                            className={`px-3 py-1 rounded-xl text-xs font-medium border transition-all ${
-                              financeStatusFilter === filter.key
-                                ? "bg-emerald-600 text-white border-emerald-500 shadow-sm shadow-emerald-600/30"
-                                : "bg-white/5 text-gray-400 border-white/10 hover:border-white/20 hover:text-white"
-                            }`}
-                          >
-                            {filter.label}
-                          </button>
-                        ))}
-                      </div>
-
-                      <div className="text-[11px] text-gray-400 flex items-center gap-1">
-                        <Shield size={12} className="text-emerald-400" />
-                        <span>Validação Fiscal e Notarial</span>
-                      </div>
-                    </div>
-
-                    {/* Extrato em Tabela (Desktop: hidden sm:block) */}
-                    <div className="hidden sm:block overflow-x-auto rounded-2xl border border-white/10 relative z-10 shadow-lg bg-[#0a0d1a]/90">
-                      <table className="w-full text-left text-xs border-collapse">
-                        <thead>
-                          <tr className="border-b border-white/10 bg-white/[0.04] text-[11px] text-gray-400 uppercase font-bold tracking-wider">
-                            <th className="py-3.5 px-4">Identificador da Parcela</th>
-                            <th className="py-3.5 px-4">Valor (R$)</th>
-                            <th className="py-3.5 px-4">Vencimento</th>
-                            <th className="py-3.5 px-4">Status</th>
-                            <th className="py-3.5 px-4">Confirmação de Pagamento</th>
-                            <th className="py-3.5 px-4">Forma / Comprovante</th>
-                            <th className="py-3.5 px-4 text-right">Ação / Recibo</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/5">
-                          {filteredInstallments.length === 0 ? (
-                            <tr>
-                              <td colSpan={7} className="py-8 px-4 text-center text-gray-400 text-xs">
-                                Nenhuma parcela encontrada para este filtro.
-                              </td>
-                            </tr>
-                          ) : (
-                            filteredInstallments.map((inst) => {
-                              const statusObj = getInstallmentStatus(inst);
-                              const isPaid = statusObj.status === "pago";
-
-                              return (
-                                <tr
-                                  key={inst.id}
-                                  className={`hover:bg-white/[0.02] transition-colors ${
-                                    isPaid ? "bg-emerald-500/[0.02]" : ""
-                                  }`}
-                                >
-                                  {/* 1. Identificador da Parcela */}
-                                  <td className="py-4 px-4 font-medium text-white">
-                                    <div className="flex items-start gap-2.5">
-                                      <span className="w-6 h-6 rounded-lg bg-white/10 text-white font-mono text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">
-                                        #{inst.installment_number}
-                                      </span>
-                                      <div>
-                                        <p className="font-bold text-white text-xs sm:text-sm">
-                                          {inst.title}
-                                        </p>
-                                        {inst.notes && (
-                                          <p className="text-[11px] text-gray-400 mt-0.5 max-w-xs leading-relaxed">
-                                            {inst.notes}
-                                          </p>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </td>
-
-                                  {/* 2. Valor da Parcela */}
-                                  <td className="py-4 px-4 whitespace-nowrap">
-                                    <span className="text-sm font-black text-white font-mono">
-                                      {formatBRL(inst.amount)}
-                                    </span>
-                                  </td>
-
-                                  {/* 3. Vencimento */}
-                                  <td className="py-4 px-4 whitespace-nowrap">
-                                    <div className="flex items-center gap-1.5 text-xs text-gray-300">
-                                      <Calendar size={13} className="text-gray-400" />
-                                      <span>
-                                        {inst.due_date
-                                          ? new Date(inst.due_date).toLocaleDateString("pt-BR")
-                                          : "A combinar"}
-                                      </span>
-                                    </div>
-                                  </td>
-
-                                  {/* 4. Status Visual Tag */}
-                                  <td className="py-4 px-4 whitespace-nowrap">
-                                    <span
-                                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold border shadow-sm ${statusObj.badgeClass}`}
-                                    >
-                                      <span className={`w-2 h-2 rounded-full ${statusObj.dotClass} animate-pulse`} />
-                                      <span>{statusObj.label}</span>
-                                    </span>
-                                  </td>
-
-                                  {/* 5. Data de Confirmação de Pagamento */}
-                                  <td className="py-4 px-4 whitespace-nowrap">
-                                    {isPaid && inst.paid_at ? (
-                                      <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
-                                        <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
-                                        <span>
-                                          Quitado em {new Date(inst.paid_at).toLocaleDateString("pt-BR")}
-                                        </span>
-                                      </div>
-                                    ) : (
-                                      <div className="flex items-center gap-1.5 text-xs text-gray-400">
-                                        <Clock size={13} className="text-gray-500 shrink-0" />
-                                        <span>Aguardando quitação</span>
-                                      </div>
-                                    )}
-                                  </td>
-
-                                  {/* 6. Forma de Pagamento & Comprovante Interno */}
-                                  <td className="py-4 px-4 whitespace-nowrap">
-                                    <div className="flex flex-col gap-1">
-                                      <span className="text-xs text-gray-300 font-semibold flex items-center gap-1">
-                                        <CreditCard size={12} className="text-indigo-400" />
-                                        <span>{getPaymentMethodLabel(inst.payment_method)}</span>
-                                      </span>
-                                      {inst.receipt_url ? (
-                                        <span
-                                          className="text-[10px] font-mono text-emerald-300/90 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 w-fit flex items-center gap-1"
-                                          title={`Código de autenticação: ${inst.receipt_url}`}
-                                        >
-                                          <ShieldCheck size={10} className="text-emerald-400" />
-                                          <span className="truncate max-w-[140px]">{inst.receipt_url}</span>
-                                        </span>
-                                      ) : (
-                                        <span className="text-[10px] text-gray-400 font-mono">
-                                          Doc: #{inst.id.slice(0, 10)}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </td>
-
-                                  {/* 7. : Botão Baixar Recibo */}
-                                  <td className="py-4 px-4 whitespace-nowrap text-right">
-                                    {isPaid ? (
-                                      <div className="flex items-center justify-end gap-1.5">
-                                        <button
-                                          type="button"
-                                          onClick={() => handleOpenReceiptModal(inst)}
-                                          className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold border border-emerald-400/30 flex items-center gap-1.5 transition-all shadow-md shadow-emerald-950/40 cursor-pointer active:scale-95"
-                                          title="Visualizar e Baixar Recibo de Pagamento"
-                                        >
-                                          <Receipt size={13} />
-                                          <span>Baixar Recibo</span>
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={(e) => handleDirectPrintReceipt(inst, e)}
-                                          className="p-1.5 rounded-xl bg-white/5 hover:bg-white/15 text-gray-300 hover:text-white border border-white/10 transition-colors cursor-pointer"
-                                          title="Imprimir / Exportar PDF Direto"
-                                        >
-                                          <Printer size={13} />
-                                        </button>
-                                      </div>
-                                    ) : (
-                                      <span className="text-[11px] text-gray-500 italic">
-                                        Liberado após quitação
-                                      </span>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {/* Mobile Installment Card List (block sm:hidden) */}
-                    <div className="block sm:hidden space-y-3 relative z-10">
-                      {filteredInstallments.length === 0 ? (
-                        <div className="p-6 rounded-2xl bg-white/[0.02] border border-white/5 text-center text-xs text-gray-400">
-                          Nenhuma parcela encontrada para este filtro.
+                    {/* Card Atalho: Documentos */}
+                    <div className="p-5 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl hover:border-pink-500/30 transition-all flex flex-col justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-pink-500/10 text-pink-400 border border-pink-500/20 flex items-center justify-center shrink-0">
+                          <FileText size={20} />
                         </div>
-                      ) : (
-                        filteredInstallments.map((inst) => {
-                          const statusObj = getInstallmentStatus(inst);
-                          const isPaid = statusObj.status === "pago";
+                        <div>
+                          <h4 className="text-sm font-bold text-white">Documentos & Arquivos</h4>
+                          <p className="text-xs text-gray-400">
+                            {documents.length} {documents.length === 1 ? "documento" : "documentos"} homologados
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("documents")}
+                        className="w-full py-2.5 px-3 rounded-xl bg-white/5 hover:bg-pink-600/20 text-pink-300 hover:text-white border border-pink-500/20 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                      >
+                        <span>Acessar Documentos</span>
+                        <ArrowRight size={13} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
 
-                          return (
+                {/* Right Column (4 cols): Quick Links & Direct Support */}
+                <div className="lg:col-span-4 flex flex-col gap-6">
+                  {/* Painel de Links Rápidos & Ambientes */}
+              <div className="p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-white flex items-center gap-2">
+                    <Link2 size={16} className="text-indigo-400" />
+                    <span>Links Rápidos & Ambientes</span>
+                  </h3>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                    {quickLinks.length} {quickLinks.length === 1 ? "link" : "links"}
+                  </span>
+                </div>
+
+                <p className="text-xs text-gray-400 leading-relaxed">
+                  Atalhos diretos e homologados pela desenvolvedora para protótipos, ambientes de teste e documentação técnica.
+                </p>
+
+                <div className="space-y-3">
+                  {quickLinks.map((link) => {
+                    const catInfo = getQuickLinkCategoryInfo(link.category);
+                    const IconComponent = catInfo.icon;
+                    const isCopied = copiedLinkId === link.id;
+
+                    return (
+                      <div
+                        key={link.id}
+                        className={`p-4 rounded-2xl bg-gradient-to-br ${catInfo.btnClass} border transition-all duration-300 hover:shadow-lg hover:shadow-indigo-950/40 group relative flex flex-col justify-between gap-3`}
+                      >
+                        {/* Header: Icon, Label & Status Tag */}
+                        <div className="flex items-start justify-between gap-2.5">
+                          <div className="flex items-center gap-3 overflow-hidden">
                             <div
-                              key={inst.id}
-                              className={`p-4 rounded-2xl border transition-all space-y-3 ${
-                                isPaid
-                                  ? "bg-emerald-950/20 border-emerald-500/30"
-                                  : "bg-white/[0.03] border-white/10"
-                              }`}
+                              className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${catInfo.iconColor} group-hover:scale-105 transition-transform`}
                             >
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="flex items-center gap-2">
-                                  <span className="w-6 h-6 rounded-lg bg-white/10 text-white font-mono text-xs font-bold flex items-center justify-center shrink-0">
-                                    #{inst.installment_number}
-                                  </span>
-                                  <div>
-                                    <h5 className="font-bold text-white text-xs leading-tight">
-                                      {inst.title}
-                                    </h5>
-                                    {inst.notes && (
-                                      <p className="text-[11px] text-gray-400 mt-0.5 leading-snug">{inst.notes}</p>
-                                    )}
-                                  </div>
-                                </div>
-                                <span
-                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[10px] font-bold border shrink-0 ${statusObj.badgeClass}`}
-                                >
-                                  <span className={`w-1.5 h-1.5 rounded-full ${statusObj.dotClass} animate-pulse`} />
-                                  <span>{statusObj.label}</span>
-                                </span>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-2 p-3 rounded-xl bg-black/40 border border-white/5 text-xs">
-                                <div>
-                                  <span className="text-[10px] text-gray-400 uppercase block font-medium">Valor</span>
-                                  <span className="font-black text-white text-sm font-mono">{formatBRL(inst.amount)}</span>
-                                </div>
-                                <div>
-                                  <span className="text-[10px] text-gray-400 uppercase block font-medium">Vencimento</span>
-                                  <span className="font-semibold text-gray-200 text-xs">
-                                    {inst.due_date ? new Date(inst.due_date).toLocaleDateString("pt-BR") : "A combinar"}
-                                  </span>
-                                </div>
-                                <div>
-                                  <span className="text-[10px] text-gray-400 uppercase block font-medium">Forma</span>
-                                  <span className="font-semibold text-indigo-300 text-xs">{getPaymentMethodLabel(inst.payment_method)}</span>
-                                </div>
-                                <div>
-                                  <span className="text-[10px] text-gray-400 uppercase block font-medium">Quitação</span>
-                                  <span className={`font-semibold text-xs ${isPaid ? "text-emerald-400" : "text-gray-500"}`}>
-                                    {isPaid && inst.paid_at ? new Date(inst.paid_at).toLocaleDateString("pt-BR") : "Pendente"}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {isPaid ? (
-                                <div className="flex items-center gap-2 pt-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenReceiptModal(inst)}
-                                    className="flex-1 py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-md shadow-emerald-950/40 flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
-                                  >
-                                    <Receipt size={14} />
-                                    <span>Baixar Recibo Oficial</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => handleDirectPrintReceipt(inst, e)}
-                                    className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10"
-                                    title="Imprimir"
-                                  >
-                                    <Printer size={14} />
-                                  </button>
-                                </div>
-                              ) : (
-                                <p className="text-[11px] text-gray-500 italic text-center pt-1">
-                                  Recibo liberado após confirmação de pagamento
-                                </p>
-                              )}
+                              <IconComponent size={20} />
                             </div>
-                          );
-                        })
-                      )}
-                    </div>
+                            <div className="overflow-hidden">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-indigo-200 transition-colors">
+                                  {link.label}
+                                </h4>
+                              </div>
+                              <p className="text-[11px] text-gray-300 truncate">
+                                {catInfo.sublabel}
+                              </p>
+                            </div>
+                          </div>
 
-                    {/* Information & Security Notice Banner (Strictly Read-Only Guarantee) */}
-                    <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-gray-400 relative z-10">
-                      <div className="flex items-center gap-2">
-                        <ShieldCheck size={16} className="text-emerald-400 shrink-0" />
-                        <span>
-                          Extrato financeiro com garantia de imutabilidade e integridade contratual.
-                        </span>
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${catInfo.badgeClass}`}
+                          >
+                            {catInfo.statusTag}
+                          </span>
+                        </div>
+
+                        {/* Description */}
+                        {link.description && (
+                          <p className="text-[11px] text-gray-400 leading-relaxed">
+                            {link.description}
+                          </p>
+                        )}
+
+                        {/* Actions: Open in new tab & Copy Link */}
+                        <div className="pt-2 border-t border-white/10 flex items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={(e) => handleCopyQuickLink(link.id, link.url, e)}
+                            className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold border flex items-center gap-1.5 transition-all cursor-pointer ${
+                              isCopied
+                                ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
+                                : "bg-black/40 text-gray-400 hover:text-white border-white/10 hover:border-white/20"
+                            }`}
+                            title="Copiar URL para a área de transferência"
+                          >
+                            {isCopied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                            <span>{isCopied ? "Copiado!" : "Copiar Link"}</span>
+                          </button>
+
+                          <a
+                            href={link.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/20 flex items-center gap-1.5 shadow-sm transition-all group-hover:border-white/40 active:scale-95"
+                          >
+                            <span>{catInfo.actionLabel}</span>
+                            <ExternalLink size={13} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                          </a>
+                        </div>
                       </div>
+                    );
+                  })}
+
+                  {quickLinks.length === 0 && (
+                    <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/5 text-center text-xs text-gray-500 space-y-1">
+                      <Link2 size={24} className="mx-auto text-gray-600 mb-1" />
+                      <p className="font-semibold text-gray-400">Nenhum atalho cadastrado</p>
+                      <p className="text-[10px]">Os links de homologação serão disponibilizados nas próximas etapas.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Quick Documents Card */}
+              {documents.length > 0 && (
+                <div className="p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-gray-400 mb-4 flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <FileCheck size={16} className="text-emerald-400" />
+                      <span>Documentos Prontos</span>
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                      {documents.length} PDF{documents.length > 1 ? "s" : ""}
+                    </span>
+                  </h3>
+
+                  <div className="space-y-2.5">
+                    {documents.slice(0, 3).map((doc) => (
+                      <div
+                        key={doc.id}
+                        className="p-3 rounded-2xl bg-white/[0.02] border border-white/5 hover:border-white/10 flex items-center justify-between gap-3 transition-colors"
+                      >
+                        <div className="flex items-center gap-2.5 overflow-hidden">
+                          <div className="w-8 h-8 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center justify-center shrink-0 text-xs font-bold font-mono">
+                            PDF
+                          </div>
+                          <div className="overflow-hidden">
+                            <p className="text-xs font-bold text-white truncate">{doc.title}</p>
+                            <p className="text-[10px] text-gray-500">{doc.file_size_formatted}</p>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => handleDownloadDocument(doc)}
+                          className="p-2 rounded-xl bg-white/5 hover:bg-pink-600/20 text-gray-400 hover:text-pink-300 transition-colors shrink-0"
+                          title="Baixar PDF"
+                        >
+                          <Download size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+                  {/* Fast Support Box */}
+                  <div className="p-6 rounded-3xl bg-gradient-to-br from-indigo-950/50 via-purple-950/40 to-slate-900 border border-indigo-500/30 backdrop-blur-xl shadow-xl space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Headphones size={18} className="text-indigo-400" />
+                        <h4 className="text-sm font-bold text-white">Atendimento Direto</h4>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        <span>Online</span>
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-300 leading-relaxed">
+                      Dúvidas sobre o andamento, entregas ou regras de negócio? Acesse nossa central de FAQ ou fale diretamente pelo WhatsApp.
+                    </p>
+                    <div className="space-y-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("support")}
+                        className="w-full py-2.5 px-4 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/15 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      >
+                        <Headphones size={14} />
+                        <span>Abrir Central de Suporte & FAQ</span>
+                      </button>
                       <a
                         href={`https://wa.me/553598030543?text=${encodeURIComponent(
-                          `Olá Maira! Gostaria de falar sobre o financeiro/faturamento do projeto "${selectedProject.title}".`
+                          `Olá Maira! Sou cliente do projeto "${selectedProject?.title || "MR Portfólio"}".`
                         )}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white font-semibold text-xs border border-white/10 transition-colors flex items-center gap-1.5 w-fit shrink-0"
+                        className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-950/40 flex items-center justify-center gap-2 transition-all active:scale-95"
                       >
-                        <MessageSquare size={13} className="text-emerald-400" />
-                        <span>Solicitar 2ª via ou NF-e</span>
+                        <MessageSquare size={14} />
+                        <span>Falar no WhatsApp</span>
                       </a>
                     </div>
                   </div>
-                );
-              })()}
+                </div>
+              </div>
+            )}
 
-              {/* Card 4: Linha do Tempo e Acompanhamento de Entregas */}
+            {/* 2. ABA: ETAPAS & ENTREGAS */}
+            {activeTab === "milestones" && (
+              <div className="w-full space-y-6">
+                {/* Card 4: Linha do Tempo e Acompanhamento de Entregas */}
               {(() => {
                 const completedMilestones = [...milestones].filter((m) => m.completed).reverse();
                 const upcomingMilestones = [...milestones].filter((m) => !m.completed);
@@ -2659,8 +2564,460 @@ function ClientPortalContent() {
                   </div>
                 );
               })()}
+              </div>
+            )}
 
-              {/* Card 5: Feed de Updates e Notas */}
+            {/* 3. ABA: FINANCEIRO & EXTRATO */}
+            {activeTab === "financial" && (
+              <div className="w-full space-y-6">
+                {/* Card 3: Módulo Financeiro do Cliente */}
+              {(() => {
+                const finSummary = calculateFinancialSummary(financialData);
+                const allInstallments = financialData?.installments || [];
+
+                const filteredInstallments = allInstallments.filter((inst) => {
+                  if (financeStatusFilter === "all") return true;
+                  const st = getInstallmentStatus(inst);
+                  return st.status === financeStatusFilter;
+                });
+
+                return (
+                  <div className="p-6 sm:p-8 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-2xl space-y-6 relative overflow-hidden">
+                    {/* Glowing background accent */}
+                    <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+
+                    {/* Section Header */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-white/10 relative z-10">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
+                            <DollarSign size={12} className="text-emerald-400" />
+                            <span>Módulo Financeiro do Cliente</span>
+                          </span>
+                          <span className="text-[10px] text-gray-400 bg-white/5 px-2 py-0.5 rounded-full border border-white/10 flex items-center gap-1">
+                            <Lock size={10} className="text-gray-400" />
+                            <span>Visualização Somente Leitura</span>
+                          </span>
+                        </div>
+                        <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
+                          <Receipt size={22} className="text-emerald-400" />
+                          <span>Extrato & Quitação do Contrato</span>
+                        </h3>
+                        <p className="text-xs sm:text-sm text-gray-300 mt-1">
+                          Acompanhamento transparente das parcelas contratadas, datas de vencimento e confirmações de quitação.
+                        </p>
+                      </div>
+
+                      <div className="shrink-0 flex items-center gap-2">
+                        <span className="text-xs font-bold px-3 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 flex items-center gap-1.5 shadow-sm">
+                          <ShieldCheck size={14} className="text-emerald-400" />
+                          <span>Contrato Ativo #{selectedProject.id.slice(0, 8)}</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* 3 Top Cards */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 relative z-10">
+                      {/* 1. Valor Total Contratado */}
+                      <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/10 hover:border-indigo-500/30 transition-all shadow-lg flex flex-col justify-between gap-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                            Valor Total Contratado
+                          </span>
+                          <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                            <DollarSign size={18} />
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-2xl sm:text-3xl font-black text-white tracking-tight font-mono">
+                            {formatBRL(finSummary.contractValue)}
+                          </p>
+                          <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-gray-400">
+                            <span>Investimento Global</span>
+                            <span className="text-indigo-300 font-semibold">{finSummary.installmentsCount} parcelas</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 2. Valor Já Pago */}
+                      <div className="p-5 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 hover:border-emerald-500/50 transition-all shadow-lg flex flex-col justify-between gap-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
+                            Valor Já Pago
+                          </span>
+                          <div className="p-2.5 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                            <CheckCircle2 size={18} />
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-2xl sm:text-3xl font-black text-emerald-400 tracking-tight font-mono">
+                            {formatBRL(finSummary.totalPaid)}
+                          </p>
+                          <div className="mt-2 pt-2 border-t border-emerald-500/15 flex items-center justify-between text-[11px] text-emerald-300">
+                            <span>{finSummary.percentPaid}% do montante quitado</span>
+                            <span className="font-bold">{finSummary.paidCount} de {finSummary.installmentsCount} pagas</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 3. Saldo Restante */}
+                      <div className="p-5 rounded-2xl bg-purple-950/20 border border-purple-500/30 hover:border-purple-500/50 transition-all shadow-lg flex flex-col justify-between gap-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-purple-300 uppercase tracking-wider">
+                            Saldo Restante
+                          </span>
+                          <div className="p-2.5 rounded-xl bg-purple-500/15 text-purple-400 border border-purple-500/30">
+                            <Clock size={18} />
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-2xl sm:text-3xl font-black text-purple-300 tracking-tight font-mono">
+                            {formatBRL(finSummary.remainingBalance)}
+                          </p>
+                          <div className="mt-2 pt-2 border-t border-purple-500/15 flex items-center justify-between text-[11px] text-purple-300/80">
+                            <span>{100 - finSummary.percentPaid}% a faturar</span>
+                            <span className="font-semibold text-purple-200">Conforme entregas</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Consolidated Financial Progress Bar */}
+                    <div className="p-4 sm:p-5 rounded-2xl bg-black/40 border border-white/10 space-y-2 relative z-10">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-gray-300 flex items-center gap-1.5">
+                          <Coins size={14} className="text-emerald-400" />
+                          <span>Status Geral de Quitação Contratual</span>
+                        </span>
+                        <span className="font-mono font-bold text-emerald-300">
+                          {finSummary.percentPaid}% Liquidado ({formatBRL(finSummary.totalPaid)} de {formatBRL(finSummary.contractValue)})
+                        </span>
+                      </div>
+                      <div className="w-full h-3 bg-white/5 rounded-full overflow-hidden p-0.5 border border-white/10">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${finSummary.percentPaid}%` }}
+                          transition={{ duration: 1, ease: "easeOut" }}
+                          className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-teal-500 to-indigo-500 shadow-md shadow-emerald-500/30"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Filter Pills */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 pt-2 relative z-10">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-xs text-gray-400 font-semibold mr-1">Filtrar:</span>
+                        {[
+                          { key: "all", label: `Todas (${allInstallments.length})` },
+                          { key: "pago", label: `Quitadas (${finSummary.paidCount})` },
+                          { key: "em_dia", label: `A Vencer (${allInstallments.filter((i) => getInstallmentStatus(i).status === "em_dia").length})` },
+                          { key: "pendente", label: `Pendentes (${allInstallments.filter((i) => getInstallmentStatus(i).status === "pendente").length})` },
+                          ...(finSummary.totalOverdue > 0
+                            ? [{ key: "vencido", label: `Vencidas (${allInstallments.filter((i) => getInstallmentStatus(i).status === "vencido").length})` }]
+                            : []),
+                        ].map((filter) => (
+                          <button
+                            key={filter.key}
+                            onClick={() => setFinanceStatusFilter(filter.key as any)}
+                            className={`px-3 py-1 rounded-xl text-xs font-medium border transition-all ${
+                              financeStatusFilter === filter.key
+                                ? "bg-emerald-600 text-white border-emerald-500 shadow-sm shadow-emerald-600/30"
+                                : "bg-white/5 text-gray-400 border-white/10 hover:border-white/20 hover:text-white"
+                            }`}
+                          >
+                            {filter.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="text-[11px] text-gray-400 flex items-center gap-1">
+                        <Shield size={12} className="text-emerald-400" />
+                        <span>Validação Fiscal e Notarial</span>
+                      </div>
+                    </div>
+
+                    {/* Extrato em Tabela (Desktop: hidden sm:block) */}
+                    <div className="hidden sm:block overflow-x-auto rounded-2xl border border-white/10 relative z-10 shadow-lg bg-[#0a0d1a]/90">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-white/10 bg-white/[0.04] text-[11px] text-gray-400 uppercase font-bold tracking-wider">
+                            <th className="py-3.5 px-4">Identificador da Parcela</th>
+                            <th className="py-3.5 px-4">Valor (R$)</th>
+                            <th className="py-3.5 px-4">Vencimento</th>
+                            <th className="py-3.5 px-4">Status</th>
+                            <th className="py-3.5 px-4">Confirmação de Pagamento</th>
+                            <th className="py-3.5 px-4">Forma / Comprovante</th>
+                            <th className="py-3.5 px-4 text-right">Ação / Recibo</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {filteredInstallments.length === 0 ? (
+                            <tr>
+                              <td colSpan={7} className="py-8 px-4 text-center text-gray-400 text-xs">
+                                Nenhuma parcela encontrada para este filtro.
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredInstallments.map((inst) => {
+                              const statusObj = getInstallmentStatus(inst);
+                              const isPaid = statusObj.status === "pago";
+
+                              return (
+                                <tr
+                                  key={inst.id}
+                                  className={`hover:bg-white/[0.02] transition-colors ${
+                                    isPaid ? "bg-emerald-500/[0.02]" : ""
+                                  }`}
+                                >
+                                  {/* 1. Identificador da Parcela */}
+                                  <td className="py-4 px-4 font-medium text-white">
+                                    <div className="flex items-start gap-2.5">
+                                      <span className="w-6 h-6 rounded-lg bg-white/10 text-white font-mono text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+                                        #{inst.installment_number}
+                                      </span>
+                                      <div>
+                                        <p className="font-bold text-white text-xs sm:text-sm">
+                                          {inst.title}
+                                        </p>
+                                        {inst.notes && (
+                                          <p className="text-[11px] text-gray-400 mt-0.5 max-w-xs leading-relaxed">
+                                            {inst.notes}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </td>
+
+                                  {/* 2. Valor da Parcela */}
+                                  <td className="py-4 px-4 whitespace-nowrap">
+                                    <span className="text-sm font-black text-white font-mono">
+                                      {formatBRL(inst.amount)}
+                                    </span>
+                                  </td>
+
+                                  {/* 3. Vencimento */}
+                                  <td className="py-4 px-4 whitespace-nowrap">
+                                    <div className="flex items-center gap-1.5 text-xs text-gray-300">
+                                      <Calendar size={13} className="text-gray-400" />
+                                      <span>
+                                        {inst.due_date
+                                          ? new Date(inst.due_date).toLocaleDateString("pt-BR")
+                                          : "A combinar"}
+                                      </span>
+                                    </div>
+                                  </td>
+
+                                  {/* 4. Status Visual Tag */}
+                                  <td className="py-4 px-4 whitespace-nowrap">
+                                    <span
+                                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold border shadow-sm ${statusObj.badgeClass}`}
+                                    >
+                                      <span className={`w-2 h-2 rounded-full ${statusObj.dotClass} animate-pulse`} />
+                                      <span>{statusObj.label}</span>
+                                    </span>
+                                  </td>
+
+                                  {/* 5. Data de Confirmação de Pagamento */}
+                                  <td className="py-4 px-4 whitespace-nowrap">
+                                    {isPaid && inst.paid_at ? (
+                                      <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
+                                        <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
+                                        <span>
+                                          Quitado em {new Date(inst.paid_at).toLocaleDateString("pt-BR")}
+                                        </span>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                                        <Clock size={13} className="text-gray-500 shrink-0" />
+                                        <span>Aguardando quitação</span>
+                                      </div>
+                                    )}
+                                  </td>
+
+                                  {/* 6. Forma de Pagamento & Comprovante Interno */}
+                                  <td className="py-4 px-4 whitespace-nowrap">
+                                    <div className="flex flex-col gap-1">
+                                      <span className="text-xs text-gray-300 font-semibold flex items-center gap-1">
+                                        <CreditCard size={12} className="text-indigo-400" />
+                                        <span>{getPaymentMethodLabel(inst.payment_method)}</span>
+                                      </span>
+                                      {inst.receipt_url ? (
+                                        <span
+                                          className="text-[10px] font-mono text-emerald-300/90 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 w-fit flex items-center gap-1"
+                                          title={`Código de autenticação: ${inst.receipt_url}`}
+                                        >
+                                          <ShieldCheck size={10} className="text-emerald-400" />
+                                          <span className="truncate max-w-[140px]">{inst.receipt_url}</span>
+                                        </span>
+                                      ) : (
+                                        <span className="text-[10px] text-gray-400 font-mono">
+                                          Doc: #{inst.id.slice(0, 10)}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+
+                                  {/* 7. : Botão Baixar Recibo */}
+                                  <td className="py-4 px-4 whitespace-nowrap text-right">
+                                    {isPaid ? (
+                                      <div className="flex items-center justify-end gap-1.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenReceiptModal(inst)}
+                                          className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold border border-emerald-400/30 flex items-center gap-1.5 transition-all shadow-md shadow-emerald-950/40 cursor-pointer active:scale-95"
+                                          title="Visualizar e Baixar Recibo de Pagamento"
+                                        >
+                                          <Receipt size={13} />
+                                          <span>Baixar Recibo</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => handleDirectPrintReceipt(inst, e)}
+                                          className="p-1.5 rounded-xl bg-white/5 hover:bg-white/15 text-gray-300 hover:text-white border border-white/10 transition-colors cursor-pointer"
+                                          title="Imprimir / Exportar PDF Direto"
+                                        >
+                                          <Printer size={13} />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <span className="text-[11px] text-gray-500 italic">
+                                        Liberado após quitação
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Mobile Installment Card List (block sm:hidden) */}
+                    <div className="block sm:hidden space-y-3 relative z-10">
+                      {filteredInstallments.length === 0 ? (
+                        <div className="p-6 rounded-2xl bg-white/[0.02] border border-white/5 text-center text-xs text-gray-400">
+                          Nenhuma parcela encontrada para este filtro.
+                        </div>
+                      ) : (
+                        filteredInstallments.map((inst) => {
+                          const statusObj = getInstallmentStatus(inst);
+                          const isPaid = statusObj.status === "pago";
+
+                          return (
+                            <div
+                              key={inst.id}
+                              className={`p-4 rounded-2xl border transition-all space-y-3 ${
+                                isPaid
+                                  ? "bg-emerald-950/20 border-emerald-500/30"
+                                  : "bg-white/[0.03] border-white/10"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="w-6 h-6 rounded-lg bg-white/10 text-white font-mono text-xs font-bold flex items-center justify-center shrink-0">
+                                    #{inst.installment_number}
+                                  </span>
+                                  <div>
+                                    <h5 className="font-bold text-white text-xs leading-tight">
+                                      {inst.title}
+                                    </h5>
+                                    {inst.notes && (
+                                      <p className="text-[11px] text-gray-400 mt-0.5 leading-snug">{inst.notes}</p>
+                                    )}
+                                  </div>
+                                </div>
+                                <span
+                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[10px] font-bold border shrink-0 ${statusObj.badgeClass}`}
+                                >
+                                  <span className={`w-1.5 h-1.5 rounded-full ${statusObj.dotClass} animate-pulse`} />
+                                  <span>{statusObj.label}</span>
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2 p-3 rounded-xl bg-black/40 border border-white/5 text-xs">
+                                <div>
+                                  <span className="text-[10px] text-gray-400 uppercase block font-medium">Valor</span>
+                                  <span className="font-black text-white text-sm font-mono">{formatBRL(inst.amount)}</span>
+                                </div>
+                                <div>
+                                  <span className="text-[10px] text-gray-400 uppercase block font-medium">Vencimento</span>
+                                  <span className="font-semibold text-gray-200 text-xs">
+                                    {inst.due_date ? new Date(inst.due_date).toLocaleDateString("pt-BR") : "A combinar"}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-[10px] text-gray-400 uppercase block font-medium">Forma</span>
+                                  <span className="font-semibold text-indigo-300 text-xs">{getPaymentMethodLabel(inst.payment_method)}</span>
+                                </div>
+                                <div>
+                                  <span className="text-[10px] text-gray-400 uppercase block font-medium">Quitação</span>
+                                  <span className={`font-semibold text-xs ${isPaid ? "text-emerald-400" : "text-gray-500"}`}>
+                                    {isPaid && inst.paid_at ? new Date(inst.paid_at).toLocaleDateString("pt-BR") : "Pendente"}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {isPaid ? (
+                                <div className="flex items-center gap-2 pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenReceiptModal(inst)}
+                                    className="flex-1 py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-md shadow-emerald-950/40 flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
+                                  >
+                                    <Receipt size={14} />
+                                    <span>Baixar Recibo Oficial</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleDirectPrintReceipt(inst, e)}
+                                    className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10"
+                                    title="Imprimir"
+                                  >
+                                    <Printer size={14} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <p className="text-[11px] text-gray-500 italic text-center pt-1">
+                                  Recibo liberado após confirmação de pagamento
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* Information & Security Notice Banner (Strictly Read-Only Guarantee) */}
+                    <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-gray-400 relative z-10">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck size={16} className="text-emerald-400 shrink-0" />
+                        <span>
+                          Extrato financeiro com garantia de imutabilidade e integridade contratual.
+                        </span>
+                      </div>
+                      <a
+                        href={`https://wa.me/553598030543?text=${encodeURIComponent(
+                          `Olá Maira! Gostaria de falar sobre o financeiro/faturamento do projeto "${selectedProject.title}".`
+                        )}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white font-semibold text-xs border border-white/10 transition-colors flex items-center gap-1.5 w-fit shrink-0"
+                      >
+                        <MessageSquare size={13} className="text-emerald-400" />
+                        <span>Solicitar 2ª via ou NF-e</span>
+                      </a>
+                    </div>
+                  </div>
+                );
+              })()}
+              </div>
+            )}
+
+            {/* 4. ABA: ATUALIZAÇÕES & NOTAS */}
+            {activeTab === "updates" && (
+              <div className="w-full space-y-6">
+                {/* Card 5: Feed de Updates e Notas */}
               <div className="p-6 sm:p-7 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                   <div>
@@ -2819,8 +3176,13 @@ function ClientPortalContent() {
                   );
                 })()}
               </div>
+              </div>
+            )}
 
-              {/* Card 6: Central de Documentos do Cliente */}
+            {/* 5. ABA: DOCUMENTOS */}
+            {activeTab === "documents" && (
+              <div className="w-full space-y-6">
+                {/* Card 6: Central de Documentos do Cliente */}
               <div className="p-6 sm:p-8 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-2xl space-y-6 relative overflow-hidden">
                 {/* Glowing background accent */}
                 <div className="absolute top-0 right-0 w-80 h-80 bg-pink-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -2985,155 +3347,13 @@ function ClientPortalContent() {
                   </span>
                 </div>
               </div>
-            </div>
-
-            {/* Right Column (4 cols): Quick Links, Deliverables & Actions */}
-            <div className="lg:col-span-4 flex flex-col gap-6">
-              
-              {/* Painel de Links Rápidos & Ambientes */}
-              <div className="p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-white/10">
-                  <h3 className="text-sm font-bold uppercase tracking-wider text-white flex items-center gap-2">
-                    <Link2 size={16} className="text-indigo-400" />
-                    <span>Links Rápidos & Ambientes</span>
-                  </h3>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
-                    {quickLinks.length} {quickLinks.length === 1 ? "link" : "links"}
-                  </span>
-                </div>
-
-                <p className="text-xs text-gray-400 leading-relaxed">
-                  Atalhos diretos e homologados pela desenvolvedora para protótipos, ambientes de teste e documentação técnica.
-                </p>
-
-                <div className="space-y-3">
-                  {quickLinks.map((link) => {
-                    const catInfo = getQuickLinkCategoryInfo(link.category);
-                    const IconComponent = catInfo.icon;
-                    const isCopied = copiedLinkId === link.id;
-
-                    return (
-                      <div
-                        key={link.id}
-                        className={`p-4 rounded-2xl bg-gradient-to-br ${catInfo.btnClass} border transition-all duration-300 hover:shadow-lg hover:shadow-indigo-950/40 group relative flex flex-col justify-between gap-3`}
-                      >
-                        {/* Header: Icon, Label & Status Tag */}
-                        <div className="flex items-start justify-between gap-2.5">
-                          <div className="flex items-center gap-3 overflow-hidden">
-                            <div
-                              className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${catInfo.iconColor} group-hover:scale-105 transition-transform`}
-                            >
-                              <IconComponent size={20} />
-                            </div>
-                            <div className="overflow-hidden">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-indigo-200 transition-colors">
-                                  {link.label}
-                                </h4>
-                              </div>
-                              <p className="text-[11px] text-gray-300 truncate">
-                                {catInfo.sublabel}
-                              </p>
-                            </div>
-                          </div>
-
-                          <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${catInfo.badgeClass}`}
-                          >
-                            {catInfo.statusTag}
-                          </span>
-                        </div>
-
-                        {/* Description */}
-                        {link.description && (
-                          <p className="text-[11px] text-gray-400 leading-relaxed">
-                            {link.description}
-                          </p>
-                        )}
-
-                        {/* Actions: Open in new tab & Copy Link */}
-                        <div className="pt-2 border-t border-white/10 flex items-center justify-between gap-2">
-                          <button
-                            type="button"
-                            onClick={(e) => handleCopyQuickLink(link.id, link.url, e)}
-                            className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold border flex items-center gap-1.5 transition-all cursor-pointer ${
-                              isCopied
-                                ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
-                                : "bg-black/40 text-gray-400 hover:text-white border-white/10 hover:border-white/20"
-                            }`}
-                            title="Copiar URL para a área de transferência"
-                          >
-                            {isCopied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
-                            <span>{isCopied ? "Copiado!" : "Copiar Link"}</span>
-                          </button>
-
-                          <a
-                            href={link.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/20 flex items-center gap-1.5 shadow-sm transition-all group-hover:border-white/40 active:scale-95"
-                          >
-                            <span>{catInfo.actionLabel}</span>
-                            <ExternalLink size={13} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-                          </a>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {quickLinks.length === 0 && (
-                    <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/5 text-center text-xs text-gray-500 space-y-1">
-                      <Link2 size={24} className="mx-auto text-gray-600 mb-1" />
-                      <p className="font-semibold text-gray-400">Nenhum atalho cadastrado</p>
-                      <p className="text-[10px]">Os links de homologação serão disponibilizados nas próximas etapas.</p>
-                    </div>
-                  )}
-                </div>
               </div>
+            )}
 
-              {/* Quick Documents Card */}
-              {documents.length > 0 && (
-                <div className="p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl">
-                  <h3 className="text-sm font-bold uppercase tracking-wider text-gray-400 mb-4 flex items-center justify-between">
-                    <span className="flex items-center gap-2">
-                      <FileCheck size={16} className="text-emerald-400" />
-                      <span>Documentos Prontos</span>
-                    </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
-                      {documents.length} PDF{documents.length > 1 ? "s" : ""}
-                    </span>
-                  </h3>
-
-                  <div className="space-y-2.5">
-                    {documents.slice(0, 3).map((doc) => (
-                      <div
-                        key={doc.id}
-                        className="p-3 rounded-2xl bg-white/[0.02] border border-white/5 hover:border-white/10 flex items-center justify-between gap-3 transition-colors"
-                      >
-                        <div className="flex items-center gap-2.5 overflow-hidden">
-                          <div className="w-8 h-8 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center justify-center shrink-0 text-xs font-bold font-mono">
-                            PDF
-                          </div>
-                          <div className="overflow-hidden">
-                            <p className="text-xs font-bold text-white truncate">{doc.title}</p>
-                            <p className="text-[10px] text-gray-500">{doc.file_size_formatted}</p>
-                          </div>
-                        </div>
-
-                        <button
-                          onClick={() => handleDownloadDocument(doc)}
-                          className="p-2 rounded-xl bg-white/5 hover:bg-pink-600/20 text-gray-400 hover:text-pink-300 transition-colors shrink-0"
-                          title="Baixar PDF"
-                        >
-                          <Download size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Full Contact & FAQ Accordion Section */}
+            {/* 6. ABA: SUPORTE & FAQ */}
+            {activeTab === "support" && (
+              <div className="w-full space-y-6">
+                {/* Full Contact & FAQ Accordion Section */}
               <div className="p-6 sm:p-8 rounded-3xl bg-slate-900/90 border border-indigo-500/30 backdrop-blur-xl shadow-2xl space-y-6 relative overflow-hidden">
                 {/* Header */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-white/10">
@@ -3335,12 +3555,13 @@ function ClientPortalContent() {
                   </div>
                 </div>
               </div>
-            </div>
+              </div>
+            )}
           </div>
         )}
       </main>
 
-      {/* Floating Support & FAQ Button / Quick Drawer */}
+{/* Floating Support & FAQ Button / Quick Drawer */}
       <div className="fixed bottom-6 right-6 z-40">
         <button
           type="button"
