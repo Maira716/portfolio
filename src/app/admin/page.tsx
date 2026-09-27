@@ -2232,11 +2232,42 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const handleDeleteClient = async (id: string) => {
+  const handleDeleteClient = async (id: string, email?: string) => {
     if (!confirm("Tem certeza que deseja excluir este cliente permanentemente? Seus projetos vinculados serão desassociados.")) return;
     try {
-      const { error } = await supabase.from("profiles").delete().eq("id", id);
-      if (error) throw error;
+      // 1. Delete from server API
+      try {
+        await fetch("/api/admin/delete-client", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ clientId: id, email }),
+        });
+      } catch (apiErr) {
+        console.warn("Delete client API failed:", apiErr);
+      }
+
+      // 2. Delete from Supabase DB (safely ignore UUID format mismatch)
+      try {
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+        if (isUUID) {
+          await supabase.from("profiles").delete().eq("id", id);
+        } else if (email) {
+          await supabase.from("profiles").delete().ilike("email", email);
+        }
+      } catch (dbErr) {
+        console.warn("Supabase direct DB delete skipped/failed:", dbErr);
+      }
+
+      // 3. Clean from local storage
+      if (typeof window !== "undefined") {
+        try {
+          const current = JSON.parse(localStorage.getItem("portfolio_admin_clients_metadata_v1") || "{}");
+          delete current[id];
+          if (email) delete current[email.toLowerCase()];
+          localStorage.setItem("portfolio_admin_clients_metadata_v1", JSON.stringify(current));
+        } catch (e) {}
+      }
+
       if (selectedClientDetails?.id === id) {
         setClientDetailsModalOpen(false);
         setSelectedClientDetails(null);
@@ -5841,7 +5872,7 @@ export default function AdminDashboardPage() {
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    handleDeleteClient(c.id);
+                                    handleDeleteClient(c.id, c.email);
                                   }}
                                   className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/20 transition-all flex items-center justify-center cursor-pointer shrink-0"
                                   title="Excluir Cliente"

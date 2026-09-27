@@ -1,17 +1,6 @@
 {
   "clients": [
     {
-      "id": "client-1790529782017",
-      "email": "carlos@empresa.com",
-      "full_name": "Carlos Mendes",
-      "password": "Cliente@123",
-      "phone": "5511999998888",
-      "company": "Mendes Tech",
-      "status": "active",
-      "role": "client",
-      "created_at": "2026-09-27T17:23:02.017Z"
-    },
-    {
       "id": "client-danilo-buess",
       "email": "danilobuess@hotmail.com",
       "full_name": "Danilo Buess",

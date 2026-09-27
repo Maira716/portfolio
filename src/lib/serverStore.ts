@@ -212,6 +212,18 @@ export function saveClient(client: Partial<StoredClient> & { email: string; full
   return clientToSave;
 }
 
+export function deleteClient(clientIdOrEmail: string): boolean {
+  const data = readPortalData();
+  const clean = clientIdOrEmail.trim().toLowerCase();
+  const initialLength = data.clients.length;
+  data.clients = data.clients.filter((c) => c.id !== clientIdOrEmail && c.email.toLowerCase() !== clean);
+  if (data.clients.length !== initialLength) {
+    writePortalData(data);
+    return true;
+  }
+  return false;
+}
+
 export function getProjectsForClient(clientId: string, clientEmail?: string): StoredProject[] {
   const data = readPortalData();
   const cleanEmail = (clientEmail || "").trim().toLowerCase();
