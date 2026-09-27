@@ -8,7 +8,6 @@ import {
   Menu,
   X,
   MessageSquare,
-  Smartphone,
   ChevronRight,
   Home,
   Workflow,
@@ -16,7 +15,6 @@ import {
   Mail,
   DollarSign,
   LogIn,
-  ShieldCheck,
   FolderKanban,
 } from "lucide-react";
 import { usePathname } from "next/navigation";
@@ -26,11 +24,6 @@ export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { user, profile } = useAuth();
   const pathname = usePathname();
-
-  // Fecha o menu automaticamente quando a rota mudar
-  useEffect(() => {
-    setMobileMenuOpen(false);
-  }, [pathname]);
 
   // Fecha o menu ao pressionar ESC
   useEffect(() => {

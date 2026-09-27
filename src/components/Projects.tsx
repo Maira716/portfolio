@@ -291,7 +291,6 @@ function ProjectCaseCard({ project, index }: { project: ProjectItem; index: numb
                 >
                   {activeScreen?.image ? (
                     <div className="w-full h-full relative overflow-hidden bg-[#070a09] flex items-center justify-center pt-8 pb-1 px-1">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={activeScreen.image}
                         alt={activeScreen.screenTitle || "Screen Mockup"}
