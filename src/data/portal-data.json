@@ -20,66 +20,7 @@
       "created_at": "2026-09-27T17:15:28.494Z"
     }
   ],
-  "projects": [
-    {
-      "id": "proj-danilo-saas",
-      "client_id": "client-danilo-buess",
-      "title": "Plataforma Web SaaS & Dashboard",
-      "description": "Desenvolvimento full-stack de ecossistema digital, autenticação RBAC, portal do cliente e relatórios automatizados.",
-      "status": "desenvolvimento",
-      "progress": 65,
-      "start_date": "2026-03-01",
-      "deadline": "2026-05-15",
-      "preview_url": "https://www.mairareis.com.br",
-      "figma_url": "https://figma.com",
-      "repo_url": null,
-      "category": "Web App / SaaS",
-      "created_at": "2026-09-27T17:15:28.494Z"
-    }
-  ],
-  "updates": {
-    "proj-danilo-saas": [
-      {
-        "id": "upd-test-realtime",
-        "project_id": "proj-danilo-saas",
-        "title": "Deploy em Homologação do Módulo de Pagamentos",
-        "content": "Concluído o deploy e homologação com emissão de recibos e chave SHA-256.",
-        "category": "launch",
-        "created_at": "2026-09-27T17:28:52.248Z"
-      },
-      {
-        "id": "upd-init-1",
-        "project_id": "proj-danilo-saas",
-        "title": "Integração do Portal do Cliente e Notificações em Tempo Real",
-        "content": "Concluída a arquitetura de sincronização instantânea de dados, painel financeiro, timeline de homologação e canal direto de notificações via WhatsApp.",
-        "category": "milestone",
-        "version_tag": "v1.2.0",
-        "created_at": "2026-09-27T17:28:09.347Z"
-      }
-    ]
-  },
-  "notifications": [
-    {
-      "id": "notif-1790530132636-ni47",
-      "project_id": "proj-danilo-saas",
-      "project_title": "Plataforma Web SaaS & Dashboard",
-      "client_id": "client-danilo-buess",
-      "title": "📌 Nova atualização: Deploy em Homologação do Módulo de Pagamentos",
-      "message": "Concluído o deploy e homologação com emissão de recibos e chave SHA-256.",
-      "type": "update",
-      "read": false,
-      "created_at": "2026-09-27T17:28:52.636Z"
-    },
-    {
-      "id": "notif-init-1",
-      "client_email": "danilobuess@hotmail.com",
-      "project_id": "proj-danilo-saas",
-      "project_title": "Plataforma Web SaaS & Dashboard",
-      "title": "🚀 Nova atualização no projeto!",
-      "message": "O progresso do seu projeto foi atualizado para 65% com novos entregáveis disponíveis.",
-      "type": "update",
-      "read": false,
-      "created_at": "2026-09-27T17:28:09.347Z"
-    }
-  ]
+  "projects": [],
+  "updates": {},
+  "notifications": []
 }

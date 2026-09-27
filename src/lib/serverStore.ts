@@ -86,51 +86,9 @@ const DEFAULT_DATA: PortalData = {
       created_at: new Date().toISOString(),
     },
   ],
-  projects: [
-    {
-      id: "proj-danilo-saas",
-      client_id: "client-danilo-buess",
-      client_email: "danilobuess@hotmail.com",
-      title: "Plataforma Web SaaS & Dashboard",
-      description: "Desenvolvimento full-stack de ecossistema digital, autenticação RBAC, portal do cliente e relatórios automatizados.",
-      status: "desenvolvimento",
-      progress: 65,
-      start_date: "2026-03-01",
-      deadline: "2026-05-15",
-      preview_url: "https://www.mairareis.com.br",
-      figma_url: "https://figma.com",
-      repo_url: null,
-      category: "Web App / SaaS",
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ],
-  updates: {
-    "proj-danilo-saas": [
-      {
-        id: "upd-init-1",
-        project_id: "proj-danilo-saas",
-        title: "Integração do Portal do Cliente e Notificações em Tempo Real",
-        content: "Concluída a arquitetura de sincronização instantânea de dados, painel financeiro, timeline de homologação e canal direto de notificações via WhatsApp.",
-        category: "milestone",
-        version_tag: "v1.2.0",
-        created_at: new Date().toISOString(),
-      },
-    ],
-  },
-  notifications: [
-    {
-      id: "notif-init-1",
-      client_email: "danilobuess@hotmail.com",
-      project_id: "proj-danilo-saas",
-      project_title: "Plataforma Web SaaS & Dashboard",
-      title: "🚀 Nova atualização no projeto!",
-      message: "O progresso do seu projeto foi atualizado para 65% com novos entregáveis disponíveis.",
-      type: "update",
-      read: false,
-      created_at: new Date().toISOString(),
-    },
-  ],
+  projects: [],
+  updates: {},
+  notifications: [],
 };
 
 function ensureDirectoryExists(filePath: string) {
@@ -151,9 +109,9 @@ export function readPortalData(): PortalData {
     const parsed = JSON.parse(raw);
     
     if (!parsed.clients || !Array.isArray(parsed.clients)) parsed.clients = DEFAULT_DATA.clients;
-    if (!parsed.projects || !Array.isArray(parsed.projects)) parsed.projects = DEFAULT_DATA.projects;
-    if (!parsed.updates || typeof parsed.updates !== "object") parsed.updates = DEFAULT_DATA.updates;
-    if (!parsed.notifications || !Array.isArray(parsed.notifications)) parsed.notifications = DEFAULT_DATA.notifications;
+    if (!parsed.projects || !Array.isArray(parsed.projects)) parsed.projects = [];
+    if (!parsed.updates || typeof parsed.updates !== "object") parsed.updates = {};
+    if (!parsed.notifications || !Array.isArray(parsed.notifications)) parsed.notifications = [];
 
     const hasDanilo = parsed.clients.some((c: StoredClient) => c.email?.toLowerCase() === "danilobuess@hotmail.com");
     if (!hasDanilo) {
@@ -285,7 +243,6 @@ export function saveUpdateForProject(projectId: string, update: StoredUpdate): S
   
   data.updates[projectId] = current;
 
-  // Find project to link notification
   const proj = data.projects.find((p) => p.id === projectId);
   const notif: StoredNotification = {
     id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
@@ -313,7 +270,7 @@ export function getNotificationsForClient(clientId?: string, clientEmail?: strin
       !clientId ||
       n.client_id === clientId ||
       (cleanEmail && n.client_email?.toLowerCase() === cleanEmail) ||
-      !n.client_id // broadcast
+      !n.client_id
   );
 }
 
