@@ -185,32 +185,59 @@ export function deleteClient(clientIdOrEmail: string): boolean {
 export function getProjectsForClient(clientId: string, clientEmail?: string): StoredProject[] {
   const data = readPortalData();
   const cleanEmail = (clientEmail || "").trim().toLowerCase();
-  return data.projects.filter(
-    (p) =>
-      p.client_id === clientId ||
-      (cleanEmail && p.client_email?.toLowerCase() === cleanEmail) ||
-      (cleanEmail && p.client_id === cleanEmail)
+  const cleanClientId = (clientId || "").trim().toLowerCase();
+
+  const matchedClient = data.clients.find(
+    (c) =>
+      (clientId && c.id === clientId) ||
+      (cleanClientId && c.id?.toLowerCase() === cleanClientId) ||
+      (cleanEmail && c.email?.toLowerCase() === cleanEmail)
   );
+
+  return data.projects.filter((p) => {
+    if (clientId && p.client_id === clientId) return true;
+    if (cleanClientId && p.client_id?.toLowerCase() === cleanClientId) return true;
+    if (cleanEmail && p.client_email?.toLowerCase() === cleanEmail) return true;
+    if (cleanEmail && p.client_id?.toLowerCase() === cleanEmail) return true;
+    if (matchedClient) {
+      if (p.client_id === matchedClient.id) return true;
+      if (p.client_email?.toLowerCase() === matchedClient.email?.toLowerCase()) return true;
+      if ((p as any).client_name && matchedClient.full_name && (p as any).client_name.toLowerCase() === matchedClient.full_name.toLowerCase()) return true;
+    }
+    return false;
+  });
 }
 
 export function saveProject(proj: Partial<StoredProject> & { title: string; client_id: string }): StoredProject {
   const data = readPortalData();
   const existingIdx = data.projects.findIndex((p) => (proj.id && p.id === proj.id) || (p.title === proj.title && p.client_id === proj.client_id));
 
-  const projectToSave: StoredProject = {
+  // Find linked client to attach email and name if available
+  const matchedClient = data.clients.find(
+    (c) =>
+      c.id === proj.client_id ||
+      (c.email && c.email.toLowerCase() === proj.client_id.toLowerCase()) ||
+      (proj.client_email && c.email.toLowerCase() === proj.client_email.toLowerCase())
+  );
+
+  const clientEmail = proj.client_email || matchedClient?.email || (proj.client_id.includes("@") ? proj.client_id : (existingIdx >= 0 ? data.projects[existingIdx].client_email : undefined));
+  const clientName = (proj as any).client_name || matchedClient?.full_name || (existingIdx >= 0 ? (data.projects[existingIdx] as any).client_name : undefined);
+
+  const projectToSave: StoredProject & { client_name?: string } = {
     id: proj.id || (existingIdx >= 0 ? data.projects[existingIdx].id : `proj-${Date.now()}`),
     client_id: proj.client_id,
-    client_email: proj.client_email || (existingIdx >= 0 ? data.projects[existingIdx].client_email : undefined),
+    client_email: clientEmail,
+    client_name: clientName,
     title: proj.title.trim(),
     description: proj.description !== undefined ? proj.description : (existingIdx >= 0 ? data.projects[existingIdx].description : null),
     status: proj.status || (existingIdx >= 0 ? data.projects[existingIdx].status : "planejamento"),
-    progress: proj.progress !== undefined ? proj.progress : (existingIdx >= 0 ? data.projects[existingIdx].progress : 0),
+    progress: proj.progress !== undefined ? Number(proj.progress) : (existingIdx >= 0 ? data.projects[existingIdx].progress : 0),
     start_date: proj.start_date !== undefined ? proj.start_date : (existingIdx >= 0 ? data.projects[existingIdx].start_date : null),
     deadline: proj.deadline !== undefined ? proj.deadline : (existingIdx >= 0 ? data.projects[existingIdx].deadline : null),
     preview_url: proj.preview_url !== undefined ? proj.preview_url : (existingIdx >= 0 ? data.projects[existingIdx].preview_url : null),
     figma_url: proj.figma_url !== undefined ? proj.figma_url : (existingIdx >= 0 ? data.projects[existingIdx].figma_url : null),
     repo_url: proj.repo_url !== undefined ? proj.repo_url : (existingIdx >= 0 ? data.projects[existingIdx].repo_url : null),
-    category: proj.category !== undefined ? proj.category : (existingIdx >= 0 ? data.projects[existingIdx].category : "Web App"),
+    category: proj.category !== undefined ? proj.category : (existingIdx >= 0 ? data.projects[existingIdx].category : "Mobile App (React Native)"),
     created_at: existingIdx >= 0 ? data.projects[existingIdx].created_at : new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };

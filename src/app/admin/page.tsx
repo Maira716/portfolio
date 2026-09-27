@@ -207,6 +207,8 @@ export const getStatusCandidates = (status: ProjectStatus): string[] => {
 export interface Project {
   id: string;
   client_id: string | null;
+  client_email?: string | null;
+  client_name?: string | null;
   title: string;
   description: string | null;
   status: ProjectStatus;
@@ -219,6 +221,25 @@ export interface Project {
   category: string | null;
   created_at: string;
 }
+
+export const matchProjectToClient = (p: Project | null | undefined, client: Profile | null | undefined): boolean => {
+  if (!p || !client) return false;
+  const cleanClientEmail = (client.email || "").toLowerCase().trim();
+  const cleanClientId = (client.id || "").toLowerCase().trim();
+  const pClientId = (p.client_id || "").toLowerCase().trim();
+  const pClientEmail = (p.client_email || "").toLowerCase().trim();
+  const cleanName = (client.full_name || "").toLowerCase().trim();
+  const pClientName = (p.client_name || "").toLowerCase().trim();
+
+  return Boolean(
+    (client.id && p.client_id === client.id) ||
+    (cleanClientId && pClientId === cleanClientId) ||
+    (cleanClientEmail && pClientId === cleanClientEmail) ||
+    (cleanClientEmail && pClientEmail === cleanClientEmail) ||
+    (cleanName && pClientName === cleanName) ||
+    (cleanName && pClientId && pClientId.includes(cleanName))
+  );
+};
 
 export const getStatusConfig = (status: string) => {
   switch (status) {
@@ -1218,6 +1239,24 @@ export default function AdminDashboardPage() {
       for (const p of dbProjects) {
         mergedMap.set(p.id, p);
       }
+
+      // Fetch from resilient server API
+      try {
+        const pRes = await fetch("/api/portal/projects?isAdmin=true");
+        if (pRes.ok) {
+          const pJson = await pRes.json();
+          if (pJson.projects && Array.isArray(pJson.projects)) {
+            for (const sp of pJson.projects) {
+              if (!mergedMap.has(sp.id)) {
+                mergedMap.set(sp.id, { ...sp, status: normalizeProjectStatus(sp.status) });
+              }
+            }
+          }
+        }
+      } catch (pApiErr) {
+        console.warn("Could not fetch projects from server API:", pApiErr);
+      }
+
       for (const p of filteredLocal) {
         if (!mergedMap.has(p.id)) {
           mergedMap.set(p.id, { ...p, status: normalizeProjectStatus(p.status) });
@@ -1568,12 +1607,43 @@ export default function AdminDashboardPage() {
           localStorage.setItem("portfolio_local_projects_v1", JSON.stringify(updatedLocal));
         } catch (e) {}
       } else if (editingProject) {
-        // Clean any matching local cache
         try {
           const existingLocal: Project[] = JSON.parse(localStorage.getItem("portfolio_local_projects_v1") || "[]");
           const updatedLocal = existingLocal.filter((p) => p.id !== editingProject.id && p.title !== pTitle);
           localStorage.setItem("portfolio_local_projects_v1", JSON.stringify(updatedLocal));
         } catch (e) {}
+      }
+
+      // Always sync with server API and store
+      try {
+        const matchedClient = clients.find(
+          (c) =>
+            c.id === pClientId ||
+            (c.email && c.email.toLowerCase() === pClientId?.toLowerCase())
+        );
+        const apiPayload = {
+          id: editingProject?.id || `proj-${Date.now()}`,
+          title: pTitle,
+          description: pDescription,
+          client_id: pClientId || (matchedClient ? matchedClient.id : null),
+          client_email: matchedClient?.email || (pClientId?.includes("@") ? pClientId : null),
+          client_name: matchedClient?.full_name || null,
+          progress: Number(pProgress),
+          start_date: pStartDate || null,
+          deadline: pDeadline || null,
+          preview_url: pPreviewUrl || null,
+          figma_url: pFigmaUrl || null,
+          repo_url: pRepoUrl || null,
+          category: pCategory,
+          status: pStatus,
+        };
+        await fetch("/api/admin/projects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(apiPayload),
+        });
+      } catch (apiSaveErr) {
+        console.warn("Could not save project to server API:", apiSaveErr);
       }
 
       setProjectModalOpen(false);
@@ -3765,7 +3835,7 @@ export default function AdminDashboardPage() {
                   ) : (
                     <div className="space-y-3.5">
                       {filteredProjects.map((proj) => {
-                        const client = clients.find((c) => c.id === proj.client_id);
+                        const client = clients.find((c) => matchProjectToClient(proj, c));
                         const isSelected = selectedProject?.id === proj.id;
                         const statusCfg = getStatusConfig(proj.status);
                         const projMilestones = milestones.filter((m) => m.project_id === proj.id);
@@ -3891,20 +3961,22 @@ export default function AdminDashboardPage() {
                               </div>
 
                               {/* Progress Bar Section */}
-                              <div className="space-y-1.5">
-                                <div className="flex justify-between items-center text-xs font-semibold">
-                                  <span className="text-gray-400">Progresso Geral da Entrega</span>
-                                  <span className="font-bold text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-lg border border-indigo-500/20 text-[11px] font-mono">
-                                    {proj.progress}%
-                                  </span>
+                              {proj.progress > 0 && (
+                                <div className="space-y-1.5">
+                                  <div className="flex justify-between items-center text-xs font-semibold">
+                                    <span className="text-gray-400">Progresso Geral da Entrega</span>
+                                    <span className="font-bold text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-lg border border-indigo-500/20 text-[11px] font-mono">
+                                      {proj.progress}%
+                                    </span>
+                                  </div>
+                                  <div className="w-full h-2 bg-black/60 rounded-full overflow-hidden p-0.5 border border-white/5">
+                                    <div
+                                      className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full transition-all duration-500 shadow-sm shadow-indigo-500/50"
+                                      style={{ width: `${proj.progress}%` }}
+                                    />
+                                  </div>
                                 </div>
-                                <div className="w-full h-2 bg-black/60 rounded-full overflow-hidden p-0.5 border border-white/5">
-                                  <div
-                                    className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full transition-all duration-500 shadow-sm shadow-indigo-500/50"
-                                    style={{ width: `${Math.max(4, proj.progress)}%` }}
-                                  />
-                                </div>
-                              </div>
+                              )}
                             </div>
 
                             {/* Action Footer */}
@@ -4123,17 +4195,19 @@ export default function AdminDashboardPage() {
                                 </p>
                               </div>
 
-                              <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5 col-span-2 sm:col-span-1">
-                                <span className="text-[10px] text-gray-400 uppercase font-bold block mb-0.5">
-                                  Progresso ({selectedProject.progress}%)
-                                </span>
-                                <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden mt-1.5">
-                                  <div
-                                    className="h-full bg-gradient-to-r from-indigo-500 to-pink-500 rounded-full"
-                                    style={{ width: `${selectedProject.progress}%` }}
-                                  />
+                              {selectedProject.progress > 0 && (
+                                <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5 col-span-2 sm:col-span-1">
+                                  <span className="text-[10px] text-gray-400 uppercase font-bold block mb-0.5">
+                                    Progresso ({selectedProject.progress}%)
+                                  </span>
+                                  <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden mt-1.5">
+                                    <div
+                                      className="h-full bg-gradient-to-r from-indigo-500 to-pink-500 rounded-full"
+                                      style={{ width: `${selectedProject.progress}%` }}
+                                    />
+                                  </div>
                                 </div>
-                              </div>
+                              )}
                             </div>
 
                             {/* URLs Links */}
@@ -5760,7 +5834,7 @@ export default function AdminDashboardPage() {
                   <div className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                       {paginatedClients.map((c) => {
-                        const clientProjects = projects.filter((p) => p.client_id === c.id);
+                        const clientProjects = projects.filter((p) => matchProjectToClient(p, c));
                         const isBlocked = c.status === "blocked";
 
                         return (
@@ -7531,7 +7605,7 @@ export default function AdminDashboardPage() {
                 {/* Section: Associated Projects */}
                 <div>
                   {(() => {
-                    const clientProjects = projects.filter((p) => p.client_id === selectedClientDetails.id);
+                    const clientProjects = projects.filter((p) => matchProjectToClient(p, selectedClientDetails));
 
                     return (
                       <div className="space-y-3">
@@ -7594,18 +7668,20 @@ export default function AdminDashboardPage() {
                                   </p>
 
                                   {/* Progress bar */}
-                                  <div className="space-y-1 mb-3">
-                                    <div className="flex justify-between text-[10px] text-gray-400 font-semibold">
-                                      <span>Progresso</span>
-                                      <span className="text-purple-300">{p.progress}%</span>
+                                  {p.progress > 0 && (
+                                    <div className="space-y-1 mb-3">
+                                      <div className="flex justify-between text-[10px] text-gray-400 font-semibold">
+                                        <span>Progresso</span>
+                                        <span className="text-purple-300">{p.progress}%</span>
+                                      </div>
+                                      <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                                        <div
+                                          className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full"
+                                          style={{ width: `${p.progress}%` }}
+                                        />
+                                      </div>
                                     </div>
-                                    <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-                                      <div
-                                        className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full"
-                                        style={{ width: `${p.progress}%` }}
-                                      />
-                                    </div>
-                                  </div>
+                                  )}
                                 </div>
 
                                 {/* Project Links & Actions */}
@@ -9117,20 +9193,22 @@ export default function AdminDashboardPage() {
                             )}
 
                             {/* Progress bar */}
-                            <div className="space-y-2 mb-6">
-                              <div className="flex justify-between text-xs font-bold">
-                                <span className="text-gray-300">Progresso Geral das Sprints</span>
-                                <span className="text-indigo-400 font-mono text-sm">
-                                  {previewProject.progress}% Concluído
-                                </span>
+                            {previewProject.progress > 0 && (
+                              <div className="space-y-2 mb-6">
+                                <div className="flex justify-between text-xs font-bold">
+                                  <span className="text-gray-300">Progresso Geral das Sprints</span>
+                                  <span className="text-indigo-400 font-mono text-sm">
+                                    {previewProject.progress}% Concluído
+                                  </span>
+                                </div>
+                                <div className="w-full h-2.5 bg-black/50 rounded-full overflow-hidden p-0.5 border border-white/5">
+                                  <div
+                                    className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full transition-all duration-500 shadow-sm shadow-indigo-500/50"
+                                    style={{ width: `${previewProject.progress}%` }}
+                                  />
+                                </div>
                               </div>
-                              <div className="w-full h-2.5 bg-black/50 rounded-full overflow-hidden p-0.5 border border-white/5">
-                                <div
-                                  className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full transition-all duration-500 shadow-sm shadow-indigo-500/50"
-                                  style={{ width: `${previewProject.progress}%` }}
-                                />
-                              </div>
-                            </div>
+                            )}
 
                             {/* Key Stats Row */}
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-4 border-t border-white/5">

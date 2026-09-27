@@ -20,7 +20,26 @@
       "created_at": "2026-09-27T17:15:28.494Z"
     }
   ],
-  "projects": [],
+  "projects": [
+    {
+      "id": "proj-prontuario-gearhead",
+      "client_id": "client-danilo-buess",
+      "client_email": "danilobuess@hotmail.com",
+      "client_name": "Danilo Buess",
+      "title": "Prontuario GearHead",
+      "description": "Aplicativo Mobile para prontuário e gestão veicular GearHead.",
+      "status": "em_andamento",
+      "progress": 0,
+      "start_date": "2026-09-27",
+      "deadline": "2028-07-09",
+      "preview_url": null,
+      "figma_url": null,
+      "repo_url": null,
+      "category": "Mobile App (React Native)",
+      "created_at": "2026-09-27T18:00:00.000Z",
+      "updated_at": "2026-09-27T18:00:00.000Z"
+    }
+  ],
   "updates": {},
   "notifications": []
 }

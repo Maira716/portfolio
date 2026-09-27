@@ -1103,14 +1103,20 @@ function ClientPortalContent() {
 
       try {
         const localProjects: Project[] = JSON.parse(localStorage.getItem("portfolio_local_projects_v1") || "[]");
+        const cleanUserEmail = user.email?.toLowerCase().trim() || "";
+        const cleanUserName = profile?.full_name?.toLowerCase().trim() || "";
+
         for (const lp of localProjects) {
           if (!clientProjects.some((cp) => cp.id === lp.id || (cp.title === lp.title && cp.client_id === lp.client_id))) {
-            if (
+            const matchesClient =
               profile?.role === "admin" ||
               !lp.client_id ||
               lp.client_id === user.id ||
-              (user.email && lp.client_id === user.email.toLowerCase())
-            ) {
+              (cleanUserEmail && lp.client_id?.toLowerCase() === cleanUserEmail) ||
+              (cleanUserEmail && (lp as any).client_email?.toLowerCase() === cleanUserEmail) ||
+              (cleanUserName && (lp as any).client_name?.toLowerCase() === cleanUserName);
+
+            if (matchesClient) {
               clientProjects.push(lp);
             }
           }
@@ -1530,9 +1536,11 @@ function ClientPortalContent() {
                 }`}
               >
                 <span>{proj.title}</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10">
-                  {proj.progress}%
-                </span>
+                {proj.progress > 0 && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10">
+                    {proj.progress}%
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -1612,37 +1620,39 @@ function ClientPortalContent() {
                     </div>
 
                     {/* Consolidated Progress Bar */}
-                    <div className="space-y-2.5 relative z-10">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <span className="text-xs font-bold text-gray-300 uppercase tracking-wider block">
-                            Progresso Geral Consolidado
-                          </span>
-                          <span className="text-[11px] text-gray-400">
-                            {completedMilestonesCount} de {milestones.length || 5} entregas concluídas • Fase {currentPhaseIndex} de 5
-                          </span>
+                    {selectedProject.progress > 0 && (
+                      <div className="space-y-2.5 relative z-10">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <span className="text-xs font-bold text-gray-300 uppercase tracking-wider block">
+                              Progresso Geral Consolidado
+                            </span>
+                            <span className="text-[11px] text-gray-400">
+                              {completedMilestonesCount} de {milestones.length || 5} entregas concluídas • Fase {currentPhaseIndex} de 5
+                            </span>
+                          </div>
+
+                          <div className="flex items-baseline gap-1">
+                            <span className="text-2xl sm:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 font-mono">
+                              {selectedProject.progress}%
+                            </span>
+                            <span className="text-xs font-bold text-purple-300">Concluído</span>
+                          </div>
                         </div>
 
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-2xl sm:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 font-mono">
-                            {selectedProject.progress}%
-                          </span>
-                          <span className="text-xs font-bold text-purple-300">Concluído</span>
+                        {/* Animated Progress Bar */}
+                        <div className="w-full h-4 bg-black/60 rounded-full overflow-hidden p-1 border border-white/10 shadow-inner">
+                          <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${selectedProject.progress}%` }}
+                            transition={{ duration: 1.2, ease: "easeOut" }}
+                            className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 shadow-lg shadow-indigo-500/40 relative"
+                          >
+                            <div className="absolute inset-0 bg-white/20 animate-pulse rounded-full" />
+                          </motion.div>
                         </div>
                       </div>
-
-                      {/* Animated Progress Bar */}
-                      <div className="w-full h-4 bg-black/60 rounded-full overflow-hidden p-1 border border-white/10 shadow-inner">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${selectedProject.progress}%` }}
-                          transition={{ duration: 1.2, ease: "easeOut" }}
-                          className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 shadow-lg shadow-indigo-500/40 relative"
-                        >
-                          <div className="absolute inset-0 bg-white/20 animate-pulse rounded-full" />
-                        </motion.div>
-                      </div>
-                    </div>
+                    )}
 
                     {/* Key Stats & Metadata Grid */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 border-t border-white/10 relative z-10">
