@@ -1078,11 +1078,18 @@ export default function AdminDashboardPage() {
 
   // Modals
   const [projectModalOpen, setProjectModalOpen] = useState(false);
+  const [projectDetailsModalOpen, setProjectDetailsModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [milestoneModalOpen, setMilestoneModalOpen] = useState(false);
   const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(null);
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [clientModalOpen, setClientModalOpen] = useState(false);
+
+  const handleOpenProjectDetails = (proj: Project) => {
+    setSelectedProject(proj);
+    fetchProjectDetails(proj.id);
+    setProjectDetailsModalOpen(true);
+  };
 
   // Form states for project
   const [pTitle, setPTitle] = useState("");
@@ -3804,451 +3811,1602 @@ export default function AdminDashboardPage() {
                 </div>
               </div>
 
-              {/* Main Content: Split List and Detail/Scope Console */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                {/* Left Column: Filtered Project List */}
-                <div className="lg:col-span-5 flex flex-col gap-3">
-                  <div className="flex items-center justify-between px-1">
-                    <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                      Resultados ({filteredProjects.length})
-                    </span>
-                    <span className="text-[11px] text-gray-500">
-                      Clique para inspecionar ou gerenciar
-                    </span>
+              {/* Main Content: Projects Grid */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between px-1">
+                  <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                    Resultados ({filteredProjects.length})
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    Clique em um projeto para abrir o console de gestão completo
+                  </span>
+                </div>
+
+                {filteredProjects.length === 0 ? (
+                  <div className="p-12 text-center rounded-3xl bg-slate-900/50 border border-white/10">
+                    <FolderKanban size={40} className="mx-auto text-gray-600 mb-3" />
+                    <p className="text-sm font-semibold text-gray-300">Nenhum projeto encontrado</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Tente ajustar os termos de busca ou os filtros de status e cliente.
+                    </p>
+                    <button
+                      onClick={() => handleOpenProjectModal()}
+                      className="mt-4 px-4 py-2 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 text-xs font-bold border border-indigo-500/30 inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus size={14} />
+                      <span>Cadastrar Projeto</span>
+                    </button>
                   </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {filteredProjects.map((proj) => {
+                      const client = clients.find((c) => matchProjectToClient(proj, c));
+                      const isSelected = selectedProject?.id === proj.id;
+                      const statusCfg = getStatusConfig(proj.status);
+                      const projMilestones = milestones.filter((m) => m.project_id === proj.id);
+                      const completedMilestones = projMilestones.filter((m) => m.completed).length;
+                      const cat = (proj.category || "").toLowerCase();
 
-                  {filteredProjects.length === 0 ? (
-                    <div className="p-10 text-center rounded-3xl bg-slate-900/50 border border-white/10">
-                      <FolderKanban size={36} className="mx-auto text-gray-600 mb-3" />
-                      <p className="text-sm font-semibold text-gray-300">Nenhum projeto encontrado</p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Tente ajustar os termos de busca ou os filtros de status e cliente.
-                      </p>
-                      <button
-                        onClick={() => handleOpenProjectModal()}
-                        className="mt-4 px-4 py-2 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 text-xs font-bold border border-indigo-500/30 inline-flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <Plus size={14} />
-                        <span>Cadastrar Projeto</span>
-                      </button>
+                      // Category visual identity
+                      const isMobile = cat.includes("mobile") || cat.includes("app") || cat.includes("react native") || cat.includes("flutter");
+                      const isWeb = cat.includes("saas") || cat.includes("painel") || cat.includes("web") || cat.includes("plataforma");
+                      const isDesign = cat.includes("design") || cat.includes("ui") || cat.includes("ux") || cat.includes("figma");
+
+                      const iconGradient = isMobile
+                        ? "from-violet-600 via-indigo-600 to-purple-700 shadow-violet-500/20"
+                        : isWeb
+                        ? "from-cyan-600 via-blue-600 to-indigo-700 shadow-cyan-500/20"
+                        : isDesign
+                        ? "from-pink-600 via-rose-600 to-purple-700 shadow-pink-500/20"
+                        : "from-indigo-600 via-purple-600 to-slate-800 shadow-indigo-500/20";
+
+                      return (
+                        <div
+                          key={proj.id}
+                          onClick={() => handleOpenProjectDetails(proj)}
+                          className="p-5 rounded-3xl bg-slate-900/80 border border-white/10 hover:border-indigo-500/50 hover:bg-slate-900/95 transition-all duration-200 cursor-pointer shadow-lg hover:shadow-indigo-500/10 flex flex-col justify-between group space-y-4"
+                        >
+                          <div className="space-y-3.5">
+                            {/* Card Top: Icon, Category & Status */}
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div
+                                  className={`w-11 h-11 rounded-2xl bg-gradient-to-tr ${iconGradient} flex items-center justify-center text-white shadow-lg shrink-0 group-hover:scale-105 transition-transform`}
+                                >
+                                  {isMobile ? (
+                                    <Smartphone size={20} />
+                                  ) : isWeb ? (
+                                    <Globe size={20} />
+                                  ) : isDesign ? (
+                                    <Palette size={20} />
+                                  ) : (
+                                    <FolderKanban size={20} />
+                                  )}
+                                </div>
+                                <div className="min-w-0">
+                                  <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block truncate">
+                                    {proj.category || "Desenvolvimento"}
+                                  </span>
+                                  <h4 className="text-base font-bold text-white truncate group-hover:text-indigo-300 transition-colors">
+                                    {proj.title}
+                                  </h4>
+                                </div>
+                              </div>
+
+                              <span
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border shrink-0 ${statusCfg.badgeClass}`}
+                              >
+                                <span className={`w-1.5 h-1.5 rounded-full ${statusCfg.dotClass} animate-pulse`} />
+                                {statusCfg.label}
+                              </span>
+                            </div>
+
+                            {/* Client & Deadline Context */}
+                            <div className="p-3 rounded-2xl bg-black/40 border border-white/5 space-y-2 text-xs">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-purple-500 to-indigo-500 flex items-center justify-center text-[11px] font-bold text-white shrink-0">
+                                    {client?.full_name?.charAt(0) || client?.email?.charAt(0).toUpperCase() || "C"}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="font-semibold text-white truncate text-xs">
+                                      {client?.full_name || client?.email || "Sem cliente atribuído"}
+                                    </p>
+                                    {client?.company && (
+                                      <p className="text-[10px] text-indigo-300 truncate">
+                                        🏢 {client.company}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-1 text-[11px] text-gray-400 font-medium">
+                                  <Calendar size={12} className="text-gray-500" />
+                                  <span>
+                                    {proj.deadline
+                                      ? `Prazo: ${new Date(proj.deadline).toLocaleDateString("pt-BR")}`
+                                      : "Sem prazo"}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Quick Stats Pills */}
+                              <div className="pt-2 border-t border-white/5 flex items-center gap-2 flex-wrap text-[11px] text-gray-400">
+                                <span className="px-2 py-0.5 rounded-lg bg-white/5 border border-white/5 flex items-center gap-1 text-gray-300 font-medium">
+                                  <Sparkles size={11} className="text-amber-400" />
+                                  <span>{projMilestones.length > 0 ? `${completedMilestones}/${projMilestones.length} fases` : "Fases a definir"}</span>
+                                </span>
+                                {proj.preview_url && (
+                                  <span className="px-2 py-0.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 flex items-center gap-1 font-medium">
+                                    <Globe size={11} />
+                                    <span>Link Ativo</span>
+                                  </span>
+                                )}
+                                {proj.figma_url && (
+                                  <span className="px-2 py-0.5 rounded-lg bg-pink-500/10 border border-pink-500/20 text-pink-300 flex items-center gap-1 font-medium">
+                                    <Palette size={11} />
+                                    <span>Figma</span>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Progress Bar Section (only if progress > 0) */}
+                            {proj.progress > 0 && (
+                              <div className="space-y-1.5">
+                                <div className="flex justify-between items-center text-xs font-semibold">
+                                  <span className="text-gray-400">Progresso Geral</span>
+                                  <span className="font-bold text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-lg border border-indigo-500/20 text-[11px] font-mono">
+                                    {proj.progress}%
+                                  </span>
+                                </div>
+                                <div className="w-full h-2 bg-black/60 rounded-full overflow-hidden p-0.5 border border-white/5">
+                                  <div
+                                    className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full transition-all duration-500 shadow-sm shadow-indigo-500/50"
+                                    style={{ width: `${proj.progress}%` }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Action Footer */}
+                          <div className="pt-3 border-t border-white/5 flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenProjectDetails(proj);
+                              }}
+                              className="flex-1 py-2 px-3 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/35 text-indigo-300 hover:text-indigo-200 border border-indigo-500/30 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                            >
+                              <Layers size={13} />
+                              <span>Abrir Projeto</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenClientPreview(proj);
+                              }}
+                              className="py-2 px-3 rounded-xl bg-purple-600/15 hover:bg-purple-600/30 text-purple-300 hover:text-purple-200 border border-purple-500/30 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                              title="Simular visualização do cliente"
+                            >
+                              <Eye size={13} />
+                              <span className="hidden sm:inline">Ver como Cliente</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenProjectModal(proj);
+                              }}
+                              className="py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                              title="Editar dados do projeto"
+                            >
+                              <Edit2 size={13} className="text-gray-400" />
+                              <span>Editar</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB: CLIENTS MANAGEMENT */}
+          {activeTab === "clients" && (
+            <div className="space-y-6">
+              {/* Clients Header & Controls Bar */}
+              <div className="p-6 sm:p-7 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                    <Users size={20} className="text-purple-400" />
+                    <span>Gestão de Clientes ({clients.length})</span>
+                  </h3>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Controle cadastros, status de acesso (Ativo/Bloqueado) e projetos vinculados a cada cliente.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => handleOpenClientModal()}
+                    className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-lg shadow-purple-600/30 transition-all active:scale-95 cursor-pointer"
+                  >
+                    <Plus size={16} />
+                    <span>Cadastrar Novo Cliente</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Search & Status Filters */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-900/60 p-4 rounded-2xl border border-white/10">
+                <div className="relative w-full sm:w-80">
+                  <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    value={clientSearchQuery}
+                    onChange={(e) => {
+                      setClientSearchQuery(e.target.value);
+                      setClientCurrentPage(1);
+                    }}
+                    placeholder="Buscar por nome, e-mail, empresa..."
+                    className="w-full pl-9 pr-4 py-2 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-gray-500 outline-none focus:border-purple-500"
+                  />
+                </div>
+
+                {/* Filter Pills */}
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  {(["all", "active", "blocked"] as const).map((filterKey) => (
+                    <button
+                      key={filterKey}
+                      onClick={() => {
+                        setClientStatusFilter(filterKey);
+                        setClientCurrentPage(1);
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border cursor-pointer ${
+                        clientStatusFilter === filterKey
+                          ? "bg-purple-600 text-white border-purple-400 shadow-md shadow-purple-600/20"
+                          : "bg-slate-900/80 text-gray-400 border-white/10 hover:text-white"
+                      }`}
+                    >
+                      {filterKey === "all" && `Todos (${clients.length})`}
+                      {filterKey === "active" && `Ativos (${clients.filter((c) => c.status !== "blocked").length})`}
+                      {filterKey === "blocked" && `Bloqueados (${clients.filter((c) => c.status === "blocked").length})`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Clients Grid */}
+              {(() => {
+                const filteredClients = clients.filter((c) => {
+                  const matchesSearch =
+                    (c.full_name?.toLowerCase().includes(clientSearchQuery.toLowerCase()) || false) ||
+                    (c.email?.toLowerCase().includes(clientSearchQuery.toLowerCase()) || false) ||
+                    (c.company?.toLowerCase().includes(clientSearchQuery.toLowerCase()) || false) ||
+                    (c.phone?.includes(clientSearchQuery) || false);
+
+                  const matchesStatus =
+                    clientStatusFilter === "all" ||
+                    (clientStatusFilter === "active" && c.status !== "blocked") ||
+                    (clientStatusFilter === "blocked" && c.status === "blocked");
+
+                  return matchesSearch && matchesStatus;
+                });
+
+                const clientsPerPage = 6;
+                const totalClientPages = Math.ceil(filteredClients.length / clientsPerPage) || 1;
+                const paginatedClients = filteredClients.slice(
+                  (clientCurrentPage - 1) * clientsPerPage,
+                  clientCurrentPage * clientsPerPage
+                );
+
+                if (filteredClients.length === 0) {
+                  return (
+                    <div className="p-12 text-center rounded-3xl bg-slate-900/60 border border-white/10 space-y-3">
+                      <Users size={36} className="text-gray-600 mx-auto" />
+                      <p className="text-sm font-semibold text-gray-300">Nenhum cliente encontrado.</p>
+                      <p className="text-xs text-gray-500">Tente ajustar seus termos de busca ou cadastrar um novo cliente.</p>
                     </div>
-                  ) : (
-                    <div className="space-y-3.5">
-                      {filteredProjects.map((proj) => {
-                        const client = clients.find((c) => matchProjectToClient(proj, c));
-                        const isSelected = selectedProject?.id === proj.id;
-                        const statusCfg = getStatusConfig(proj.status);
-                        const projMilestones = milestones.filter((m) => m.project_id === proj.id);
-                        const completedMilestones = projMilestones.filter((m) => m.completed).length;
-                        const cat = (proj.category || "").toLowerCase();
+                  );
+                }
 
-                        // Category visual identity
-                        const isMobile = cat.includes("mobile") || cat.includes("app") || cat.includes("react native") || cat.includes("flutter");
-                        const isWeb = cat.includes("saas") || cat.includes("painel") || cat.includes("web") || cat.includes("plataforma");
-                        const isDesign = cat.includes("design") || cat.includes("ui") || cat.includes("ux") || cat.includes("figma");
-
-                        const iconGradient = isMobile
-                          ? "from-violet-600 via-indigo-600 to-purple-700 shadow-violet-500/20"
-                          : isWeb
-                          ? "from-cyan-600 via-blue-600 to-indigo-700 shadow-cyan-500/20"
-                          : isDesign
-                          ? "from-pink-600 via-rose-600 to-purple-700 shadow-pink-500/20"
-                          : "from-indigo-600 via-purple-600 to-slate-800 shadow-indigo-500/20";
+                return (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                      {paginatedClients.map((c) => {
+                        const clientProjects = projects.filter((p) => matchProjectToClient(p, c));
+                        const isBlocked = c.status === "blocked";
 
                         return (
                           <div
-                            key={proj.id}
-                            onClick={() => {
-                              setSelectedProject(proj);
-                              fetchProjectDetails(proj.id);
-                            }}
-                            className={`p-5 rounded-3xl border transition-all cursor-pointer relative group flex flex-col justify-between gap-3.5 ${
-                              isSelected
-                                ? "bg-gradient-to-br from-indigo-950/70 via-slate-900/95 to-purple-950/50 border-indigo-500 shadow-2xl shadow-indigo-500/20 ring-2 ring-indigo-500/50 -translate-y-0.5"
-                                : "bg-slate-900/80 border-white/10 hover:border-indigo-500/40 hover:bg-slate-900/95 hover:shadow-xl hover:shadow-black/40 hover:-translate-y-0.5"
-                            }`}
+                            key={c.id}
+                            onClick={() => handleOpenClientDetails(c)}
+                            className="p-5 sm:p-6 rounded-3xl bg-slate-900/80 border border-white/10 hover:border-purple-500/50 transition-all flex flex-col justify-between gap-4 shadow-lg group hover:bg-slate-900/95 cursor-pointer hover:shadow-purple-500/10 hover:-translate-y-0.5"
                           >
-                            {/* Top Header Row: Category Avatar + Title + Status Badge */}
-                            <div className="space-y-3">
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="flex items-center gap-3 min-w-0">
-                                  <div className={`w-11 h-11 rounded-2xl bg-gradient-to-br ${iconGradient} flex items-center justify-center font-bold text-white shadow-lg shrink-0 group-hover:scale-105 transition-transform`}>
-                                    {isMobile ? (
-                                      <Smartphone size={19} />
-                                    ) : isWeb ? (
-                                      <Globe size={19} />
-                                    ) : isDesign ? (
-                                      <Palette size={19} />
-                                    ) : (
-                                      <FolderKanban size={19} />
-                                    )}
+                            <div>
+                              {/* Header Card: Avatar, Name, Status Badge */}
+                              <div className="flex items-start justify-between gap-3 mb-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-600 flex items-center justify-center font-black text-sm text-white shadow-md shrink-0 group-hover:scale-105 transition-transform">
+                                    {c.full_name?.charAt(0) || c.email.charAt(0).toUpperCase()}
                                   </div>
-
-                                  <div className="min-w-0">
-                                    <div className="flex items-center gap-2 mb-0.5">
-                                      <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-white/5 text-gray-300 border border-white/10">
-                                        {proj.category || "Software"}
-                                      </span>
-                                      {isSelected && (
-                                        <span className="text-[10px] font-bold text-indigo-300 bg-indigo-500/20 px-2 py-0.5 rounded-full border border-indigo-500/30 flex items-center gap-1">
-                                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
-                                          Em Edição
-                                        </span>
-                                      )}
-                                    </div>
-                                    <h4 className="text-sm sm:text-base font-bold text-white group-hover:text-indigo-300 transition-colors truncate">
-                                      {proj.title}
+                                  <div>
+                                    <h4 className="text-sm font-bold text-white group-hover:text-purple-300 transition-colors">
+                                      {c.full_name || "Sem Nome"}
                                     </h4>
+                                    {c.company ? (
+                                      <span className="text-[11px] text-indigo-300 font-semibold block">
+                                        🏢 {c.company}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[11px] text-gray-500">Pessoa Física</span>
+                                    )}
                                   </div>
                                 </div>
 
                                 <span
-                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border shrink-0 ${statusCfg.badgeClass}`}
+                                  className={`text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-full border flex items-center gap-1 shrink-0 ${
+                                    isBlocked
+                                      ? "bg-rose-500/15 text-rose-300 border-rose-500/30"
+                                      : "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                                  }`}
                                 >
-                                  <span className={`w-2 h-2 rounded-full ${statusCfg.dotClass} animate-pulse`} />
-                                  {statusCfg.label}
+                                  <span className={`w-1.5 h-1.5 rounded-full ${isBlocked ? "bg-rose-400" : "bg-emerald-400 animate-pulse"}`} />
+                                  {isBlocked ? "Bloqueado" : "Ativo"}
                                 </span>
                               </div>
 
-                              {/* Client & Deadline Context Card */}
-                              <div className="p-3 rounded-2xl bg-black/40 border border-white/5 space-y-2 text-xs">
-                                <div className="flex items-center justify-between gap-2 flex-wrap">
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-purple-500 to-indigo-500 flex items-center justify-center text-[11px] font-bold text-white shrink-0">
-                                      {client?.full_name?.charAt(0) || client?.email?.charAt(0).toUpperCase() || "C"}
-                                    </div>
-                                    <div className="min-w-0">
-                                      <p className="font-semibold text-white truncate text-xs">
-                                        {client?.full_name || client?.email || "Sem cliente atribuído"}
-                                      </p>
-                                      {client?.company && (
-                                        <p className="text-[10px] text-indigo-300 truncate">
-                                          🏢 {client.company}
-                                        </p>
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  <div className="flex items-center gap-1 text-[11px] text-gray-400 font-medium">
-                                    <Calendar size={12} className="text-gray-500" />
-                                    <span>
-                                      {proj.deadline
-                                        ? `Prazo: ${new Date(proj.deadline).toLocaleDateString("pt-BR")}`
-                                        : "Sem prazo definido"}
+                              {/* Contact Info */}
+                              <div className="space-y-1.5 text-xs text-gray-400 my-3 pt-2 border-t border-white/5">
+                                <div className="flex items-center gap-2">
+                                  <Mail size={13} className="text-gray-500 shrink-0" />
+                                  <span className="truncate text-gray-300">{c.email}</span>
+                                </div>
+                                {c.phone && (
+                                  <div className="flex items-center gap-2">
+                                    <Phone size={13} className="text-emerald-400 shrink-0" />
+                                    <span className="text-emerald-400 font-medium">
+                                      {c.phone}
                                     </span>
                                   </div>
-                                </div>
-
-                                {/* Quick Stats Pills */}
-                                <div className="pt-2 border-t border-white/5 flex items-center gap-2 flex-wrap text-[11px] text-gray-400">
-                                  <span className="px-2 py-0.5 rounded-lg bg-white/5 border border-white/5 flex items-center gap-1 text-gray-300 font-medium">
-                                    <Sparkles size={11} className="text-amber-400" />
-                                    <span>{projMilestones.length > 0 ? `${completedMilestones}/${projMilestones.length} fases` : "Fases a definir"}</span>
-                                  </span>
-                                  {proj.preview_url && (
-                                    <span className="px-2 py-0.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 flex items-center gap-1 font-medium">
-                                      <Globe size={11} />
-                                      <span>Link Ativo</span>
-                                    </span>
-                                  )}
-                                  {proj.figma_url && (
-                                    <span className="px-2 py-0.5 rounded-lg bg-pink-500/10 border border-pink-500/20 text-pink-300 flex items-center gap-1 font-medium">
-                                      <Palette size={11} />
-                                      <span>Figma</span>
-                                    </span>
-                                  )}
-                                </div>
+                                )}
                               </div>
-
-                              {/* Progress Bar Section */}
-                              {proj.progress > 0 && (
-                                <div className="space-y-1.5">
-                                  <div className="flex justify-between items-center text-xs font-semibold">
-                                    <span className="text-gray-400">Progresso Geral da Entrega</span>
-                                    <span className="font-bold text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-lg border border-indigo-500/20 text-[11px] font-mono">
-                                      {proj.progress}%
-                                    </span>
-                                  </div>
-                                  <div className="w-full h-2 bg-black/60 rounded-full overflow-hidden p-0.5 border border-white/5">
-                                    <div
-                                      className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full transition-all duration-500 shadow-sm shadow-indigo-500/50"
-                                      style={{ width: `${proj.progress}%` }}
-                                    />
-                                  </div>
-                                </div>
-                              )}
                             </div>
 
-                            {/* Action Footer */}
-                            <div className="pt-2 border-t border-white/5 flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleOpenClientPreview(proj);
-                                }}
-                                className="flex-1 py-2 px-3 rounded-xl bg-purple-600/15 hover:bg-purple-600/30 text-purple-300 hover:text-purple-200 border border-purple-500/30 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
-                                title="Simular visualização do cliente"
-                              >
-                                <Eye size={13} />
-                                <span>Ver como Cliente</span>
-                              </button>
+                            {/* Bottom Card Footer: Projects Count & Actions */}
+                            <div className="pt-3 border-t border-white/10 space-y-3">
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-gray-400">Projetos Atribuídos:</span>
+                                <span className="font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20">
+                                  {clientProjects.length} {clientProjects.length === 1 ? "projeto" : "projetos"}
+                                </span>
+                              </div>
 
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleOpenProjectModal(proj);
-                                }}
-                                className="py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-                                title="Editar dados básicos do projeto"
-                              >
-                                <Edit2 size={13} className="text-gray-400" />
-                                <span>Editar</span>
-                              </button>
+                              {/* Action Buttons Toolbar */}
+                              <div className="flex items-center gap-2 pt-0.5">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenClientModal(c);
+                                  }}
+                                  className="py-2 px-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-200 hover:text-white text-xs font-semibold border border-white/10 transition-all flex items-center justify-center gap-1 cursor-pointer shrink-0"
+                                >
+                                  <Edit2 size={12} className="text-purple-400" />
+                                  <span>Editar</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenWhatsAppChatOnly(c);
+                                  }}
+                                  className="py-2 px-2.5 rounded-xl bg-emerald-600/15 hover:bg-emerald-600/25 text-emerald-300 text-xs font-semibold border border-emerald-500/25 transition-all flex items-center justify-center gap-1 cursor-pointer shrink-0"
+                                  title="Abrir conversa direta no WhatsApp"
+                                >
+                                  <MessageCircle size={12} className="text-emerald-400" />
+                                  <span>WhatsApp</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSendClientAccess(c);
+                                  }}
+                                  className="flex-1 py-2 px-2.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 hover:text-indigo-200 text-xs font-semibold border border-indigo-500/30 transition-all flex items-center justify-center gap-1 cursor-pointer"
+                                  title="Enviar dados de acesso (link, e-mail e senha padrão) no WhatsApp"
+                                >
+                                  <Send size={12} className="text-indigo-400" />
+                                  <span className="truncate">Enviar Acesso</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteClient(c.id, c.email);
+                                  }}
+                                  className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/20 transition-all flex items-center justify-center cursor-pointer shrink-0"
+                                  title="Excluir Cliente"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
                             </div>
                           </div>
                         );
                       })}
                     </div>
-                  )}
+
+                    {/* Pagination Controls */}
+                    {totalClientPages > 1 && (
+                      <div className="p-4 rounded-2xl bg-slate-900/60 border border-white/10 flex items-center justify-between gap-4">
+                        <span className="text-xs text-gray-400">
+                          Mostrando página <strong className="text-white">{clientCurrentPage}</strong> de{" "}
+                          <strong className="text-white">{totalClientPages}</strong> ({filteredClients.length} clientes)
+                        </span>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            disabled={clientCurrentPage === 1}
+                            onClick={() => setClientCurrentPage((prev) => Math.max(1, prev - 1))}
+                            className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-40 disabled:pointer-events-none text-xs text-white border border-white/10 transition-colors"
+                          >
+                            ← Anterior
+                          </button>
+
+                          {Array.from({ length: totalClientPages }).map((_, i) => (
+                            <button
+                              key={i}
+                              onClick={() => setClientCurrentPage(i + 1)}
+                              className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${
+                                clientCurrentPage === i + 1
+                                  ? "bg-purple-600 text-white"
+                                  : "bg-white/5 text-gray-400 hover:text-white"
+                              }`}
+                            >
+                              {i + 1}
+                            </button>
+                          ))}
+
+                          <button
+                            disabled={clientCurrentPage === totalClientPages}
+                            onClick={() => setClientCurrentPage((prev) => Math.min(totalClientPages, prev + 1))}
+                            className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-40 disabled:pointer-events-none text-xs text-white border border-white/10 transition-colors"
+                          >
+                            Próxima →
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+
+
+          {/* TAB: PROPOSALS & PLANS */}
+          {activeTab === "proposals" && (
+            <div className="p-6 sm:p-7 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <DollarSign size={18} className="text-emerald-400" />
+                    <span>Orçamentos & Planos Cadastrados</span>
+                  </h3>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Modelos de pacotes de serviços disponíveis no seu portfólio.
+                  </p>
+                </div>
+                <Link
+                  href="/valores"
+                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-semibold border border-white/10 flex items-center gap-1.5"
+                >
+                  <span>Ver Página Pública de Valores</span>
+                  <ArrowUpRight size={13} />
+                </Link>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
+                <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/5">
+                  <span className="text-xs font-bold text-blue-400 uppercase">Landing Page Express</span>
+                  <p className="text-xl font-extrabold text-white mt-1">R$ 1.500</p>
+                  <p className="text-[11px] text-emerald-400 font-semibold mt-1">3x sem juros ou 50% / 50%</p>
+                  <p className="text-xs text-gray-400 mt-2">Design sob medida no Figma, Next.js, SEO e WhatsApp integrado.</p>
+                </div>
+                <div className="p-5 rounded-2xl bg-white/[0.02] border border-indigo-500/30 bg-indigo-950/20">
+                  <span className="text-xs font-bold text-indigo-400 uppercase">Software/App (Contrato 12m)</span>
+                  <p className="text-xl font-extrabold text-white mt-1">12x de R$ 350 <span className="text-xs text-gray-400 font-normal">/mês</span></p>
+                  <p className="text-[11px] text-purple-300 font-semibold mt-1">1 update mensal + suporte</p>
+                  <p className="text-xs text-gray-400 mt-2">+ R$ 1.500 opcional para entrega definitiva do código-fonte.</p>
+                </div>
+                <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/5">
+                  <span className="text-xs font-bold text-teal-400 uppercase">Redesign & Consultoria UX/UI</span>
+                  <p className="text-xl font-extrabold text-white mt-1">R$ 3.500</p>
+                  <p className="text-[11px] text-emerald-400 font-semibold mt-1">3x sem juros ou 50% / 50%</p>
+                  <p className="text-xs text-gray-400 mt-2">Prazo 30 a 60 dias • Auditoria, novos fluxos e protótipo Figma.</p>
+                </div>
+                <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/5">
+                  <span className="text-xs font-bold text-cyan-400 uppercase">Pós-Contrato (12 meses)</span>
+                  <p className="text-xl font-extrabold text-white mt-1">R$ 250 ou R$ 350</p>
+                  <p className="text-[11px] text-cyan-300 font-semibold mt-1">Hospedagem vs Manutenção</p>
+                  <p className="text-xs text-gray-400 mt-2">R$ 250 apenas servidores no ar, ou R$ 350 com suporte e updates.</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: FINANCE & BILLING */}
+          {activeTab === "finance" && (
+            <div className="space-y-8">
+              {/* Financial Welcome & Header */}
+              <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-emerald-950/40 via-indigo-950/30 to-slate-900/80 border border-emerald-500/30 shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-6 backdrop-blur-xl">
+                <div className="relative z-10">
+                  <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold mb-3">
+                    <DollarSign size={14} className="text-emerald-400" />
+                    <span>Módulo de Faturamento & Controle Financeiro</span>
+                  </div>
+                  <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-white tracking-tight">
+                    Gestão Manual de Pagamentos 💳
+                  </h1>
+                  <p className="text-xs sm:text-sm text-gray-300 mt-1.5 max-w-2xl leading-relaxed">
+                    Controle de contratos, emissão de parcelas, registro de quitações em tempo real, cálculo de saldos e controle de inadimplência.
+                  </p>
                 </div>
 
-                {/* Right Column: Selected Project Scope & Management Console */}
-                <div className="lg:col-span-7 flex flex-col gap-6">
-                  {selectedProject ? (
-                    <>
-                      {/* Project Scope & Control Console */}
-                      {(() => {
-                        const selectedClient = clients.find((c) => c.id === selectedProject.client_id);
-                        const statusCfg = getStatusConfig(selectedProject.status);
+                <div className="relative z-10 flex items-center gap-3 shrink-0 flex-wrap">
+                  {selectedProject && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenInstallmentModal(selectedProject.id)}
+                      className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-900/30 border border-emerald-400/30 flex items-center gap-2 cursor-pointer transition-all active:scale-95"
+                    >
+                      <Plus size={15} />
+                      <span>Nova Parcela ({selectedProject.title.slice(0, 16)}...)</span>
+                    </button>
+                  )}
+                </div>
+              </div>
 
-                        return (
-                          <div className="p-6 sm:p-7 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-6">
-                            {/* Header: Title, Category & Action buttons */}
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-white/10">
-                              <div>
-                                <div className="flex items-center gap-2.5 flex-wrap">
-                                  <h2 className="text-xl sm:text-2xl font-bold text-white">
-                                    {selectedProject.title}
-                                  </h2>
-                                  <span
-                                    className={`inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold border ${statusCfg.badgeClass}`}
-                                  >
-                                    <span className={`w-2 h-2 rounded-full ${statusCfg.dotClass} animate-pulse`} />
-                                    {statusCfg.label}
-                                  </span>
-                                </div>
-                                <p className="text-xs text-gray-400 mt-1 flex items-center gap-2">
-                                  <span className="text-indigo-300 font-medium">{selectedProject.category || "Desenvolvimento de Software"}</span>
-                                  <span>•</span>
-                                  <span>Criado em {new Date(selectedProject.created_at).toLocaleDateString("pt-BR")}</span>
-                                </p>
-                              </div>
+              {/* Global Financial KPI Cards */}
+              {(() => {
+                let globalContractTotal = 0;
+                let globalTotalPaid = 0;
+                let globalRemaining = 0;
+                let globalOverdue = 0;
+                let globalInstallmentsCount = 0;
+                let globalPaidCount = 0;
 
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenClientPreview(selectedProject)}
-                                  className="px-3.5 py-2 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 text-purple-300 text-xs font-bold border border-purple-500/40 flex items-center gap-1.5 transition-colors cursor-pointer shadow-lg shadow-purple-900/20"
-                                  title="Simular visualização do cliente em modo somente leitura"
-                                >
-                                  <Eye size={14} />
-                                  <span>Visualizar como Cliente</span>
-                                </button>
-                                <button
-                                  onClick={() => handleOpenProjectModal(selectedProject)}
-                                  className="px-4 py-2 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 text-xs font-bold border border-indigo-500/40 flex items-center gap-1.5 transition-colors cursor-pointer"
-                                >
-                                  <Edit2 size={14} />
-                                  <span>Editar Escopo</span>
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteProject(selectedProject.id)}
-                                  className="p-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 transition-colors cursor-pointer"
-                                  title="Excluir projeto"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              </div>
-                            </div>
+                for (const p of projects) {
+                  const pFin = projectFinances[p.id] || generateDefaultProjectFinances(p);
+                  const summary = calculateFinancialSummary(pFin);
+                  globalContractTotal += summary.contractValue;
+                  globalTotalPaid += summary.totalPaid;
+                  globalRemaining += summary.remainingBalance;
+                  globalOverdue += summary.totalOverdue;
+                  globalInstallmentsCount += summary.installmentsCount;
+                  globalPaidCount += summary.paidCount;
+                }
 
-                            {/* Client Association Card */}
-                            <div className="p-4 rounded-2xl bg-black/40 border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                              <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white font-bold text-sm">
-                                  {selectedClient?.full_name?.charAt(0) || "C"}
-                                </div>
-                                <div>
-                                  <span className="text-[10px] uppercase font-bold text-gray-400 block">
-                                    Cliente Associado:
-                                  </span>
-                                  <p className="text-xs sm:text-sm font-bold text-white">
-                                    {selectedClient?.full_name || "Nenhum cliente vinculado (Projeto Geral/Admin)"}
-                                  </p>
-                                  {selectedClient?.company && (
-                                    <p className="text-[11px] text-purple-300">{selectedClient.company}</p>
+                const globalPercent =
+                  globalContractTotal > 0
+                    ? Math.round((globalTotalPaid / globalContractTotal) * 100)
+                    : 0;
+
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+                    {/* 1. Faturamento Total Contratado */}
+                    <div className="p-5 sm:p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-lg">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                          Total em Contratos
+                        </span>
+                        <div className="p-2.5 rounded-2xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                          <DollarSign size={18} />
+                        </div>
+                      </div>
+                      <p className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                        {formatBRL(globalContractTotal)}
+                      </p>
+                      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[11px] text-gray-400">
+                        <span>{projects.length} contratos ativos</span>
+                        <span className="text-indigo-400 font-semibold">{globalInstallmentsCount} parcelas</span>
+                      </div>
+                    </div>
+
+                    {/* 2. Total Recebido / Quitado */}
+                    <div className="p-5 sm:p-6 rounded-3xl bg-slate-900/80 border border-emerald-500/30 backdrop-blur-xl shadow-lg">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
+                          Receita Realizada (Pago)
+                        </span>
+                        <div className="p-2.5 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          <CheckCircle2 size={18} />
+                        </div>
+                      </div>
+                      <p className="text-2xl sm:text-3xl font-black text-emerald-400 tracking-tight">
+                        {formatBRL(globalTotalPaid)}
+                      </p>
+                      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[11px] text-emerald-300/80">
+                        <span>{globalPercent}% do montante</span>
+                        <span className="font-bold">{globalPaidCount} parcelas pagas</span>
+                      </div>
+                    </div>
+
+                    {/* 3. Saldo a Receber */}
+                    <div className="p-5 sm:p-6 rounded-3xl bg-slate-900/80 border border-purple-500/30 backdrop-blur-xl shadow-lg">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-bold text-purple-300 uppercase tracking-wider">
+                          Contas a Receber
+                        </span>
+                        <div className="p-2.5 rounded-2xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                          <Clock size={18} />
+                        </div>
+                      </div>
+                      <p className="text-2xl sm:text-3xl font-black text-purple-300 tracking-tight">
+                        {formatBRL(globalRemaining)}
+                      </p>
+                      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[11px] text-gray-400">
+                        <span>{100 - globalPercent}% em aberto</span>
+                        <span className="text-purple-400 font-semibold">Fluxo futuro</span>
+                      </div>
+                    </div>
+
+                    {/* 4. Total em Atraso */}
+                    <div
+                      className={`p-5 sm:p-6 rounded-3xl border backdrop-blur-xl shadow-lg ${
+                        globalOverdue > 0
+                          ? "bg-rose-950/20 border-rose-500/40"
+                          : "bg-slate-900/80 border-white/10"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <span
+                          className={`text-xs font-bold uppercase tracking-wider ${
+                            globalOverdue > 0 ? "text-rose-400" : "text-gray-400"
+                          }`}
+                        >
+                          Inadimplência / Atraso
+                        </span>
+                        <div
+                          className={`p-2.5 rounded-2xl border ${
+                            globalOverdue > 0
+                              ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                              : "bg-white/5 text-gray-400 border-white/10"
+                          }`}
+                        >
+                          <AlertCircle size={18} />
+                        </div>
+                      </div>
+                      <p
+                        className={`text-2xl sm:text-3xl font-black tracking-tight ${
+                          globalOverdue > 0 ? "text-rose-400" : "text-gray-300"
+                        }`}
+                      >
+                        {formatBRL(globalOverdue)}
+                      </p>
+                      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[11px] text-gray-400">
+                        <span>
+                          {globalOverdue > 0 ? "⚠️ Requer contato" : "Em dia"}
+                        </span>
+                        <span className={globalOverdue > 0 ? "text-rose-400 font-bold" : "text-emerald-400 font-bold"}>
+                          {globalOverdue > 0 ? "Parcelas vencidas" : "Zero pendências"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Search, Filter & Project Selector Bar */}
+              <div className="p-5 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl flex flex-col md:flex-row items-center justify-between gap-4">
+                {/* Search */}
+                <div className="relative w-full md:w-80">
+                  <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    value={financeSearchQuery}
+                    onChange={(e) => setFinanceSearchQuery(e.target.value)}
+                    placeholder="Buscar por parcela, cliente ou comprovante..."
+                    className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-gray-500 outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                {/* Filters */}
+                <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+                  {/* Filter by Project */}
+                  <select
+                    value={financeProjectFilter}
+                    onChange={(e) => setFinanceProjectFilter(e.target.value)}
+                    className="px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs text-white outline-none focus:border-emerald-500 cursor-pointer"
+                  >
+                    <option value="all">Todos os Projetos ({projects.length})</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.title}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Filter by Installment Status */}
+                  <div className="flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/10">
+                    {[
+                      { key: "all", label: "Todas" },
+                      { key: "pago", label: "Pagas" },
+                      { key: "em_dia", label: "Em dia" },
+                      { key: "pendente", label: "Pendentes" },
+                      { key: "vencido", label: "Vencidas" },
+                    ].map((f) => (
+                      <button
+                        key={f.key}
+                        type="button"
+                        onClick={() => setFinanceStatusFilter(f.key as any)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                          financeStatusFilter === f.key
+                            ? "bg-emerald-600 text-white shadow-sm"
+                            : "text-gray-400 hover:text-white"
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Master Installments Table Across Projects */}
+              {(() => {
+                // Collect all installments from projects matching filters
+                const allList: { project: Project; installment: ProjectInstallment }[] = [];
+
+                for (const p of projects) {
+                  if (financeProjectFilter !== "all" && p.id !== financeProjectFilter) continue;
+                  const pFin = projectFinances[p.id] || generateDefaultProjectFinances(p);
+                  for (const inst of pFin.installments) {
+                    const st = getInstallmentStatus(inst);
+                    if (financeStatusFilter !== "all" && st.status !== financeStatusFilter) continue;
+
+                    const client = clients.find((c) => c.id === p.client_id);
+                    const searchTarget = financeSearchQuery.toLowerCase().trim();
+
+                    const matchesSearch =
+                      !searchTarget ||
+                      inst.title.toLowerCase().includes(searchTarget) ||
+                      p.title.toLowerCase().includes(searchTarget) ||
+                      (client?.full_name?.toLowerCase().includes(searchTarget) || false) ||
+                      (inst.receipt_url?.toLowerCase().includes(searchTarget) || false) ||
+                      (inst.notes?.toLowerCase().includes(searchTarget) || false) ||
+                      inst.amount.toString().includes(searchTarget);
+
+                    if (matchesSearch) {
+                      allList.push({ project: p, installment: inst });
+                    }
+                  }
+                }
+
+                // Sort: Overdue and pending first, then by due_date
+                allList.sort((a, b) => {
+                  if (a.installment.paid_at && !b.installment.paid_at) return 1;
+                  if (!a.installment.paid_at && b.installment.paid_at) return -1;
+                  return (a.installment.due_date || "").localeCompare(b.installment.due_date || "");
+                });
+
+                if (allList.length === 0) {
+                  return (
+                    <div className="p-12 rounded-3xl bg-slate-900/80 border border-white/10 text-center space-y-3">
+                      <DollarSign size={36} className="mx-auto text-gray-600" />
+                      <h4 className="text-base font-bold text-white">Nenhuma parcela encontrada</h4>
+                      <p className="text-xs text-gray-400 max-w-md mx-auto">
+                        Não há parcelas que correspondam aos filtros de busca selecionados.
+                      </p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        <FileText size={16} className="text-emerald-400" />
+                        <span>Listagem Geral de Parcelas ({allList.length})</span>
+                      </h3>
+                      <span className="text-xs text-gray-400">
+                        Total listado:{" "}
+                        <strong className="text-emerald-400">
+                          {formatBRL(allList.reduce((acc, curr) => acc + curr.installment.amount, 0))}
+                        </strong>
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-2xl border border-white/10">
+                      <table className="w-full text-left text-xs text-gray-300 min-w-[850px]">
+                        <thead className="bg-black/60 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-white/10">
+                          <tr>
+                            <th className="py-3 px-3.5">Projeto / Cliente</th>
+                            <th className="py-3 px-3.5">Parcela / Título</th>
+                            <th className="py-3 px-3.5">Valor (R$)</th>
+                            <th className="py-3 px-3.5">Vencimento</th>
+                            <th className="py-3 px-3.5">Quitação</th>
+                            <th className="py-3 px-3.5">Método</th>
+                            <th className="py-3 px-3.5">Status</th>
+                            <th className="py-3 px-3.5">Comprovante</th>
+                            <th className="py-3 px-3.5 text-right">Ações</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5 bg-black/20">
+                          {allList.map(({ project, installment: inst }) => {
+                            const st = getInstallmentStatus(inst);
+                            const isPaid = st.status === "pago";
+                            const client = clients.find((c) => c.id === project.client_id);
+
+                            return (
+                              <tr
+                                key={inst.id}
+                                className={`hover:bg-white/[0.02] transition-colors ${
+                                  isPaid ? "bg-emerald-950/5" : ""
+                                }`}
+                              >
+                                {/* Project & Client */}
+                                <td className="py-3 px-3.5">
+                                  <div className="font-bold text-white">{project.title}</div>
+                                  <div className="text-[10px] text-gray-400">
+                                    {client?.full_name || "Sem cliente"} {client?.company ? `(${client.company})` : ""}
+                                  </div>
+                                </td>
+
+                                {/* Installment Title */}
+                                <td className="py-3 px-3.5">
+                                  <span className="font-semibold text-gray-200">{inst.title}</span>
+                                  {inst.notes && (
+                                    <p className="text-[10px] text-gray-500 mt-0.5">{inst.notes}</p>
                                   )}
-                                </div>
-                              </div>
+                                </td>
 
-                              {selectedClient && (
-                                <div className="flex items-center gap-2">
-                                  {selectedClient.phone && (
+                                {/* Amount */}
+                                <td className="py-3 px-3.5 font-extrabold text-white font-mono">
+                                  {formatBRL(inst.amount)}
+                                </td>
+
+                                {/* Due Date */}
+                                <td className="py-3 px-3.5 font-medium">
+                                  <span
+                                    className={
+                                      st.status === "vencido"
+                                        ? "text-rose-400 font-bold"
+                                        : "text-gray-300"
+                                    }
+                                  >
+                                    {inst.due_date
+                                      ? new Date(inst.due_date).toLocaleDateString("pt-BR")
+                                      : "Não definida"}
+                                  </span>
+                                </td>
+
+                                {/* Paid At */}
+                                <td className="py-3 px-3.5">
+                                  {inst.paid_at ? (
+                                    <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                                      <CheckCircle2 size={12} />
+                                      <span>
+                                        {new Date(inst.paid_at).toLocaleDateString("pt-BR")}
+                                      </span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-gray-500 italic text-[11px]">
+                                      Pendente
+                                    </span>
+                                  )}
+                                </td>
+
+                                {/* Payment Method */}
+                                <td className="py-3 px-3.5">
+                                  <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[11px] font-semibold text-gray-300">
+                                    {getPaymentMethodLabel(inst.payment_method)}
+                                  </span>
+                                </td>
+
+                                {/* Status Badge */}
+                                <td className="py-3 px-3.5">
+                                  <span
+                                    className={`px-2.5 py-1 rounded-full text-[10px] font-bold border inline-flex items-center gap-1 ${st.badgeClass}`}
+                                  >
+                                    <span className={`w-1.5 h-1.5 rounded-full ${st.dotClass}`} />
+                                    <span>{st.label}</span>
+                                  </span>
+                                </td>
+
+                                {/* Receipt */}
+                                <td className="py-3 px-3.5">
+                                  {inst.receipt_url ? (
                                     <a
-                                      href={`https://wa.me/${selectedClient.phone.replace(/\D/g, "")}`}
+                                      href={
+                                        inst.receipt_url.startsWith("http")
+                                          ? inst.receipt_url
+                                          : undefined
+                                      }
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs font-bold border border-emerald-500/30 flex items-center gap-1.5 transition-colors"
+                                      onClick={(e) => {
+                                        if (!inst.receipt_url?.startsWith("http")) {
+                                          e.preventDefault();
+                                          alert(`Comprovante / Código:\n${inst.receipt_url}`);
+                                        }
+                                      }}
+                                      className="px-2 py-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/20 text-[10px] font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer"
+                                      title={inst.receipt_url}
                                     >
-                                      <MessageCircle size={13} />
-                                      <span>WhatsApp</span>
+                                      <FileText size={11} />
+                                      <span className="max-w-[80px] truncate">
+                                        {inst.receipt_url}
+                                      </span>
                                     </a>
+                                  ) : (
+                                    <span className="text-gray-600 text-[11px]">—</span>
                                   )}
-                                  <button
-                                    onClick={() => handleOpenClientDetails(selectedClient)}
-                                    className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-semibold transition-colors cursor-pointer"
-                                  >
-                                    Ver Cliente
-                                  </button>
-                                </div>
-                              )}
-                            </div>
+                                </td>
 
-                            {/* Scope & Description Panel */}
-                            <div className="space-y-2">
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
-                                  <FileText size={14} className="text-indigo-400" />
-                                  Descrição & Escopo do Projeto
-                                </span>
-                              </div>
-                              <div className="p-4 rounded-2xl bg-black/40 border border-white/5">
-                                {selectedProject.description ? (
-                                  <p className="text-xs sm:text-sm text-gray-300 whitespace-pre-line leading-relaxed">
-                                    {selectedProject.description}
-                                  </p>
-                                ) : (
-                                  <p className="text-xs text-gray-500 italic">
-                                    Nenhum escopo detalhado foi inserido. Clique em "Editar Escopo" para cadastrar os requisitos e entregáveis.
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Quick Status Selector Buttons */}
-                            <div className="space-y-2.5">
-                              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block">
-                                Alterar Status do Projeto:
-                              </span>
-                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                                {[
-                                  { key: "planejamento", label: "Planejamento", color: "hover:border-amber-500/60", activeBg: "bg-amber-500/20 border-amber-500 text-amber-300" },
-                                  { key: "em_andamento", label: "Em Andamento", color: "hover:border-blue-500/60", activeBg: "bg-blue-500/20 border-blue-500 text-blue-300" },
-                                  { key: "homologacao", label: "Homologação", color: "hover:border-cyan-500/60", activeBg: "bg-cyan-500/20 border-cyan-500 text-cyan-300" },
-                                  { key: "concluido", label: "Concluído", color: "hover:border-emerald-500/60", activeBg: "bg-emerald-500/20 border-emerald-500 text-emerald-300" },
-                                ].map((st) => {
-                                  const isCurrent =
-                                    selectedProject.status === st.key ||
-                                    (st.key === "em_andamento" && (selectedProject.status === "desenvolvimento" || selectedProject.status === "design")) ||
-                                    (st.key === "homologacao" && selectedProject.status === "testes");
-
-                                  return (
+                                {/* Actions */}
+                                <td className="py-3 px-3.5 text-right">
+                                  <div className="flex items-center justify-end gap-1.5">
                                     <button
-                                      key={st.key}
-                                      onClick={() => handleQuickUpdateStatus(selectedProject.id, st.key as ProjectStatus)}
-                                      className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                                        isCurrent
-                                          ? `${st.activeBg} shadow-md`
-                                          : `bg-black/30 border-white/5 text-gray-400 hover:text-white ${st.color}`
+                                      type="button"
+                                      onClick={() => handleQuickPayInstallment(project.id, inst.id)}
+                                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer flex items-center gap-1 ${
+                                        isPaid
+                                          ? "bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/20"
+                                          : "bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500"
                                       }`}
+                                      title={
+                                        isPaid
+                                          ? "Reabrir parcela (Desmarcar Quitação)"
+                                          : "Quitar parcela com 1 clique"
+                                      }
                                     >
-                                      {isCurrent && <Check size={13} />}
-                                      <span>{st.label}</span>
+                                      <Check size={11} />
+                                      <span>{isPaid ? "Reabrir" : "Quitar"}</span>
                                     </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
 
-                            {/* Dates and Progress Stats */}
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                              <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5">
-                                <span className="text-[10px] text-gray-400 uppercase font-bold block mb-0.5">
-                                  Data de Início
-                                </span>
-                                <p className="text-xs font-semibold text-white">
-                                  {selectedProject.start_date
-                                    ? new Date(selectedProject.start_date).toLocaleDateString("pt-BR")
-                                    : "Não definida"}
-                                </p>
-                              </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenInstallmentModal(project.id, inst)}
+                                      className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-colors cursor-pointer"
+                                      title="Editar Parcela"
+                                    >
+                                      <Edit2 size={12} />
+                                    </button>
 
-                              <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5">
-                                <span className="text-[10px] text-gray-400 uppercase font-bold block mb-0.5">
-                                  Prazo Estimado
-                                </span>
-                                <p className="text-xs font-semibold text-white">
-                                  {selectedProject.deadline
-                                    ? new Date(selectedProject.deadline).toLocaleDateString("pt-BR")
-                                    : "Não definido"}
-                                </p>
-                              </div>
-
-                              {selectedProject.progress > 0 && (
-                                <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5 col-span-2 sm:col-span-1">
-                                  <span className="text-[10px] text-gray-400 uppercase font-bold block mb-0.5">
-                                    Progresso ({selectedProject.progress}%)
-                                  </span>
-                                  <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden mt-1.5">
-                                    <div
-                                      className="h-full bg-gradient-to-r from-indigo-500 to-pink-500 rounded-full"
-                                      style={{ width: `${selectedProject.progress}%` }}
-                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteInstallment(project.id, inst.id)}
+                                      className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer"
+                                      title="Excluir Parcela"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
                                   </div>
-                                </div>
-                              )}
-                            </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
 
-                            {/* URLs Links */}
-                            <div className="flex flex-wrap gap-2 pt-2 border-t border-white/10">
-                              {selectedProject.figma_url && (
-                                <a
-                                  href={selectedProject.figma_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="px-3 py-1.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-semibold flex items-center gap-1.5 hover:bg-purple-500/20 transition-colors"
-                                >
-                                  <Palette size={13} />
-                                  <span>Figma Protótipo</span>
-                                </a>
-                              )}
-                              {selectedProject.preview_url && (
-                                <a
-                                  href={selectedProject.preview_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="px-3 py-1.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-xs font-semibold flex items-center gap-1.5 hover:bg-cyan-500/20 transition-colors"
-                                >
-                                  <Globe size={13} />
-                                  <span>Staging Web Preview</span>
-                                </a>
-                              )}
-                              {selectedProject.repo_url && (
-                                <a
-                                  href={selectedProject.repo_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-gray-300 text-xs font-semibold flex items-center gap-1.5 hover:bg-white/10 transition-colors"
-                                >
-                                  <FolderGit2 size={13} />
-                                  <span>Repositório GitHub</span>
-                                </a>
-                              )}
-                            </div>
+          {activeTab === "updates" && (
+            <div className="space-y-6">
+              {/* Header & Metrics */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 sm:p-7 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl">
+                <div>
+                  <div className="flex items-center gap-2.5 mb-1.5">
+                    <h2 className="text-xl sm:text-2xl font-extrabold text-white">
+                      Timeline de Updates, Reuniões & Notas
+                    </h2>
+                    
+                  </div>
+                  <p className="text-xs sm:text-sm text-gray-400">
+                    Registro cronológico unificado de alinhamentos, atas de reunião, notas de versão e comunicados aos clientes.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleOpenUpdateModal()}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-purple-900/30 flex items-center gap-2 cursor-pointer transition-all active:scale-95 shrink-0"
+                >
+                  <Plus size={16} />
+                  <span>Novo Registro na Timeline</span>
+                </button>
+              </div>
+
+              {/* Aggregated Metric Cards */}
+              {(() => {
+                const allUpdatesList: (ProjectUpdate & { projectTitle: string })[] = [];
+                for (const proj of projects) {
+                  const list = projectUpdates[proj.id] || generateDefaultProjectUpdates(proj);
+                  for (const u of list) {
+                    allUpdatesList.push({ ...u, projectTitle: proj.title });
+                  }
+                }
+
+                // Sort by created_at desc
+                allUpdatesList.sort(
+                  (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                );
+
+                const totalReunioes = allUpdatesList.filter((u) => u.category === "reuniao").length;
+                const totalVersoes = allUpdatesList.filter(
+                  (u) => u.category === "versao" || u.category === "release"
+                ).length;
+                const totalComunicados = allUpdatesList.filter(
+                  (u) => u.category === "comunicado" || u.category === "alert"
+                ).length;
+
+                return (
+                  <>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+                      <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-white/10 backdrop-blur-xl">
+                        <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">
+                          Total de Eventos
+                        </span>
+                        <p className="text-xl sm:text-2xl font-extrabold text-white mt-1">
+                          {allUpdatesList.length}
+                        </p>
+                        <span className="text-[10px] text-gray-500 mt-0.5 block">Histórico de projetos</span>
+                      </div>
+
+                      <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-white/10 backdrop-blur-xl">
+                        <span className="text-[11px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+                          <Users size={13} /> Reuniões & Pautas
+                        </span>
+                        <p className="text-xl sm:text-2xl font-extrabold text-blue-300 mt-1">
+                          {totalReunioes}
+                        </p>
+                        <span className="text-[10px] text-blue-400/70 mt-0.5 block">Alinhamentos com cliente</span>
+                      </div>
+
+                      <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-white/10 backdrop-blur-xl">
+                        <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                          <Rocket size={13} /> Versões & Releases
+                        </span>
+                        <p className="text-xl sm:text-2xl font-extrabold text-emerald-300 mt-1">
+                          {totalVersoes}
+                        </p>
+                        <span className="text-[10px] text-emerald-400/70 mt-0.5 block">Entregas e builds ativas</span>
+                      </div>
+
+                      <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-white/10 backdrop-blur-xl">
+                        <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                          <Megaphone size={13} /> Comunicados Oficiais
+                        </span>
+                        <p className="text-xl sm:text-2xl font-extrabold text-amber-300 mt-1">
+                          {totalComunicados}
+                        </p>
+                        <span className="text-[10px] text-amber-400/70 mt-0.5 block">Avisos e comunicados</span>
+                      </div>
+                    </div>
+
+                    {/* Filter & Search Toolbar */}
+                    <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-white/10 backdrop-blur-xl flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+                      {/* Category Pills */}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {[
+                          { key: "all", label: "Todos os Tipos" },
+                          { key: "reuniao", label: "Reuniões" },
+                          { key: "versao", label: "Versões & Releases" },
+                          { key: "comunicado", label: "Comunicados" },
+                          { key: "milestone", label: "Marcos" },
+                          { key: "update", label: "Geral" },
+                        ].map((cat) => (
+                          <button
+                            key={cat.key}
+                            onClick={() => setUpdateCategoryFilter(cat.key)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                              updateCategoryFilter === cat.key
+                                ? "bg-purple-600 text-white border-purple-500 shadow-md shadow-purple-600/30"
+                                : "bg-white/5 text-gray-400 border-white/10 hover:border-white/20 hover:text-white"
+                            }`}
+                          >
+                            {cat.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Project Filter & Search */}
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                        <select
+                          value={updateProjectFilter}
+                          onChange={(e) => setUpdateProjectFilter(e.target.value)}
+                          className="px-3 py-1.5 rounded-xl bg-black/40 border border-white/10 text-xs text-white outline-none focus:border-purple-500 cursor-pointer"
+                        >
+                          <option value="all">Todos os Projetos ({projects.length})</option>
+                          {projects.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.title}
+                            </option>
+                          ))}
+                        </select>
+
+                        <div className="relative min-w-[200px]">
+                          <Search
+                            size={14}
+                            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"
+                          />
+                          <input
+                            type="text"
+                            value={updateSearchQuery}
+                            onChange={(e) => setUpdateSearchQuery(e.target.value)}
+                            placeholder="Buscar no histórico..."
+                            className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-gray-500 outline-none focus:border-purple-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Timeline Feed */}
+                    {(() => {
+                      const filtered = allUpdatesList.filter((item) => {
+                        if (
+                          updateCategoryFilter !== "all" &&
+                          item.category !== updateCategoryFilter &&
+                          !(updateCategoryFilter === "versao" && item.category === "release") &&
+                          !(updateCategoryFilter === "comunicado" && item.category === "alert")
+                        ) {
+                          return false;
+                        }
+                        if (updateProjectFilter !== "all" && item.project_id !== updateProjectFilter) {
+                          return false;
+                        }
+                        if (updateSearchQuery) {
+                          const q = updateSearchQuery.toLowerCase();
+                          return (
+                            item.title.toLowerCase().includes(q) ||
+                            item.content.toLowerCase().includes(q) ||
+                            (item.projectTitle && item.projectTitle.toLowerCase().includes(q)) ||
+                            (item.version_tag && item.version_tag.toLowerCase().includes(q)) ||
+                            (item.meeting_attendees && item.meeting_attendees.toLowerCase().includes(q))
+                          );
+                        }
+                        return true;
+                      });
+
+                      if (filtered.length === 0) {
+                        return (
+                          <div className="p-12 text-center rounded-3xl bg-slate-900/50 border border-white/10 flex flex-col items-center justify-center">
+                            <Send size={40} className="text-gray-600 mb-3" />
+                            <h4 className="text-base font-bold text-white">Nenhum registro encontrado</h4>
+                            <p className="text-xs text-gray-400 mt-1 max-w-sm">
+                              Não há eventos cadastrados correspondentes aos filtros selecionados.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenUpdateModal()}
+                              className="mt-4 px-4 py-2 rounded-xl bg-purple-600 text-white text-xs font-bold hover:bg-purple-500 transition-colors"
+                            >
+                              Publicar Primeiro Update
+                            </button>
                           </div>
                         );
-                      })()}
+                      }
+
+                      return (
+                        <div className="relative pl-6 sm:pl-8 space-y-6 before:content-[''] before:absolute before:left-3 sm:before:left-4 before:top-3 before:bottom-3 before:w-0.5 before:bg-gradient-to-b before:from-purple-500 via-indigo-500 to-pink-500">
+                          {filtered.map((item) => {
+                            const typeInfo = getUpdateTypeInfo(item.category);
+                            const IconComp = typeInfo.icon;
+                            const targetProj = projects.find((p) => p.id === item.project_id);
+
+                            return (
+                              <div key={item.id} className="relative group">
+                                {/* Dot Icon */}
+                                <div
+                                  className={`absolute -left-6 sm:-left-8 top-1.5 w-7 h-7 rounded-xl bg-slate-950 border border-white/15 flex items-center justify-center text-white ring-4 ring-[#070913] shadow-lg ${typeInfo.colorText}`}
+                                >
+                                  <IconComp size={14} />
+                                </div>
+
+                                {/* Event Card */}
+                                <div className="p-5 sm:p-6 rounded-3xl bg-slate-900/80 border border-white/10 hover:border-purple-500/30 backdrop-blur-xl shadow-xl transition-all space-y-4">
+                                  {/* Header Info */}
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-white/10">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (targetProj) {
+                                            setSelectedProject(targetProj);
+                                            setActiveTab("projects");
+                                          }
+                                        }}
+                                        className="px-2.5 py-1 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                                        title="Ver console do projeto"
+                                      >
+                                        <FolderKanban size={13} className="text-purple-400" />
+                                        <span>{item.projectTitle}</span>
+                                      </button>
+
+                                      <span
+                                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${typeInfo.badgeClass}`}
+                                      >
+                                        {typeInfo.label}
+                                      </span>
+
+                                      {item.version_tag && (
+                                        <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold border border-emerald-500/30 flex items-center gap-1">
+                                          <Tag size={10} />
+                                          {item.version_tag}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[11px] text-gray-400 font-medium flex items-center gap-1.5">
+                                        <Clock size={12} className="text-gray-500" />
+                                        {new Date(item.created_at).toLocaleString("pt-BR", {
+                                          dateStyle: "short",
+                                          timeStyle: "short",
+                                        })}
+                                      </span>
+
+                                      {/* Action Buttons */}
+                                      <div className="flex items-center gap-1 ml-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenUpdateModal(item.project_id, item)}
+                                          className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-colors cursor-pointer"
+                                          title="Editar Registro"
+                                        >
+                                          <Edit2 size={12} />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteUpdate(item.project_id, item.id)}
+                                          className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer"
+                                          title="Remover Registro"
+                                        >
+                                          <Trash2 size={12} />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Title */}
+                                  <h4 className="text-base font-bold text-white leading-snug">
+                                    {item.title}
+                                  </h4>
+
+                                  {/* Meeting Attendees if any */}
+                                  {item.meeting_attendees && (
+                                    <div className="p-2.5 rounded-xl bg-blue-950/20 border border-blue-500/20 text-xs text-blue-200 flex items-center gap-2">
+                                      <Users size={14} className="text-blue-400 shrink-0" />
+                                      <span>
+                                        <strong>Participantes:</strong> {item.meeting_attendees}
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {/* Rich Markdown Rendered Body */}
+                                  <div className="pt-1">
+                                    {renderRichMarkdown(item.content)}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </>
+                );
+              })()}
+            </div>
+          )}
+
+          {activeTab === "settings" && (
+            <div className="p-6 sm:p-7 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-6">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Settings size={18} className="text-gray-400" />
+                <span>Configurações do Sistema</span>
+              </h3>
+
+              <div className="space-y-4 max-w-xl">
+                <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5">
+                  <h4 className="text-sm font-bold text-white">Banco de Dados Supabase</h4>
+                  <p className="text-xs text-gray-400 mt-0.5">Conexão ativa com PostgreSQL e autenticação em tempo real.</p>
+                  <span className="inline-block mt-2 text-[10px] px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold">
+                    ● Status: Online e Operacional
+                  </span>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5">
+                  <h4 className="text-sm font-bold text-white">Notificações WhatsApp</h4>
+                  <p className="text-xs text-gray-400 mt-0.5">Mensagens de feedback e dúvidas do portal encaminhadas para o seu número.</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+
+      {/* ================= MODALS ================= */}
+
+      {/* Modal: Project Scope & Full Management Console */}
+      <AnimatePresence>
+        {projectDetailsModalOpen && selectedProject && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-md overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-5xl max-h-[92vh] flex flex-col rounded-3xl bg-slate-900 border border-white/10 shadow-2xl my-auto overflow-hidden relative"
+            >
+              {/* Sticky Top Header */}
+              {(() => {
+                const selectedClient = clients.find((c) => matchProjectToClient(selectedProject, c));
+                const statusCfg = getStatusConfig(selectedProject.status);
+
+                return (
+                  <div className="p-5 sm:p-6 bg-slate-900/95 border-b border-white/10 flex items-center justify-between gap-4 backdrop-blur-xl shrink-0 z-10">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-600 flex items-center justify-center text-white shrink-0 shadow-lg shadow-indigo-500/20">
+                        <FolderKanban size={20} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-base sm:text-xl font-bold text-white truncate">
+                            {selectedProject.title}
+                          </h3>
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border ${statusCfg.badgeClass}`}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${statusCfg.dotClass} animate-pulse`} />
+                            {statusCfg.label}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-2">
+                          <span className="text-indigo-300 font-medium">{selectedProject.category || "Software"}</span>
+                          <span>•</span>
+                          <span>Criado em {new Date(selectedProject.created_at).toLocaleDateString("pt-BR")}</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenClientPreview(selectedProject)}
+                        className="hidden sm:flex px-3.5 py-2 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 text-purple-300 text-xs font-bold border border-purple-500/40 items-center gap-1.5 transition-colors cursor-pointer shadow-lg shadow-purple-900/20"
+                        title="Simular visualização do cliente"
+                      >
+                        <Eye size={14} />
+                        <span>Ver como Cliente</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenProjectModal(selectedProject)}
+                        className="px-3.5 py-2 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 text-xs font-bold border border-indigo-500/40 flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Edit2 size={14} />
+                        <span className="hidden sm:inline">Editar Escopo</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteProject(selectedProject.id)}
+                        className="p-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 transition-colors cursor-pointer"
+                        title="Excluir projeto"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setProjectDetailsModalOpen(false)}
+                        className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer ml-1"
+                        title="Fechar Detalhes"
+                      >
+                        <X size={20} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Scrollable Modal Body */}
+              <div className="p-5 sm:p-7 overflow-y-auto space-y-6">
+                {(() => {
+                  const selectedClient = clients.find((c) => matchProjectToClient(selectedProject, c));
+                  const statusCfg = getStatusConfig(selectedProject.status);
+
+                  return (
+                    <>
+                      {/* Client Association Card */}
+                      <div className="p-4 rounded-2xl bg-black/40 border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white font-bold text-sm">
+                            {selectedClient?.full_name?.charAt(0) || "C"}
+                          </div>
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-gray-400 block">
+                              Cliente Associado:
+                            </span>
+                            <p className="text-xs sm:text-sm font-bold text-white">
+                              {selectedClient?.full_name || "Nenhum cliente vinculado (Projeto Geral/Admin)"}
+                            </p>
+                            {selectedClient?.company && (
+                              <p className="text-[11px] text-purple-300">{selectedClient.company}</p>
+                            )}
+                          </div>
+                        </div>
+
+                        {selectedClient && (
+                          <div className="flex items-center gap-2">
+                            {selectedClient.phone && (
+                              <a
+                                href={`https://wa.me/${selectedClient.phone.replace(/\D/g, "")}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs font-bold border border-emerald-500/30 flex items-center gap-1.5 transition-colors"
+                              >
+                                <MessageCircle size={13} />
+                                <span>WhatsApp</span>
+                              </a>
+                            )}
+                            <button
+                              onClick={() => handleOpenClientDetails(selectedClient)}
+                              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-semibold transition-colors cursor-pointer"
+                            >
+                              Ver Cliente
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Scope & Description Panel */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
+                            <FileText size={14} className="text-indigo-400" />
+                            Descrição & Escopo do Projeto
+                          </span>
+                        </div>
+                        <div className="p-4 rounded-2xl bg-black/40 border border-white/5">
+                          {selectedProject.description ? (
+                            <p className="text-xs sm:text-sm text-gray-300 whitespace-pre-line leading-relaxed">
+                              {selectedProject.description}
+                            </p>
+                          ) : (
+                            <p className="text-xs text-gray-500 italic">
+                              Nenhum escopo detalhado foi inserido. Clique em "Editar Escopo" para cadastrar os requisitos e entregáveis.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Quick Status Selector Buttons */}
+                      <div className="space-y-2.5">
+                        <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block">
+                          Alterar Status do Projeto:
+                        </span>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                          {[
+                            { key: "planejamento", label: "Planejamento", color: "hover:border-amber-500/60", activeBg: "bg-amber-500/20 border-amber-500 text-amber-300" },
+                            { key: "em_andamento", label: "Em Andamento", color: "hover:border-blue-500/60", activeBg: "bg-blue-500/20 border-blue-500 text-blue-300" },
+                            { key: "homologacao", label: "Homologação", color: "hover:border-cyan-500/60", activeBg: "bg-cyan-500/20 border-cyan-500 text-cyan-300" },
+                            { key: "concluido", label: "Concluído", color: "hover:border-emerald-500/60", activeBg: "bg-emerald-500/20 border-emerald-500 text-emerald-300" },
+                          ].map((st) => {
+                            const isCurrent =
+                              selectedProject.status === st.key ||
+                              (st.key === "em_andamento" && (selectedProject.status === "desenvolvimento" || selectedProject.status === "design")) ||
+                              (st.key === "homologacao" && selectedProject.status === "testes");
+
+                            return (
+                              <button
+                                key={st.key}
+                                onClick={() => handleQuickUpdateStatus(selectedProject.id, st.key as ProjectStatus)}
+                                className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                                  isCurrent
+                                    ? `${st.activeBg} shadow-md`
+                                    : `bg-black/30 border-white/5 text-gray-400 hover:text-white ${st.color}`
+                                }`}
+                              >
+                                {isCurrent && <Check size={13} />}
+                                <span>{st.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Dates and Progress Stats */}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5">
+                          <span className="text-[10px] text-gray-400 uppercase font-bold block mb-0.5">
+                            Data de Início
+                          </span>
+                          <p className="text-xs font-semibold text-white">
+                            {selectedProject.start_date
+                              ? new Date(selectedProject.start_date).toLocaleDateString("pt-BR")
+                              : "Não definida"}
+                          </p>
+                        </div>
+
+                        <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5">
+                          <span className="text-[10px] text-gray-400 uppercase font-bold block mb-0.5">
+                            Prazo Estimado
+                          </span>
+                          <p className="text-xs font-semibold text-white">
+                            {selectedProject.deadline
+                              ? new Date(selectedProject.deadline).toLocaleDateString("pt-BR")
+                              : "Não definido"}
+                          </p>
+                        </div>
+
+                        {selectedProject.progress > 0 && (
+                          <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5 col-span-2 sm:col-span-1">
+                            <span className="text-[10px] text-gray-400 uppercase font-bold block mb-0.5">
+                              Progresso ({selectedProject.progress}%)
+                            </span>
+                            <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden mt-1.5">
+                              <div
+                                className="h-full bg-gradient-to-r from-indigo-500 to-pink-500 rounded-full"
+                                style={{ width: `${selectedProject.progress}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* URLs Links */}
+                      <div className="flex flex-wrap gap-2 pt-2 border-t border-white/10">
+                        {selectedProject.figma_url && (
+                          <a
+                            href={selectedProject.figma_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-1.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-semibold flex items-center gap-1.5 hover:bg-purple-500/20 transition-colors"
+                          >
+                            <Palette size={13} />
+                            <span>Figma Protótipo</span>
+                          </a>
+                        )}
+                        {selectedProject.preview_url && (
+                          <a
+                            href={selectedProject.preview_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-1.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-xs font-semibold flex items-center gap-1.5 hover:bg-cyan-500/20 transition-colors"
+                          >
+                            <Globe size={13} />
+                            <span>Staging Web Preview</span>
+                          </a>
+                        )}
+                        {selectedProject.repo_url && (
+                          <a
+                            href={selectedProject.repo_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-gray-300 text-xs font-semibold flex items-center gap-1.5 hover:bg-white/10 transition-colors"
+                          >
+                            <FolderGit2 size={13} />
+                            <span>Repositório GitHub</span>
+                          </a>
+                        )}
+                      </div>
 
                       {/* Painel de Gestão de Links Rápidos & Ambientes */}
                       {(() => {
@@ -5719,1144 +6877,13 @@ export default function AdminDashboardPage() {
                         );
                       })()}
                     </>
-                  ) : (
-                    <div className="p-12 text-center rounded-3xl bg-slate-900/50 border border-white/10">
-                      <FolderKanban size={40} className="mx-auto text-gray-600 mb-3" />
-                      <p className="text-sm font-bold text-gray-300">Nenhum projeto selecionado</p>
-                      <p className="text-xs text-gray-500 mt-1">Selecione um projeto na lista ao lado ou crie um novo para gerenciar o escopo.</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB: CLIENTS MANAGEMENT */}
-          {activeTab === "clients" && (
-            <div className="space-y-6">
-              {/* Clients Header & Controls Bar */}
-              <div className="p-6 sm:p-7 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-                    <Users size={20} className="text-purple-400" />
-                    <span>Gestão de Clientes ({clients.length})</span>
-                  </h3>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    Controle cadastros, status de acesso (Ativo/Bloqueado) e projetos vinculados a cada cliente.
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => handleOpenClientModal()}
-                    className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-lg shadow-purple-600/30 transition-all active:scale-95 cursor-pointer"
-                  >
-                    <Plus size={16} />
-                    <span>Cadastrar Novo Cliente</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Search & Status Filters */}
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-900/60 p-4 rounded-2xl border border-white/10">
-                <div className="relative w-full sm:w-80">
-                  <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <input
-                    type="text"
-                    value={clientSearchQuery}
-                    onChange={(e) => {
-                      setClientSearchQuery(e.target.value);
-                      setClientCurrentPage(1);
-                    }}
-                    placeholder="Buscar por nome, e-mail, empresa..."
-                    className="w-full pl-9 pr-4 py-2 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-gray-500 outline-none focus:border-purple-500"
-                  />
-                </div>
-
-                {/* Filter Pills */}
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  {(["all", "active", "blocked"] as const).map((filterKey) => (
-                    <button
-                      key={filterKey}
-                      onClick={() => {
-                        setClientStatusFilter(filterKey);
-                        setClientCurrentPage(1);
-                      }}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border cursor-pointer ${
-                        clientStatusFilter === filterKey
-                          ? "bg-purple-600 text-white border-purple-400 shadow-md shadow-purple-600/20"
-                          : "bg-slate-900/80 text-gray-400 border-white/10 hover:text-white"
-                      }`}
-                    >
-                      {filterKey === "all" && `Todos (${clients.length})`}
-                      {filterKey === "active" && `Ativos (${clients.filter((c) => c.status !== "blocked").length})`}
-                      {filterKey === "blocked" && `Bloqueados (${clients.filter((c) => c.status === "blocked").length})`}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Clients Grid */}
-              {(() => {
-                const filteredClients = clients.filter((c) => {
-                  const matchesSearch =
-                    (c.full_name?.toLowerCase().includes(clientSearchQuery.toLowerCase()) || false) ||
-                    (c.email?.toLowerCase().includes(clientSearchQuery.toLowerCase()) || false) ||
-                    (c.company?.toLowerCase().includes(clientSearchQuery.toLowerCase()) || false) ||
-                    (c.phone?.includes(clientSearchQuery) || false);
-
-                  const matchesStatus =
-                    clientStatusFilter === "all" ||
-                    (clientStatusFilter === "active" && c.status !== "blocked") ||
-                    (clientStatusFilter === "blocked" && c.status === "blocked");
-
-                  return matchesSearch && matchesStatus;
-                });
-
-                const clientsPerPage = 6;
-                const totalClientPages = Math.ceil(filteredClients.length / clientsPerPage) || 1;
-                const paginatedClients = filteredClients.slice(
-                  (clientCurrentPage - 1) * clientsPerPage,
-                  clientCurrentPage * clientsPerPage
-                );
-
-                if (filteredClients.length === 0) {
-                  return (
-                    <div className="p-12 text-center rounded-3xl bg-slate-900/60 border border-white/10 space-y-3">
-                      <Users size={36} className="text-gray-600 mx-auto" />
-                      <p className="text-sm font-semibold text-gray-300">Nenhum cliente encontrado.</p>
-                      <p className="text-xs text-gray-500">Tente ajustar seus termos de busca ou cadastrar um novo cliente.</p>
-                    </div>
                   );
-                }
-
-                return (
-                  <div className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                      {paginatedClients.map((c) => {
-                        const clientProjects = projects.filter((p) => matchProjectToClient(p, c));
-                        const isBlocked = c.status === "blocked";
-
-                        return (
-                          <div
-                            key={c.id}
-                            onClick={() => handleOpenClientDetails(c)}
-                            className="p-5 sm:p-6 rounded-3xl bg-slate-900/80 border border-white/10 hover:border-purple-500/50 transition-all flex flex-col justify-between gap-4 shadow-lg group hover:bg-slate-900/95 cursor-pointer hover:shadow-purple-500/10 hover:-translate-y-0.5"
-                          >
-                            <div>
-                              {/* Header Card: Avatar, Name, Status Badge */}
-                              <div className="flex items-start justify-between gap-3 mb-3">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-600 flex items-center justify-center font-black text-sm text-white shadow-md shrink-0 group-hover:scale-105 transition-transform">
-                                    {c.full_name?.charAt(0) || c.email.charAt(0).toUpperCase()}
-                                  </div>
-                                  <div>
-                                    <h4 className="text-sm font-bold text-white group-hover:text-purple-300 transition-colors">
-                                      {c.full_name || "Sem Nome"}
-                                    </h4>
-                                    {c.company ? (
-                                      <span className="text-[11px] text-indigo-300 font-semibold block">
-                                        🏢 {c.company}
-                                      </span>
-                                    ) : (
-                                      <span className="text-[11px] text-gray-500">Pessoa Física</span>
-                                    )}
-                                  </div>
-                                </div>
-
-                                <span
-                                  className={`text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-full border flex items-center gap-1 shrink-0 ${
-                                    isBlocked
-                                      ? "bg-rose-500/15 text-rose-300 border-rose-500/30"
-                                      : "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
-                                  }`}
-                                >
-                                  <span className={`w-1.5 h-1.5 rounded-full ${isBlocked ? "bg-rose-400" : "bg-emerald-400 animate-pulse"}`} />
-                                  {isBlocked ? "Bloqueado" : "Ativo"}
-                                </span>
-                              </div>
-
-                              {/* Contact Info */}
-                              <div className="space-y-1.5 text-xs text-gray-400 my-3 pt-2 border-t border-white/5">
-                                <div className="flex items-center gap-2">
-                                  <Mail size={13} className="text-gray-500 shrink-0" />
-                                  <span className="truncate text-gray-300">{c.email}</span>
-                                </div>
-                                {c.phone && (
-                                  <div className="flex items-center gap-2">
-                                    <Phone size={13} className="text-emerald-400 shrink-0" />
-                                    <span className="text-emerald-400 font-medium">
-                                      {c.phone}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Bottom Card Footer: Projects Count & Actions */}
-                            <div className="pt-3 border-t border-white/10 space-y-3">
-                              <div className="flex items-center justify-between text-xs">
-                                <span className="text-gray-400">Projetos Atribuídos:</span>
-                                <span className="font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20">
-                                  {clientProjects.length} {clientProjects.length === 1 ? "projeto" : "projetos"}
-                                </span>
-                              </div>
-
-                              {/* Action Buttons Toolbar */}
-                              <div className="flex items-center gap-2 pt-0.5">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleOpenClientModal(c);
-                                  }}
-                                  className="py-2 px-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-200 hover:text-white text-xs font-semibold border border-white/10 transition-all flex items-center justify-center gap-1 cursor-pointer shrink-0"
-                                >
-                                  <Edit2 size={12} className="text-purple-400" />
-                                  <span>Editar</span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleOpenWhatsAppChatOnly(c);
-                                  }}
-                                  className="py-2 px-2.5 rounded-xl bg-emerald-600/15 hover:bg-emerald-600/25 text-emerald-300 text-xs font-semibold border border-emerald-500/25 transition-all flex items-center justify-center gap-1 cursor-pointer shrink-0"
-                                  title="Abrir conversa direta no WhatsApp"
-                                >
-                                  <MessageCircle size={12} className="text-emerald-400" />
-                                  <span>WhatsApp</span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleSendClientAccess(c);
-                                  }}
-                                  className="flex-1 py-2 px-2.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 hover:text-indigo-200 text-xs font-semibold border border-indigo-500/30 transition-all flex items-center justify-center gap-1 cursor-pointer"
-                                  title="Enviar dados de acesso (link, e-mail e senha padrão) no WhatsApp"
-                                >
-                                  <Send size={12} className="text-indigo-400" />
-                                  <span className="truncate">Enviar Acesso</span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteClient(c.id, c.email);
-                                  }}
-                                  className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/20 transition-all flex items-center justify-center cursor-pointer shrink-0"
-                                  title="Excluir Cliente"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Pagination Controls */}
-                    {totalClientPages > 1 && (
-                      <div className="p-4 rounded-2xl bg-slate-900/60 border border-white/10 flex items-center justify-between gap-4">
-                        <span className="text-xs text-gray-400">
-                          Mostrando página <strong className="text-white">{clientCurrentPage}</strong> de{" "}
-                          <strong className="text-white">{totalClientPages}</strong> ({filteredClients.length} clientes)
-                        </span>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            disabled={clientCurrentPage === 1}
-                            onClick={() => setClientCurrentPage((prev) => Math.max(1, prev - 1))}
-                            className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-40 disabled:pointer-events-none text-xs text-white border border-white/10 transition-colors"
-                          >
-                            ← Anterior
-                          </button>
-
-                          {Array.from({ length: totalClientPages }).map((_, i) => (
-                            <button
-                              key={i}
-                              onClick={() => setClientCurrentPage(i + 1)}
-                              className={`w-7 h-7 rounded-lg text-xs font-bold transition-all ${
-                                clientCurrentPage === i + 1
-                                  ? "bg-purple-600 text-white"
-                                  : "bg-white/5 text-gray-400 hover:text-white"
-                              }`}
-                            >
-                              {i + 1}
-                            </button>
-                          ))}
-
-                          <button
-                            disabled={clientCurrentPage === totalClientPages}
-                            onClick={() => setClientCurrentPage((prev) => Math.min(totalClientPages, prev + 1))}
-                            className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-40 disabled:pointer-events-none text-xs text-white border border-white/10 transition-colors"
-                          >
-                            Próxima →
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-            </div>
-          )}
-
-
-
-          {/* TAB: PROPOSALS & PLANS */}
-          {activeTab === "proposals" && (
-            <div className="p-6 sm:p-7 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    <DollarSign size={18} className="text-emerald-400" />
-                    <span>Orçamentos & Planos Cadastrados</span>
-                  </h3>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    Modelos de pacotes de serviços disponíveis no seu portfólio.
-                  </p>
-                </div>
-                <Link
-                  href="/valores"
-                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-semibold border border-white/10 flex items-center gap-1.5"
-                >
-                  <span>Ver Página Pública de Valores</span>
-                  <ArrowUpRight size={13} />
-                </Link>
+                })()}
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
-                <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/5">
-                  <span className="text-xs font-bold text-blue-400 uppercase">Landing Page Express</span>
-                  <p className="text-xl font-extrabold text-white mt-1">R$ 1.500</p>
-                  <p className="text-[11px] text-emerald-400 font-semibold mt-1">3x sem juros ou 50% / 50%</p>
-                  <p className="text-xs text-gray-400 mt-2">Design sob medida no Figma, Next.js, SEO e WhatsApp integrado.</p>
-                </div>
-                <div className="p-5 rounded-2xl bg-white/[0.02] border border-indigo-500/30 bg-indigo-950/20">
-                  <span className="text-xs font-bold text-indigo-400 uppercase">Software/App (Contrato 12m)</span>
-                  <p className="text-xl font-extrabold text-white mt-1">12x de R$ 350 <span className="text-xs text-gray-400 font-normal">/mês</span></p>
-                  <p className="text-[11px] text-purple-300 font-semibold mt-1">1 update mensal + suporte</p>
-                  <p className="text-xs text-gray-400 mt-2">+ R$ 1.500 opcional para entrega definitiva do código-fonte.</p>
-                </div>
-                <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/5">
-                  <span className="text-xs font-bold text-teal-400 uppercase">Redesign & Consultoria UX/UI</span>
-                  <p className="text-xl font-extrabold text-white mt-1">R$ 3.500</p>
-                  <p className="text-[11px] text-emerald-400 font-semibold mt-1">3x sem juros ou 50% / 50%</p>
-                  <p className="text-xs text-gray-400 mt-2">Prazo 30 a 60 dias • Auditoria, novos fluxos e protótipo Figma.</p>
-                </div>
-                <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/5">
-                  <span className="text-xs font-bold text-cyan-400 uppercase">Pós-Contrato (12 meses)</span>
-                  <p className="text-xl font-extrabold text-white mt-1">R$ 250 ou R$ 350</p>
-                  <p className="text-[11px] text-cyan-300 font-semibold mt-1">Hospedagem vs Manutenção</p>
-                  <p className="text-xs text-gray-400 mt-2">R$ 250 apenas servidores no ar, ou R$ 350 com suporte e updates.</p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB: FINANCE & BILLING */}
-          {activeTab === "finance" && (
-            <div className="space-y-8">
-              {/* Financial Welcome & Header */}
-              <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-emerald-950/40 via-indigo-950/30 to-slate-900/80 border border-emerald-500/30 shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-6 backdrop-blur-xl">
-                <div className="relative z-10">
-                  <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold mb-3">
-                    <DollarSign size={14} className="text-emerald-400" />
-                    <span>Módulo de Faturamento & Controle Financeiro</span>
-                  </div>
-                  <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-white tracking-tight">
-                    Gestão Manual de Pagamentos 💳
-                  </h1>
-                  <p className="text-xs sm:text-sm text-gray-300 mt-1.5 max-w-2xl leading-relaxed">
-                    Controle de contratos, emissão de parcelas, registro de quitações em tempo real, cálculo de saldos e controle de inadimplência.
-                  </p>
-                </div>
-
-                <div className="relative z-10 flex items-center gap-3 shrink-0 flex-wrap">
-                  {selectedProject && (
-                    <button
-                      type="button"
-                      onClick={() => handleOpenInstallmentModal(selectedProject.id)}
-                      className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-900/30 border border-emerald-400/30 flex items-center gap-2 cursor-pointer transition-all active:scale-95"
-                    >
-                      <Plus size={15} />
-                      <span>Nova Parcela ({selectedProject.title.slice(0, 16)}...)</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Global Financial KPI Cards */}
-              {(() => {
-                let globalContractTotal = 0;
-                let globalTotalPaid = 0;
-                let globalRemaining = 0;
-                let globalOverdue = 0;
-                let globalInstallmentsCount = 0;
-                let globalPaidCount = 0;
-
-                for (const p of projects) {
-                  const pFin = projectFinances[p.id] || generateDefaultProjectFinances(p);
-                  const summary = calculateFinancialSummary(pFin);
-                  globalContractTotal += summary.contractValue;
-                  globalTotalPaid += summary.totalPaid;
-                  globalRemaining += summary.remainingBalance;
-                  globalOverdue += summary.totalOverdue;
-                  globalInstallmentsCount += summary.installmentsCount;
-                  globalPaidCount += summary.paidCount;
-                }
-
-                const globalPercent =
-                  globalContractTotal > 0
-                    ? Math.round((globalTotalPaid / globalContractTotal) * 100)
-                    : 0;
-
-                return (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
-                    {/* 1. Faturamento Total Contratado */}
-                    <div className="p-5 sm:p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-lg">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                          Total em Contratos
-                        </span>
-                        <div className="p-2.5 rounded-2xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                          <DollarSign size={18} />
-                        </div>
-                      </div>
-                      <p className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                        {formatBRL(globalContractTotal)}
-                      </p>
-                      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[11px] text-gray-400">
-                        <span>{projects.length} contratos ativos</span>
-                        <span className="text-indigo-400 font-semibold">{globalInstallmentsCount} parcelas</span>
-                      </div>
-                    </div>
-
-                    {/* 2. Total Recebido / Quitado */}
-                    <div className="p-5 sm:p-6 rounded-3xl bg-slate-900/80 border border-emerald-500/30 backdrop-blur-xl shadow-lg">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
-                          Receita Realizada (Pago)
-                        </span>
-                        <div className="p-2.5 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                          <CheckCircle2 size={18} />
-                        </div>
-                      </div>
-                      <p className="text-2xl sm:text-3xl font-black text-emerald-400 tracking-tight">
-                        {formatBRL(globalTotalPaid)}
-                      </p>
-                      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[11px] text-emerald-300/80">
-                        <span>{globalPercent}% do montante</span>
-                        <span className="font-bold">{globalPaidCount} parcelas pagas</span>
-                      </div>
-                    </div>
-
-                    {/* 3. Saldo a Receber */}
-                    <div className="p-5 sm:p-6 rounded-3xl bg-slate-900/80 border border-purple-500/30 backdrop-blur-xl shadow-lg">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-xs font-bold text-purple-300 uppercase tracking-wider">
-                          Contas a Receber
-                        </span>
-                        <div className="p-2.5 rounded-2xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
-                          <Clock size={18} />
-                        </div>
-                      </div>
-                      <p className="text-2xl sm:text-3xl font-black text-purple-300 tracking-tight">
-                        {formatBRL(globalRemaining)}
-                      </p>
-                      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[11px] text-gray-400">
-                        <span>{100 - globalPercent}% em aberto</span>
-                        <span className="text-purple-400 font-semibold">Fluxo futuro</span>
-                      </div>
-                    </div>
-
-                    {/* 4. Total em Atraso */}
-                    <div
-                      className={`p-5 sm:p-6 rounded-3xl border backdrop-blur-xl shadow-lg ${
-                        globalOverdue > 0
-                          ? "bg-rose-950/20 border-rose-500/40"
-                          : "bg-slate-900/80 border-white/10"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <span
-                          className={`text-xs font-bold uppercase tracking-wider ${
-                            globalOverdue > 0 ? "text-rose-400" : "text-gray-400"
-                          }`}
-                        >
-                          Inadimplência / Atraso
-                        </span>
-                        <div
-                          className={`p-2.5 rounded-2xl border ${
-                            globalOverdue > 0
-                              ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
-                              : "bg-white/5 text-gray-400 border-white/10"
-                          }`}
-                        >
-                          <AlertCircle size={18} />
-                        </div>
-                      </div>
-                      <p
-                        className={`text-2xl sm:text-3xl font-black tracking-tight ${
-                          globalOverdue > 0 ? "text-rose-400" : "text-gray-300"
-                        }`}
-                      >
-                        {formatBRL(globalOverdue)}
-                      </p>
-                      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[11px] text-gray-400">
-                        <span>
-                          {globalOverdue > 0 ? "⚠️ Requer contato" : "Em dia"}
-                        </span>
-                        <span className={globalOverdue > 0 ? "text-rose-400 font-bold" : "text-emerald-400 font-bold"}>
-                          {globalOverdue > 0 ? "Parcelas vencidas" : "Zero pendências"}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Search, Filter & Project Selector Bar */}
-              <div className="p-5 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl flex flex-col md:flex-row items-center justify-between gap-4">
-                {/* Search */}
-                <div className="relative w-full md:w-80">
-                  <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <input
-                    type="text"
-                    value={financeSearchQuery}
-                    onChange={(e) => setFinanceSearchQuery(e.target.value)}
-                    placeholder="Buscar por parcela, cliente ou comprovante..."
-                    className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-gray-500 outline-none focus:border-emerald-500"
-                  />
-                </div>
-
-                {/* Filters */}
-                <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
-                  {/* Filter by Project */}
-                  <select
-                    value={financeProjectFilter}
-                    onChange={(e) => setFinanceProjectFilter(e.target.value)}
-                    className="px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs text-white outline-none focus:border-emerald-500 cursor-pointer"
-                  >
-                    <option value="all">Todos os Projetos ({projects.length})</option>
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.title}
-                      </option>
-                    ))}
-                  </select>
-
-                  {/* Filter by Installment Status */}
-                  <div className="flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/10">
-                    {[
-                      { key: "all", label: "Todas" },
-                      { key: "pago", label: "Pagas" },
-                      { key: "em_dia", label: "Em dia" },
-                      { key: "pendente", label: "Pendentes" },
-                      { key: "vencido", label: "Vencidas" },
-                    ].map((f) => (
-                      <button
-                        key={f.key}
-                        type="button"
-                        onClick={() => setFinanceStatusFilter(f.key as any)}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-                          financeStatusFilter === f.key
-                            ? "bg-emerald-600 text-white shadow-sm"
-                            : "text-gray-400 hover:text-white"
-                        }`}
-                      >
-                        {f.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Master Installments Table Across Projects */}
-              {(() => {
-                // Collect all installments from projects matching filters
-                const allList: { project: Project; installment: ProjectInstallment }[] = [];
-
-                for (const p of projects) {
-                  if (financeProjectFilter !== "all" && p.id !== financeProjectFilter) continue;
-                  const pFin = projectFinances[p.id] || generateDefaultProjectFinances(p);
-                  for (const inst of pFin.installments) {
-                    const st = getInstallmentStatus(inst);
-                    if (financeStatusFilter !== "all" && st.status !== financeStatusFilter) continue;
-
-                    const client = clients.find((c) => c.id === p.client_id);
-                    const searchTarget = financeSearchQuery.toLowerCase().trim();
-
-                    const matchesSearch =
-                      !searchTarget ||
-                      inst.title.toLowerCase().includes(searchTarget) ||
-                      p.title.toLowerCase().includes(searchTarget) ||
-                      (client?.full_name?.toLowerCase().includes(searchTarget) || false) ||
-                      (inst.receipt_url?.toLowerCase().includes(searchTarget) || false) ||
-                      (inst.notes?.toLowerCase().includes(searchTarget) || false) ||
-                      inst.amount.toString().includes(searchTarget);
-
-                    if (matchesSearch) {
-                      allList.push({ project: p, installment: inst });
-                    }
-                  }
-                }
-
-                // Sort: Overdue and pending first, then by due_date
-                allList.sort((a, b) => {
-                  if (a.installment.paid_at && !b.installment.paid_at) return 1;
-                  if (!a.installment.paid_at && b.installment.paid_at) return -1;
-                  return (a.installment.due_date || "").localeCompare(b.installment.due_date || "");
-                });
-
-                if (allList.length === 0) {
-                  return (
-                    <div className="p-12 rounded-3xl bg-slate-900/80 border border-white/10 text-center space-y-3">
-                      <DollarSign size={36} className="mx-auto text-gray-600" />
-                      <h4 className="text-base font-bold text-white">Nenhuma parcela encontrada</h4>
-                      <p className="text-xs text-gray-400 max-w-md mx-auto">
-                        Não há parcelas que correspondam aos filtros de busca selecionados.
-                      </p>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div className="p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                        <FileText size={16} className="text-emerald-400" />
-                        <span>Listagem Geral de Parcelas ({allList.length})</span>
-                      </h3>
-                      <span className="text-xs text-gray-400">
-                        Total listado:{" "}
-                        <strong className="text-emerald-400">
-                          {formatBRL(allList.reduce((acc, curr) => acc + curr.installment.amount, 0))}
-                        </strong>
-                      </span>
-                    </div>
-
-                    <div className="overflow-x-auto rounded-2xl border border-white/10">
-                      <table className="w-full text-left text-xs text-gray-300 min-w-[850px]">
-                        <thead className="bg-black/60 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-white/10">
-                          <tr>
-                            <th className="py-3 px-3.5">Projeto / Cliente</th>
-                            <th className="py-3 px-3.5">Parcela / Título</th>
-                            <th className="py-3 px-3.5">Valor (R$)</th>
-                            <th className="py-3 px-3.5">Vencimento</th>
-                            <th className="py-3 px-3.5">Quitação</th>
-                            <th className="py-3 px-3.5">Método</th>
-                            <th className="py-3 px-3.5">Status</th>
-                            <th className="py-3 px-3.5">Comprovante</th>
-                            <th className="py-3 px-3.5 text-right">Ações</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/5 bg-black/20">
-                          {allList.map(({ project, installment: inst }) => {
-                            const st = getInstallmentStatus(inst);
-                            const isPaid = st.status === "pago";
-                            const client = clients.find((c) => c.id === project.client_id);
-
-                            return (
-                              <tr
-                                key={inst.id}
-                                className={`hover:bg-white/[0.02] transition-colors ${
-                                  isPaid ? "bg-emerald-950/5" : ""
-                                }`}
-                              >
-                                {/* Project & Client */}
-                                <td className="py-3 px-3.5">
-                                  <div className="font-bold text-white">{project.title}</div>
-                                  <div className="text-[10px] text-gray-400">
-                                    {client?.full_name || "Sem cliente"} {client?.company ? `(${client.company})` : ""}
-                                  </div>
-                                </td>
-
-                                {/* Installment Title */}
-                                <td className="py-3 px-3.5">
-                                  <span className="font-semibold text-gray-200">{inst.title}</span>
-                                  {inst.notes && (
-                                    <p className="text-[10px] text-gray-500 mt-0.5">{inst.notes}</p>
-                                  )}
-                                </td>
-
-                                {/* Amount */}
-                                <td className="py-3 px-3.5 font-extrabold text-white font-mono">
-                                  {formatBRL(inst.amount)}
-                                </td>
-
-                                {/* Due Date */}
-                                <td className="py-3 px-3.5 font-medium">
-                                  <span
-                                    className={
-                                      st.status === "vencido"
-                                        ? "text-rose-400 font-bold"
-                                        : "text-gray-300"
-                                    }
-                                  >
-                                    {inst.due_date
-                                      ? new Date(inst.due_date).toLocaleDateString("pt-BR")
-                                      : "Não definida"}
-                                  </span>
-                                </td>
-
-                                {/* Paid At */}
-                                <td className="py-3 px-3.5">
-                                  {inst.paid_at ? (
-                                    <span className="text-emerald-400 font-semibold flex items-center gap-1">
-                                      <CheckCircle2 size={12} />
-                                      <span>
-                                        {new Date(inst.paid_at).toLocaleDateString("pt-BR")}
-                                      </span>
-                                    </span>
-                                  ) : (
-                                    <span className="text-gray-500 italic text-[11px]">
-                                      Pendente
-                                    </span>
-                                  )}
-                                </td>
-
-                                {/* Payment Method */}
-                                <td className="py-3 px-3.5">
-                                  <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[11px] font-semibold text-gray-300">
-                                    {getPaymentMethodLabel(inst.payment_method)}
-                                  </span>
-                                </td>
-
-                                {/* Status Badge */}
-                                <td className="py-3 px-3.5">
-                                  <span
-                                    className={`px-2.5 py-1 rounded-full text-[10px] font-bold border inline-flex items-center gap-1 ${st.badgeClass}`}
-                                  >
-                                    <span className={`w-1.5 h-1.5 rounded-full ${st.dotClass}`} />
-                                    <span>{st.label}</span>
-                                  </span>
-                                </td>
-
-                                {/* Receipt */}
-                                <td className="py-3 px-3.5">
-                                  {inst.receipt_url ? (
-                                    <a
-                                      href={
-                                        inst.receipt_url.startsWith("http")
-                                          ? inst.receipt_url
-                                          : undefined
-                                      }
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      onClick={(e) => {
-                                        if (!inst.receipt_url?.startsWith("http")) {
-                                          e.preventDefault();
-                                          alert(`Comprovante / Código:\n${inst.receipt_url}`);
-                                        }
-                                      }}
-                                      className="px-2 py-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/20 text-[10px] font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer"
-                                      title={inst.receipt_url}
-                                    >
-                                      <FileText size={11} />
-                                      <span className="max-w-[80px] truncate">
-                                        {inst.receipt_url}
-                                      </span>
-                                    </a>
-                                  ) : (
-                                    <span className="text-gray-600 text-[11px]">—</span>
-                                  )}
-                                </td>
-
-                                {/* Actions */}
-                                <td className="py-3 px-3.5 text-right">
-                                  <div className="flex items-center justify-end gap-1.5">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleQuickPayInstallment(project.id, inst.id)}
-                                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer flex items-center gap-1 ${
-                                        isPaid
-                                          ? "bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/20"
-                                          : "bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500"
-                                      }`}
-                                      title={
-                                        isPaid
-                                          ? "Reabrir parcela (Desmarcar Quitação)"
-                                          : "Quitar parcela com 1 clique"
-                                      }
-                                    >
-                                      <Check size={11} />
-                                      <span>{isPaid ? "Reabrir" : "Quitar"}</span>
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      onClick={() => handleOpenInstallmentModal(project.id, inst)}
-                                      className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-colors cursor-pointer"
-                                      title="Editar Parcela"
-                                    >
-                                      <Edit2 size={12} />
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteInstallment(project.id, inst.id)}
-                                      className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer"
-                                      title="Excluir Parcela"
-                                    >
-                                      <Trash2 size={12} />
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          )}
-
-          {activeTab === "updates" && (
-            <div className="space-y-6">
-              {/* Header & Metrics */}
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 sm:p-7 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl">
-                <div>
-                  <div className="flex items-center gap-2.5 mb-1.5">
-                    <h2 className="text-xl sm:text-2xl font-extrabold text-white">
-                      Timeline de Updates, Reuniões & Notas
-                    </h2>
-                    
-                  </div>
-                  <p className="text-xs sm:text-sm text-gray-400">
-                    Registro cronológico unificado de alinhamentos, atas de reunião, notas de versão e comunicados aos clientes.
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => handleOpenUpdateModal()}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-purple-900/30 flex items-center gap-2 cursor-pointer transition-all active:scale-95 shrink-0"
-                >
-                  <Plus size={16} />
-                  <span>Novo Registro na Timeline</span>
-                </button>
-              </div>
-
-              {/* Aggregated Metric Cards */}
-              {(() => {
-                const allUpdatesList: (ProjectUpdate & { projectTitle: string })[] = [];
-                for (const proj of projects) {
-                  const list = projectUpdates[proj.id] || generateDefaultProjectUpdates(proj);
-                  for (const u of list) {
-                    allUpdatesList.push({ ...u, projectTitle: proj.title });
-                  }
-                }
-
-                // Sort by created_at desc
-                allUpdatesList.sort(
-                  (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-                );
-
-                const totalReunioes = allUpdatesList.filter((u) => u.category === "reuniao").length;
-                const totalVersoes = allUpdatesList.filter(
-                  (u) => u.category === "versao" || u.category === "release"
-                ).length;
-                const totalComunicados = allUpdatesList.filter(
-                  (u) => u.category === "comunicado" || u.category === "alert"
-                ).length;
-
-                return (
-                  <>
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-                      <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-white/10 backdrop-blur-xl">
-                        <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">
-                          Total de Eventos
-                        </span>
-                        <p className="text-xl sm:text-2xl font-extrabold text-white mt-1">
-                          {allUpdatesList.length}
-                        </p>
-                        <span className="text-[10px] text-gray-500 mt-0.5 block">Histórico de projetos</span>
-                      </div>
-
-                      <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-white/10 backdrop-blur-xl">
-                        <span className="text-[11px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
-                          <Users size={13} /> Reuniões & Pautas
-                        </span>
-                        <p className="text-xl sm:text-2xl font-extrabold text-blue-300 mt-1">
-                          {totalReunioes}
-                        </p>
-                        <span className="text-[10px] text-blue-400/70 mt-0.5 block">Alinhamentos com cliente</span>
-                      </div>
-
-                      <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-white/10 backdrop-blur-xl">
-                        <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-                          <Rocket size={13} /> Versões & Releases
-                        </span>
-                        <p className="text-xl sm:text-2xl font-extrabold text-emerald-300 mt-1">
-                          {totalVersoes}
-                        </p>
-                        <span className="text-[10px] text-emerald-400/70 mt-0.5 block">Entregas e builds ativas</span>
-                      </div>
-
-                      <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-white/10 backdrop-blur-xl">
-                        <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                          <Megaphone size={13} /> Comunicados Oficiais
-                        </span>
-                        <p className="text-xl sm:text-2xl font-extrabold text-amber-300 mt-1">
-                          {totalComunicados}
-                        </p>
-                        <span className="text-[10px] text-amber-400/70 mt-0.5 block">Avisos e comunicados</span>
-                      </div>
-                    </div>
-
-                    {/* Filter & Search Toolbar */}
-                    <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-white/10 backdrop-blur-xl flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-                      {/* Category Pills */}
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {[
-                          { key: "all", label: "Todos os Tipos" },
-                          { key: "reuniao", label: "Reuniões" },
-                          { key: "versao", label: "Versões & Releases" },
-                          { key: "comunicado", label: "Comunicados" },
-                          { key: "milestone", label: "Marcos" },
-                          { key: "update", label: "Geral" },
-                        ].map((cat) => (
-                          <button
-                            key={cat.key}
-                            onClick={() => setUpdateCategoryFilter(cat.key)}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
-                              updateCategoryFilter === cat.key
-                                ? "bg-purple-600 text-white border-purple-500 shadow-md shadow-purple-600/30"
-                                : "bg-white/5 text-gray-400 border-white/10 hover:border-white/20 hover:text-white"
-                            }`}
-                          >
-                            {cat.label}
-                          </button>
-                        ))}
-                      </div>
-
-                      {/* Project Filter & Search */}
-                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                        <select
-                          value={updateProjectFilter}
-                          onChange={(e) => setUpdateProjectFilter(e.target.value)}
-                          className="px-3 py-1.5 rounded-xl bg-black/40 border border-white/10 text-xs text-white outline-none focus:border-purple-500 cursor-pointer"
-                        >
-                          <option value="all">Todos os Projetos ({projects.length})</option>
-                          {projects.map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.title}
-                            </option>
-                          ))}
-                        </select>
-
-                        <div className="relative min-w-[200px]">
-                          <Search
-                            size={14}
-                            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"
-                          />
-                          <input
-                            type="text"
-                            value={updateSearchQuery}
-                            onChange={(e) => setUpdateSearchQuery(e.target.value)}
-                            placeholder="Buscar no histórico..."
-                            className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-gray-500 outline-none focus:border-purple-500"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Timeline Feed */}
-                    {(() => {
-                      const filtered = allUpdatesList.filter((item) => {
-                        if (
-                          updateCategoryFilter !== "all" &&
-                          item.category !== updateCategoryFilter &&
-                          !(updateCategoryFilter === "versao" && item.category === "release") &&
-                          !(updateCategoryFilter === "comunicado" && item.category === "alert")
-                        ) {
-                          return false;
-                        }
-                        if (updateProjectFilter !== "all" && item.project_id !== updateProjectFilter) {
-                          return false;
-                        }
-                        if (updateSearchQuery) {
-                          const q = updateSearchQuery.toLowerCase();
-                          return (
-                            item.title.toLowerCase().includes(q) ||
-                            item.content.toLowerCase().includes(q) ||
-                            (item.projectTitle && item.projectTitle.toLowerCase().includes(q)) ||
-                            (item.version_tag && item.version_tag.toLowerCase().includes(q)) ||
-                            (item.meeting_attendees && item.meeting_attendees.toLowerCase().includes(q))
-                          );
-                        }
-                        return true;
-                      });
-
-                      if (filtered.length === 0) {
-                        return (
-                          <div className="p-12 text-center rounded-3xl bg-slate-900/50 border border-white/10 flex flex-col items-center justify-center">
-                            <Send size={40} className="text-gray-600 mb-3" />
-                            <h4 className="text-base font-bold text-white">Nenhum registro encontrado</h4>
-                            <p className="text-xs text-gray-400 mt-1 max-w-sm">
-                              Não há eventos cadastrados correspondentes aos filtros selecionados.
-                            </p>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenUpdateModal()}
-                              className="mt-4 px-4 py-2 rounded-xl bg-purple-600 text-white text-xs font-bold hover:bg-purple-500 transition-colors"
-                            >
-                              Publicar Primeiro Update
-                            </button>
-                          </div>
-                        );
-                      }
-
-                      return (
-                        <div className="relative pl-6 sm:pl-8 space-y-6 before:content-[''] before:absolute before:left-3 sm:before:left-4 before:top-3 before:bottom-3 before:w-0.5 before:bg-gradient-to-b before:from-purple-500 via-indigo-500 to-pink-500">
-                          {filtered.map((item) => {
-                            const typeInfo = getUpdateTypeInfo(item.category);
-                            const IconComp = typeInfo.icon;
-                            const targetProj = projects.find((p) => p.id === item.project_id);
-
-                            return (
-                              <div key={item.id} className="relative group">
-                                {/* Dot Icon */}
-                                <div
-                                  className={`absolute -left-6 sm:-left-8 top-1.5 w-7 h-7 rounded-xl bg-slate-950 border border-white/15 flex items-center justify-center text-white ring-4 ring-[#070913] shadow-lg ${typeInfo.colorText}`}
-                                >
-                                  <IconComp size={14} />
-                                </div>
-
-                                {/* Event Card */}
-                                <div className="p-5 sm:p-6 rounded-3xl bg-slate-900/80 border border-white/10 hover:border-purple-500/30 backdrop-blur-xl shadow-xl transition-all space-y-4">
-                                  {/* Header Info */}
-                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-white/10">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          if (targetProj) {
-                                            setSelectedProject(targetProj);
-                                            setActiveTab("projects");
-                                          }
-                                        }}
-                                        className="px-2.5 py-1 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-                                        title="Ver console do projeto"
-                                      >
-                                        <FolderKanban size={13} className="text-purple-400" />
-                                        <span>{item.projectTitle}</span>
-                                      </button>
-
-                                      <span
-                                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${typeInfo.badgeClass}`}
-                                      >
-                                        {typeInfo.label}
-                                      </span>
-
-                                      {item.version_tag && (
-                                        <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold border border-emerald-500/30 flex items-center gap-1">
-                                          <Tag size={10} />
-                                          {item.version_tag}
-                                        </span>
-                                      )}
-                                    </div>
-
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-[11px] text-gray-400 font-medium flex items-center gap-1.5">
-                                        <Clock size={12} className="text-gray-500" />
-                                        {new Date(item.created_at).toLocaleString("pt-BR", {
-                                          dateStyle: "short",
-                                          timeStyle: "short",
-                                        })}
-                                      </span>
-
-                                      {/* Action Buttons */}
-                                      <div className="flex items-center gap-1 ml-2">
-                                        <button
-                                          type="button"
-                                          onClick={() => handleOpenUpdateModal(item.project_id, item)}
-                                          className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-colors cursor-pointer"
-                                          title="Editar Registro"
-                                        >
-                                          <Edit2 size={12} />
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleDeleteUpdate(item.project_id, item.id)}
-                                          className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer"
-                                          title="Remover Registro"
-                                        >
-                                          <Trash2 size={12} />
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  {/* Title */}
-                                  <h4 className="text-base font-bold text-white leading-snug">
-                                    {item.title}
-                                  </h4>
-
-                                  {/* Meeting Attendees if any */}
-                                  {item.meeting_attendees && (
-                                    <div className="p-2.5 rounded-xl bg-blue-950/20 border border-blue-500/20 text-xs text-blue-200 flex items-center gap-2">
-                                      <Users size={14} className="text-blue-400 shrink-0" />
-                                      <span>
-                                        <strong>Participantes:</strong> {item.meeting_attendees}
-                                      </span>
-                                    </div>
-                                  )}
-
-                                  {/* Rich Markdown Rendered Body */}
-                                  <div className="pt-1">
-                                    {renderRichMarkdown(item.content)}
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
-                  </>
-                );
-              })()}
-            </div>
-          )}
-
-          {activeTab === "settings" && (
-            <div className="p-6 sm:p-7 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-6">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Settings size={18} className="text-gray-400" />
-                <span>Configurações do Sistema</span>
-              </h3>
-
-              <div className="space-y-4 max-w-xl">
-                <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5">
-                  <h4 className="text-sm font-bold text-white">Banco de Dados Supabase</h4>
-                  <p className="text-xs text-gray-400 mt-0.5">Conexão ativa com PostgreSQL e autenticação em tempo real.</p>
-                  <span className="inline-block mt-2 text-[10px] px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold">
-                    ● Status: Online e Operacional
-                  </span>
-                </div>
-
-                <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5">
-                  <h4 className="text-sm font-bold text-white">Notificações WhatsApp</h4>
-                  <p className="text-xs text-gray-400 mt-0.5">Mensagens de feedback e dúvidas do portal encaminhadas para o seu número.</p>
-                </div>
-              </div>
-            </div>
-          )}
-        </main>
-      </div>
-
-      {/* ================= MODALS ================= */}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Modal: Project Form (Create / Edit - ) */}
       <AnimatePresence>
