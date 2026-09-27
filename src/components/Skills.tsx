@@ -33,8 +33,8 @@ export default function Skills() {
   ];
 
   return (
-    <section id="habilidades" className="py-6 md:py-10 px-4 lg:px-8 max-w-7xl mx-auto scroll-mt-24">
-      <div className="text-center max-w-3xl mx-auto mb-6 md:mb-10">
+    <section id="habilidades" className="py-2 md:py-4 px-4 sm:px-6 lg:px-10 max-w-[1440px] mx-auto scroll-mt-24">
+      <div className="text-center max-w-3xl mx-auto mb-4 sm:mb-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -50,7 +50,7 @@ export default function Skills() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ delay: 0.1 }}
-          className="text-3xl md:text-5xl font-extrabold tracking-tight mb-4 text-white"
+          className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight mb-3 text-white"
         >
           Soluções Sob Medida para <span className="text-gradient">Sua Empresa</span>
         </motion.h2>
@@ -60,13 +60,13 @@ export default function Skills() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ delay: 0.2 }}
-          className="text-gray-300 text-base md:text-lg leading-relaxed"
+          className="text-gray-300 text-sm sm:text-base leading-relaxed max-w-2xl mx-auto"
         >
           Seja para criar um aplicativo novo ou atualizar a presença digital da sua marca, você recebe uma solução completa e pronta para uso.
         </motion.p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8">
         {deliverables.map((item, idx) => (
           <motion.div
             key={item.title}
@@ -74,19 +74,19 @@ export default function Skills() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ delay: idx * 0.15, duration: 0.5 }}
-            className="glass-panel rounded-3xl p-8 border border-white/10 glass-card-hover flex flex-col justify-between"
+            className="glass-panel rounded-3xl p-6 sm:p-8 border border-white/10 glass-card-hover flex flex-col justify-between"
           >
             <div>
-              <div className="flex items-center justify-between mb-6">
-                <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10">{item.icon}</div>
+              <div className="flex items-center justify-between mb-5">
+                <div className="p-3 rounded-2xl bg-white/5 border border-white/10">{item.icon}</div>
                 <span className="text-xs font-semibold text-indigo-300 bg-indigo-500/15 border border-indigo-500/30 px-3 py-1 rounded-full">
                   {item.tag}
                 </span>
               </div>
 
-              <h3 className="text-xl font-bold text-white mb-3">{item.title}</h3>
+              <h3 className="text-lg sm:text-xl font-bold text-white mb-2.5">{item.title}</h3>
 
-              <p className="text-sm text-gray-300 leading-relaxed mb-6">
+              <p className="text-xs sm:text-sm text-gray-300 leading-relaxed mb-5">
                 {item.description}
               </p>
 

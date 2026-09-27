@@ -7,7 +7,7 @@ import { ArrowRight, Sparkles, Smartphone, CheckCircle, ShieldCheck, Zap, Messag
 
 export default function Hero() {
   return (
-    <section className="relative pt-20 pb-6 md:pt-32 md:pb-10 px-4 lg:px-8 max-w-7xl mx-auto flex flex-col items-center text-center overflow-hidden">
+    <section className="relative pt-20 pb-2 md:pt-28 md:pb-4 px-4 sm:px-6 lg:px-10 max-w-[1440px] mx-auto flex flex-col items-center text-center overflow-hidden">
       {/* Ambient Glow Orbs - Hidden/lightweight on mobile for iOS performance */}
       <div className="hidden sm:block absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-indigo-600/20 rounded-full blur-[120px] pointer-events-none -z-10 animate-pulse-slow" />
       <div className="hidden sm:block absolute top-1/3 left-1/4 w-[350px] h-[350px] bg-purple-600/20 rounded-full blur-[100px] pointer-events-none -z-10 animate-float" />
@@ -30,7 +30,7 @@ export default function Hero() {
         initial={{ opacity: 0, y: 25 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.7, delay: 0.1 }}
-        className="text-3xl sm:text-6xl md:text-7xl font-extrabold tracking-tight max-w-5xl leading-[1.18] sm:leading-[1.15] mb-5 sm:mb-6 text-white"
+        className="text-2xl sm:text-4xl md:text-5xl lg:text-[3.25rem] font-extrabold tracking-tight max-w-5xl leading-[1.2] sm:leading-[1.2] mb-4 sm:mb-5 text-white"
       >
         Transformando Ideias em{" "}
         <span className="text-gradient drop-shadow-sm">Experiências Digitais</span>{" "}
@@ -42,42 +42,17 @@ export default function Hero() {
         initial={{ opacity: 0, y: 25 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.7, delay: 0.2 }}
-        className="text-base sm:text-xl text-gray-300 max-w-3xl font-normal leading-relaxed mb-10"
+        className="text-sm sm:text-base md:text-lg text-gray-300 max-w-3xl font-normal leading-relaxed mb-8"
       >
         Crio aplicativos mobile e plataformas digitais com foco absoluto na experiência do cliente, estética impecável e resultados de verdade para a sua empresa — sem complicação técnica.
       </motion.p>
-
-      {/* CTAs */}
-      <motion.div
-        initial={{ opacity: 0, y: 25 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.7, delay: 0.3 }}
-        className="flex flex-col sm:flex-row items-center justify-center gap-3.5 w-full max-w-sm sm:max-w-none mx-auto mb-12 sm:mb-16"
-      >
-        <a
-          href="#projetos"
-          className="w-full sm:w-auto px-7 sm:px-9 py-3.5 sm:py-4 rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white font-bold text-base shadow-2xl shadow-indigo-500/30 hover:shadow-indigo-500/50 transition-all hover:-translate-y-1 flex items-center justify-center gap-3 group text-center"
-        >
-          <Smartphone size={20} />
-          <span>Ver Projetos Mobile</span>
-          <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-        </a>
-
-        <Link
-          href="/valores"
-          className="w-full sm:w-auto px-7 sm:px-9 py-3.5 sm:py-4 rounded-2xl glass-panel text-white font-bold text-base hover:bg-white/10 transition-all flex items-center justify-center gap-3 border border-indigo-500/40 hover:border-indigo-400 text-center shadow-lg shadow-indigo-500/10"
-        >
-          <Sparkles size={18} className="text-amber-400" />
-          <span>Ver Valores & Planos</span>
-        </Link>
-      </motion.div>
 
       {/* Value Badges for Non-Technical Clients */}
       <motion.div
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8, delay: 0.4 }}
-        className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl"
+        className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-6xl"
       >
         <div className="glass-panel p-5 rounded-2xl border border-white/10 flex items-center gap-4 text-left hover:border-indigo-500/30 transition-all">
           <div className="p-3 rounded-xl bg-indigo-500/10 text-indigo-400 shrink-0">

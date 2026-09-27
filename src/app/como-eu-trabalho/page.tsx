@@ -1,20 +1,20 @@
 import React from "react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
-import PricingSection from "@/components/PricingSection";
+import Process from "@/components/Process";
 import { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Valores e Investimento | Maira Reis UX/UI & Mobile",
-  description: "Confira os pacotes e tabela de investimentos para desenvolvimento de aplicativos mobile, sites responsivos, sistemas web e design UX/UI.",
+  title: "Como Eu Trabalho | Maira Reis UX/UI & Mobile",
+  description: "Conheça o processo de desenvolvimento passo a passo: diagnóstico, protótipo visual no celular, codificação segura e lançamento com suporte.",
 };
 
-export default function ValoresPage() {
+export default function ComoEuTrabalhoPage() {
   return (
     <div className="min-h-screen flex flex-col selection:bg-indigo-500 selection:text-white bg-slate-950 text-white">
       <Header />
       <main className="flex-1 pt-20 pb-6">
-        <PricingSection />
+        <Process />
       </main>
       <Footer />
     </div>

@@ -9,6 +9,16 @@
     -webkit-tap-highlight-color: transparent;
     -webkit-overflow-scrolling: touch;
   }
+
+  /* Prevent auto zoom on input focus on iOS devices */
+  input, select, textarea {
+    font-size: 16px;
+  }
+  @media (min-width: 640px) {
+    input, select, textarea {
+      font-size: 0.875rem;
+    }
+  }
 }
 
 :root {
@@ -133,17 +143,26 @@ body {
 .phone-frame {
   position: relative;
   width: 100%;
-  max-width: 270px;
-  height: 540px;
+  max-width: 250px;
+  height: 500px;
   background: #090d16;
-  border-radius: 36px;
-  border: 8px solid #1a2234;
+  border-radius: 32px;
+  border: 7px solid #1a2234;
   box-shadow: 
     0 25px 60px -15px rgba(0, 0, 0, 0.9),
     0 0 50px rgba(99, 102, 241, 0.2),
     inset 0 0 0 2px rgba(255, 255, 255, 0.12);
   overflow: hidden;
   margin: 0 auto;
+}
+
+@media (min-width: 380px) {
+  .phone-frame {
+    max-width: 275px;
+    height: 550px;
+    border-radius: 38px;
+    border-width: 9px;
+  }
 }
 
 @media (min-width: 640px) {
@@ -160,11 +179,19 @@ body {
   top: 8px;
   left: 50%;
   transform: translateX(-50%);
-  width: 80px;
-  height: 18px;
+  width: 76px;
+  height: 16px;
   background: #000000;
   border-radius: 20px;
   z-index: 40;
   box-shadow: 0 1px 3px rgba(0,0,0,0.8);
   pointer-events: none;
 }
+
+@media (min-width: 640px) {
+  .phone-island {
+    width: 86px;
+    height: 18px;
+  }
+}
+
