@@ -621,51 +621,7 @@ export interface DeliveryFeedbackItem {
   status: "pending_review" | "resolved" | "viewed";
 }
 
-export interface ActiveSprintTaskItem {
-  id: string;
-  title: string;
-  category: "front" | "back" | "design" | "qa";
-  status: "completed" | "in_progress" | "review";
-  progress: number;
-}
 
-export const getActiveSprintTasks = (): ActiveSprintTaskItem[] => [
-  {
-    id: "",
-    title: "Construção da interface responsiva do Portal do Cliente com Dark Glassmorphism",
-    category: "front",
-    status: "completed",
-    progress: 100,
-  },
-  {
-    id: "",
-    title: "Módulo Financeiro com extrato em tempo real, cálculo de saldos e quitação",
-    category: "front",
-    status: "completed",
-    progress: 100,
-  },
-  {
-    id: "",
-    title: "Linha do Tempo e visualizador temporal de entregas (Passado, Presente e Futuro)",
-    category: "front",
-    status: "in_progress",
-    progress: 90,
-  },
-  {
-    id: "",
-    title: "Validação de permissões e controle de acesso baseado em papéis (RBAC)",
-    category: "back",
-    status: "review",
-    progress: 95,
-  },
-  {
-    id: "",
-    title: "Homologação de performance em múltiplos navegadores e dispositivos móveis",
-    category: "qa",
-    status: "in_progress",
-    progress: 75,
-  },
-];
 
 export const renderInlineFormatting = (text: string) => {
   const parts = text.split(/(\*\*.*?\*\*)/g);
