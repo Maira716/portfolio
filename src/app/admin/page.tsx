@@ -1392,9 +1392,22 @@ export default function AdminDashboardPage() {
       // 4. Load project documents
       let storedDocs: Record<string, ProjectDocument[]> = {};
       try {
+        const docRes = await fetch("/api/portal/documents?all=true");
+        if (docRes.ok) {
+          const docJson = await docRes.json();
+          if (docJson.documents && typeof docJson.documents === "object") {
+            storedDocs = docJson.documents;
+          }
+        }
+      } catch (dErr) {
+        console.warn("Could not fetch documents from server API:", dErr);
+      }
+
+      try {
         const localDocs = localStorage.getItem("portfolio_admin_documents_v1");
         if (localDocs) {
-          storedDocs = JSON.parse(localDocs);
+          const parsed = JSON.parse(localDocs);
+          storedDocs = { ...storedDocs, ...parsed };
         }
       } catch (e) {
         console.error("Error reading documents from storage:", e);
@@ -2952,6 +2965,12 @@ export default function AdminDashboardPage() {
     } catch (e) {
       console.error("Error saving documents to localStorage:", e);
     }
+    // Sync with server API
+    fetch("/api/portal/documents", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ documentsMap: updated }),
+    }).catch((err) => console.warn("Could not save documents to server API:", err));
   };
 
   const handleOpenDocumentModal = (projectId: string, doc?: ProjectDocument) => {

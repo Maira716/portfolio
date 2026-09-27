@@ -77,12 +77,28 @@ export interface StoredProjectFinancialData {
   installments: StoredProjectInstallment[];
 }
 
+export interface StoredProjectDocument {
+  id: string;
+  project_id: string;
+  title: string;
+  filename: string;
+  category: "contrato" | "briefing" | "nda" | "recibo" | "laudo" | "outro";
+  visibility: "client" | "internal";
+  file_url: string;
+  file_size_bytes: number;
+  file_size_formatted?: string;
+  mime_type?: string;
+  uploaded_at: string;
+  notes?: string | null;
+}
+
 export interface PortalData {
   clients: StoredClient[];
   projects: StoredProject[];
   updates: Record<string, StoredUpdate[]>;
   notifications: StoredNotification[];
   finances?: Record<string, StoredProjectFinancialData>;
+  documents?: Record<string, StoredProjectDocument[]>;
 }
 
 const DATA_FILE_PATH = path.join(process.cwd(), "src", "data", "portal-data.json");
@@ -113,6 +129,7 @@ const DEFAULT_DATA: PortalData = {
   updates: {},
   notifications: [],
   finances: {},
+  documents: {},
 };
 
 function ensureDirectoryExists(filePath: string) {
@@ -137,6 +154,7 @@ export function readPortalData(): PortalData {
     if (!parsed.updates || typeof parsed.updates !== "object") parsed.updates = {};
     if (!parsed.notifications || !Array.isArray(parsed.notifications)) parsed.notifications = [];
     if (!parsed.finances || typeof parsed.finances !== "object") parsed.finances = {};
+    if (!parsed.documents || typeof parsed.documents !== "object") parsed.documents = {};
 
     const hasDanilo = parsed.clients.some((c: StoredClient) => c.email?.toLowerCase() === "danilobuess@hotmail.com");
     if (!hasDanilo) {
@@ -380,4 +398,44 @@ export function saveAllFinances(
   writePortalData(data);
   return data.finances;
 }
+
+export function getDocumentsForProject(
+  projectId: string,
+  visibility?: "client" | "all"
+): StoredProjectDocument[] {
+  const data = readPortalData();
+  const list = data.documents?.[projectId] || [];
+  if (visibility === "client") {
+    return list.filter((d) => d.visibility === "client");
+  }
+  return list;
+}
+
+export function getAllDocuments(): Record<string, StoredProjectDocument[]> {
+  const data = readPortalData();
+  return data.documents || {};
+}
+
+export function saveDocumentsForProject(
+  projectId: string,
+  docs: StoredProjectDocument[]
+): StoredProjectDocument[] {
+  const data = readPortalData();
+  if (!data.documents) {
+    data.documents = {};
+  }
+  data.documents[projectId] = docs;
+  writePortalData(data);
+  return docs;
+}
+
+export function saveAllDocuments(
+  docsMap: Record<string, StoredProjectDocument[]>
+): Record<string, StoredProjectDocument[]> {
+  const data = readPortalData();
+  data.documents = { ...(data.documents || {}), ...docsMap };
+  writePortalData(data);
+  return data.documents;
+}
+
 

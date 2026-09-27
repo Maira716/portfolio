@@ -459,6 +459,8 @@ export interface Milestone {
   stage?: string | null;
   deliverables?: string[] | null;
   priority?: "alta" | "media" | "critica" | "normal" | "baixa" | null;
+  status?: "pending" | "in_progress" | "completed" | string;
+  progress?: number;
 }
 
 export const generateDefaultMilestones = (project: Project): Milestone[] => [];
@@ -1033,17 +1035,34 @@ function ClientPortalContent() {
   }, [user, authLoading, router, isImpersonating]);
 
   // Load project documents (strict client-visible filter)
-  const loadProjectDocuments = (projectId: string, projectTitle: string) => {
+  const loadProjectDocuments = async (projectId: string, projectTitle: string) => {
     try {
-      const raw = typeof window !== "undefined" ? localStorage.getItem("portfolio_admin_documents_v1") : null;
       let list: ProjectDocument[] = [];
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          // Multi-tenant & visibility boundary: ONLY client visibility
-          list = parsed.filter(
-            (d: ProjectDocument) => d.project_id === projectId && d.visibility === "client"
-          );
+      try {
+        const res = await fetch(`/api/portal/documents?projectId=${encodeURIComponent(projectId)}&visibility=client`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.documents && Array.isArray(json.documents)) {
+            list = json.documents;
+          }
+        }
+      } catch (apiErr) {
+        console.warn("Could not fetch documents from server API:", apiErr);
+      }
+
+      if (list.length === 0) {
+        const raw = typeof window !== "undefined" ? localStorage.getItem("portfolio_admin_documents_v1") : null;
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            list = parsed.filter(
+              (d: ProjectDocument) => d.project_id === projectId && d.visibility === "client"
+            );
+          } else if (parsed && typeof parsed === "object" && parsed[projectId]) {
+            list = (parsed[projectId] || []).filter(
+              (d: ProjectDocument) => d.visibility === "client"
+            );
+          }
         }
       }
       setDocuments(list);
@@ -1171,7 +1190,7 @@ function ClientPortalContent() {
   const loadProjectDetails = async (projectId: string, projectTitle: string, currentProj?: Project) => {
     try {
       // Load documents for this project
-      loadProjectDocuments(projectId, projectTitle);
+      await loadProjectDocuments(projectId, projectTitle);
 
       // Load financial data
       let projFinances: ProjectFinancialData | null = null;
@@ -2204,7 +2223,7 @@ function ClientPortalContent() {
               {(() => {
                 const completedMilestones = [...milestones].filter((m) => m.completed).reverse();
                 const upcomingMilestones = [...milestones].filter((m) => !m.completed);
-                const activeTasks = getActiveSprintTasks();
+                const activeMilestones = [...milestones].filter((m) => !m.completed);
 
                 return (
                   <div className="p-6 sm:p-8 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-2xl space-y-6 relative overflow-hidden">
@@ -2234,7 +2253,7 @@ function ClientPortalContent() {
 
                       <div className="shrink-0 flex items-center gap-2">
                         <span className="text-xs font-bold px-3 py-1.5 rounded-xl bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
-                          {completedMilestones.length} de {milestones.length || 5} marcos concluídos
+                          {completedMilestones.length} de {milestones.length || 0} marcos concluídos
                         </span>
                       </div>
                     </div>
@@ -2259,7 +2278,7 @@ function ClientPortalContent() {
                       {[
                         { key: "all", label: "🌟 Visão Completa", count: milestones.length },
                         { key: "upcoming", label: "🚀 Próximas Entregas (Futuro)", count: upcomingMilestones.length },
-                        { key: "current", label: "⚡ Etapa Atual (Presente)", count: activeTasks.length },
+                        { key: "current", label: "⚡ Etapa Atual (Presente)", count: activeMilestones.length },
                         { key: "history", label: "✅ Histórico de Entregas (Passado)", count: completedMilestones.length },
                       ].map((tab) => (
                         <button
@@ -2453,7 +2472,7 @@ function ClientPortalContent() {
                             <div className="flex items-center gap-2 mb-1">
                               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
                               <span className="text-xs font-bold uppercase text-emerald-400 tracking-wider">
-                                Sprint Corrente em Andamento
+                                Sprint Corrente & Etapas do Projeto
                               </span>
                             </div>
                             <h4 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
@@ -2476,79 +2495,108 @@ function ClientPortalContent() {
                         {/* Sprint Tasks Checklist */}
                         <div className="space-y-3">
                           <div className="flex items-center justify-between text-xs font-semibold text-gray-400">
-                            <span>Lista de Tarefas da Sprint</span>
+                            <span>Etapas Cadastradas no Cronograma</span>
                             <span>Status de Execução</span>
                           </div>
 
-                          <div className="space-y-2">
-                            {activeTasks.map((task) => (
-                              <div
-                                key={task.id}
-                                className="p-3.5 rounded-xl bg-black/40 border border-white/5 hover:border-indigo-500/20 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
-                              >
-                                <div className="flex items-start sm:items-center gap-3">
+                          {milestones.length === 0 ? (
+                            <div className="p-6 rounded-2xl bg-black/40 border border-white/5 text-center space-y-1.5">
+                              <p className="text-xs text-gray-300 font-semibold">
+                                Nenhuma etapa técnica cadastrada no cronograma ainda.
+                              </p>
+                              <p className="text-[11px] text-gray-500">
+                                As tarefas e entregáveis detalhados da sprint aparecerão aqui assim que forem adicionados no painel.
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              {milestones.map((m) => {
+                                const isDone = m.completed || m.status === "completed";
+                                const isInProgress = m.status === "in_progress" || ((m.progress ?? 0) > 0 && !isDone);
+                                const prog = isDone ? 100 : (m.progress ?? 0);
+
+                                return (
                                   <div
-                                    className={`w-5 h-5 rounded-md flex items-center justify-center text-xs shrink-0 mt-0.5 sm:mt-0 ${
-                                      task.status === "completed"
-                                        ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                                        : task.status === "review"
-                                        ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
-                                        : "bg-indigo-500/20 text-indigo-400 border border-indigo-500/30"
-                                    }`}
+                                    key={m.id}
+                                    className="p-3.5 rounded-xl bg-black/40 border border-white/5 hover:border-indigo-500/20 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
                                   >
-                                    {task.status === "completed" ? (
-                                      <Check size={12} />
-                                    ) : (
-                                      <PlayCircle size={12} />
-                                    )}
-                                  </div>
+                                    <div className="flex items-start sm:items-center gap-3">
+                                      <div
+                                        className={`w-5 h-5 rounded-md flex items-center justify-center text-xs shrink-0 mt-0.5 sm:mt-0 ${
+                                          isDone
+                                            ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                                            : isInProgress
+                                            ? "bg-indigo-500/20 text-indigo-400 border border-indigo-500/30"
+                                            : "bg-white/5 text-gray-400 border border-white/10"
+                                        }`}
+                                      >
+                                        {isDone ? (
+                                          <Check size={12} />
+                                        ) : (
+                                          <PlayCircle size={12} />
+                                        )}
+                                      </div>
 
-                                  <div>
-                                    <span
-                                      className={`text-xs font-semibold ${
-                                        task.status === "completed"
-                                          ? "text-gray-300 line-through"
-                                          : "text-white"
-                                      }`}
-                                    >
-                                      {task.title}
-                                    </span>
-                                  </div>
-                                </div>
+                                      <div>
+                                        <div className="flex items-center gap-2">
+                                          <span
+                                            className={`text-xs font-semibold ${
+                                              isDone
+                                                ? "text-gray-300 line-through"
+                                                : "text-white"
+                                            }`}
+                                          >
+                                            {m.title}
+                                          </span>
+                                          {m.stage && (
+                                            <span className="text-[10px] text-gray-400">
+                                              ({m.stage})
+                                            </span>
+                                          )}
+                                        </div>
+                                        {m.description && (
+                                          <p className="text-[11px] text-gray-400 mt-0.5 line-clamp-1">
+                                            {m.description}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
 
-                                <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">
-                                  <div className="w-20 sm:w-24 h-2 bg-white/5 rounded-full overflow-hidden">
-                                    <div
-                                      className={`h-full rounded-full ${
-                                        task.status === "completed"
-                                          ? "bg-emerald-500"
-                                          : task.status === "review"
-                                          ? "bg-cyan-400"
-                                          : "bg-indigo-500"
-                                      }`}
-                                      style={{ width: `${task.progress}%` }}
-                                    />
-                                  </div>
+                                    <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">
+                                      <div className="w-20 sm:w-24 h-2 bg-white/5 rounded-full overflow-hidden">
+                                        <div
+                                          className={`h-full rounded-full ${
+                                            isDone
+                                              ? "bg-emerald-500"
+                                              : isInProgress
+                                              ? "bg-indigo-500"
+                                              : "bg-gray-600"
+                                          }`}
+                                          style={{ width: `${prog}%` }}
+                                        />
+                                      </div>
 
-                                  <span
-                                    className={`text-[10px] font-bold px-2 py-0.5 rounded-md border whitespace-nowrap ${
-                                      task.status === "completed"
-                                        ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"
-                                        : task.status === "review"
-                                        ? "bg-cyan-500/10 text-cyan-300 border-cyan-500/20"
-                                        : "bg-indigo-500/10 text-indigo-300 border-indigo-500/20"
-                                    }`}
-                                  >
-                                    {task.status === "completed"
-                                      ? "Concluído"
-                                      : task.status === "review"
-                                      ? "Em Validação"
-                                      : "Em Progresso"}
-                                  </span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
+                                      <span
+                                        className={`text-[10px] font-bold px-2 py-0.5 rounded-md border whitespace-nowrap ${
+                                          isDone
+                                            ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"
+                                            : isInProgress
+                                            ? "bg-indigo-500/10 text-indigo-300 border-indigo-500/20"
+                                            : "bg-white/5 text-gray-400 border-white/10"
+                                        }`}
+                                      >
+                                        {isDone
+                                          ? "Concluído"
+                                          : isInProgress
+                                          ? `${prog}% Em Progresso`
+                                          : "Pendente"}
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
