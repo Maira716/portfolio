@@ -1176,26 +1176,32 @@ function ClientPortalContent() {
       // Load financial data
       let projFinances: ProjectFinancialData | null = null;
       try {
-        const rawFinances =
-          typeof window !== "undefined"
-            ? localStorage.getItem("portfolio_admin_finances_v1")
-            : null;
-        if (rawFinances) {
-          const parsed = JSON.parse(rawFinances);
-          if (parsed && typeof parsed === "object" && parsed[projectId]) {
-            projFinances = parsed[projectId];
+        const finRes = await fetch(`/api/portal/finances?projectId=${encodeURIComponent(projectId)}`);
+        if (finRes.ok) {
+          const finJson = await finRes.json();
+          if (finJson.finances) {
+            projFinances = finJson.finances;
           }
         }
-      } catch (e) {
-        console.error("Error reading finances from localStorage:", e);
+      } catch (fErr) {
+        console.warn("Could not fetch finances from server API:", fErr);
       }
 
       if (!projFinances) {
-        const targetProj =
-          currentProj ||
-          selectedProject ||
-          ({ id: projectId, title: projectTitle } as Project);
-        projFinances = generateDefaultProjectFinances(targetProj);
+        try {
+          const rawFinances =
+            typeof window !== "undefined"
+              ? localStorage.getItem("portfolio_admin_finances_v1")
+              : null;
+          if (rawFinances) {
+            const parsed = JSON.parse(rawFinances);
+            if (parsed && typeof parsed === "object" && parsed[projectId]) {
+              projFinances = parsed[projectId];
+            }
+          }
+        } catch (e) {
+          console.error("Error reading finances from localStorage:", e);
+        }
       }
 
       setFinancialData(projFinances);

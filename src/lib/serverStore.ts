@@ -55,11 +55,34 @@ export interface StoredNotification {
   created_at: string;
 }
 
+export type StoredPaymentMethod = "pix" | "boleto" | "cartao" | "ted" | "link";
+
+export interface StoredProjectInstallment {
+  id: string;
+  project_id: string;
+  installment_number: number;
+  title: string;
+  amount: number;
+  due_date: string;
+  paid_at: string | null;
+  payment_method?: StoredPaymentMethod;
+  receipt_url?: string | null;
+  notes?: string | null;
+}
+
+export interface StoredProjectFinancialData {
+  project_id: string;
+  total_contract_value: number;
+  notes?: string | null;
+  installments: StoredProjectInstallment[];
+}
+
 export interface PortalData {
   clients: StoredClient[];
   projects: StoredProject[];
   updates: Record<string, StoredUpdate[]>;
   notifications: StoredNotification[];
+  finances?: Record<string, StoredProjectFinancialData>;
 }
 
 const DATA_FILE_PATH = path.join(process.cwd(), "src", "data", "portal-data.json");
@@ -89,6 +112,7 @@ const DEFAULT_DATA: PortalData = {
   projects: [],
   updates: {},
   notifications: [],
+  finances: {},
 };
 
 function ensureDirectoryExists(filePath: string) {
@@ -112,6 +136,7 @@ export function readPortalData(): PortalData {
     if (!parsed.projects || !Array.isArray(parsed.projects)) parsed.projects = [];
     if (!parsed.updates || typeof parsed.updates !== "object") parsed.updates = {};
     if (!parsed.notifications || !Array.isArray(parsed.notifications)) parsed.notifications = [];
+    if (!parsed.finances || typeof parsed.finances !== "object") parsed.finances = {};
 
     const hasDanilo = parsed.clients.some((c: StoredClient) => c.email?.toLowerCase() === "danilobuess@hotmail.com");
     if (!hasDanilo) {
@@ -323,3 +348,36 @@ export function markNotificationRead(notifId: string): void {
     writePortalData(data);
   }
 }
+
+export function getFinancesForProject(projectId: string): StoredProjectFinancialData | null {
+  const data = readPortalData();
+  return data.finances?.[projectId] || null;
+}
+
+export function getAllFinances(): Record<string, StoredProjectFinancialData> {
+  const data = readPortalData();
+  return data.finances || {};
+}
+
+export function saveFinancesForProject(
+  projectId: string,
+  finances: StoredProjectFinancialData
+): StoredProjectFinancialData {
+  const data = readPortalData();
+  if (!data.finances) {
+    data.finances = {};
+  }
+  data.finances[projectId] = finances;
+  writePortalData(data);
+  return finances;
+}
+
+export function saveAllFinances(
+  financesMap: Record<string, StoredProjectFinancialData>
+): Record<string, StoredProjectFinancialData> {
+  const data = readPortalData();
+  data.finances = { ...(data.finances || {}), ...financesMap };
+  writePortalData(data);
+  return data.finances;
+}
+

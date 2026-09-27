@@ -1367,9 +1367,22 @@ export default function AdminDashboardPage() {
       // 3. Load financial data
       let storedFinances: Record<string, ProjectFinancialData> = {};
       try {
+        const finRes = await fetch("/api/portal/finances?all=true");
+        if (finRes.ok) {
+          const finJson = await finRes.json();
+          if (finJson.finances && typeof finJson.finances === "object") {
+            storedFinances = finJson.finances;
+          }
+        }
+      } catch (fErr) {
+        console.warn("Could not fetch finances from server API:", fErr);
+      }
+
+      try {
         const local = localStorage.getItem("portfolio_admin_finances_v1");
         if (local) {
-          storedFinances = JSON.parse(local);
+          const parsed = JSON.parse(local);
+          storedFinances = { ...storedFinances, ...parsed };
         }
       } catch (e) {
         console.error("Error reading finances from storage:", e);
@@ -2586,6 +2599,12 @@ export default function AdminDashboardPage() {
     } catch (e) {
       console.error("Error saving finances to localStorage:", e);
     }
+    // Sync with server API
+    fetch("/api/portal/finances", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ financesMap: updated }),
+    }).catch((err) => console.warn("Could not save finances to server API:", err));
   };
 
   const handleOpenInstallmentModal = (projectId: string, installment?: ProjectInstallment) => {

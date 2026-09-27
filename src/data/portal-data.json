@@ -41,5 +41,158 @@
     }
   ],
   "updates": {},
-  "notifications": []
+  "notifications": [],
+  "finances": {
+    "proj-prontuario-gearhead": {
+      "project_id": "proj-prontuario-gearhead",
+      "total_contract_value": 4200,
+      "notes": "Contrato parcelado em 12x de R$ 350,00 via Pix",
+      "installments": [
+        {
+          "id": "inst-gen-1",
+          "project_id": "proj-prontuario-gearhead",
+          "installment_number": 1,
+          "title": "Parcela 1/12",
+          "amount": 350,
+          "due_date": "2026-09-29",
+          "paid_at": "2026-09-29",
+          "payment_method": "pix",
+          "receipt_url": "REC-ENTRADA-SPLIT-AUTO",
+          "notes": "Parcelamento automático gerado (12x)"
+        },
+        {
+          "id": "inst-gen-2",
+          "project_id": "proj-prontuario-gearhead",
+          "installment_number": 2,
+          "title": "Parcela 2/12",
+          "amount": 350,
+          "due_date": "2026-10-29",
+          "paid_at": null,
+          "payment_method": "pix",
+          "receipt_url": null,
+          "notes": "Parcelamento automático gerado (12x)"
+        },
+        {
+          "id": "inst-gen-3",
+          "project_id": "proj-prontuario-gearhead",
+          "installment_number": 3,
+          "title": "Parcela 3/12",
+          "amount": 350,
+          "due_date": "2026-11-29",
+          "paid_at": null,
+          "payment_method": "pix",
+          "receipt_url": null,
+          "notes": "Parcelamento automático gerado (12x)"
+        },
+        {
+          "id": "inst-gen-4",
+          "project_id": "proj-prontuario-gearhead",
+          "installment_number": 4,
+          "title": "Parcela 4/12",
+          "amount": 350,
+          "due_date": "2026-12-29",
+          "paid_at": null,
+          "payment_method": "pix",
+          "receipt_url": null,
+          "notes": "Parcelamento automático gerado (12x)"
+        },
+        {
+          "id": "inst-gen-5",
+          "project_id": "proj-prontuario-gearhead",
+          "installment_number": 5,
+          "title": "Parcela 5/12",
+          "amount": 350,
+          "due_date": "2027-01-29",
+          "paid_at": null,
+          "payment_method": "pix",
+          "receipt_url": null,
+          "notes": "Parcelamento automático gerado (12x)"
+        },
+        {
+          "id": "inst-gen-6",
+          "project_id": "proj-prontuario-gearhead",
+          "installment_number": 6,
+          "title": "Parcela 6/12",
+          "amount": 350,
+          "due_date": "2027-02-28",
+          "paid_at": null,
+          "payment_method": "pix",
+          "receipt_url": null,
+          "notes": "Parcelamento automático gerado (12x)"
+        },
+        {
+          "id": "inst-gen-7",
+          "project_id": "proj-prontuario-gearhead",
+          "installment_number": 7,
+          "title": "Parcela 7/12",
+          "amount": 350,
+          "due_date": "2027-03-29",
+          "paid_at": null,
+          "payment_method": "pix",
+          "receipt_url": null,
+          "notes": "Parcelamento automático gerado (12x)"
+        },
+        {
+          "id": "inst-gen-8",
+          "project_id": "proj-prontuario-gearhead",
+          "installment_number": 8,
+          "title": "Parcela 8/12",
+          "amount": 350,
+          "due_date": "2027-04-29",
+          "paid_at": null,
+          "payment_method": "pix",
+          "receipt_url": null,
+          "notes": "Parcelamento automático gerado (12x)"
+        },
+        {
+          "id": "inst-gen-9",
+          "project_id": "proj-prontuario-gearhead",
+          "installment_number": 9,
+          "title": "Parcela 9/12",
+          "amount": 350,
+          "due_date": "2027-05-29",
+          "paid_at": null,
+          "payment_method": "pix",
+          "receipt_url": null,
+          "notes": "Parcelamento automático gerado (12x)"
+        },
+        {
+          "id": "inst-gen-10",
+          "project_id": "proj-prontuario-gearhead",
+          "installment_number": 10,
+          "title": "Parcela 10/12",
+          "amount": 350,
+          "due_date": "2027-06-29",
+          "paid_at": null,
+          "payment_method": "pix",
+          "receipt_url": null,
+          "notes": "Parcelamento automático gerado (12x)"
+        },
+        {
+          "id": "inst-gen-11",
+          "project_id": "proj-prontuario-gearhead",
+          "installment_number": 11,
+          "title": "Parcela 11/12",
+          "amount": 350,
+          "due_date": "2027-07-29",
+          "paid_at": null,
+          "payment_method": "pix",
+          "receipt_url": null,
+          "notes": "Parcelamento automático gerado (12x)"
+        },
+        {
+          "id": "inst-gen-12",
+          "project_id": "proj-prontuario-gearhead",
+          "installment_number": 12,
+          "title": "Parcela 12/12",
+          "amount": 350,
+          "due_date": "2027-08-29",
+          "paid_at": null,
+          "payment_method": "pix",
+          "receipt_url": null,
+          "notes": "Parcelamento automático gerado (12x)"
+        }
+      ]
+    }
+  }
 }
