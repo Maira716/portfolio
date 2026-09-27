@@ -1072,6 +1072,9 @@ export default function AdminDashboardPage() {
   >("all");
   const [projectClientFilter, setProjectClientFilter] = useState<string>("all");
 
+  const isDbUuid = (id?: string | null): boolean =>
+    !!id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
   // Selected Stage Filter in Project Details
   const [selectedStageFilter, setSelectedStageFilter] = useState<string>("all");
   const [autoProgressEnabled, setAutoProgressEnabled] = useState<boolean>(true);
@@ -1456,31 +1459,39 @@ export default function AdminDashboardPage() {
 
   const fetchProjectDetails = async (projectId: string) => {
     try {
-      const { data: mData } = await supabase
-        .from("project_milestones")
-        .select("*")
-        .eq("project_id", projectId)
-        .order("order_index", { ascending: true });
-      setMilestones((mData as Milestone[]) || []);
+      if (isDbUuid(projectId)) {
+        try {
+          const { data: mData } = await supabase
+            .from("project_milestones")
+            .select("*")
+            .eq("project_id", projectId)
+            .order("order_index", { ascending: true });
+          if (mData && mData.length > 0) {
+            setMilestones((mData as Milestone[]) || []);
+          }
+        } catch (e) {}
 
-      const { data: uData } = await supabase
-        .from("project_updates")
-        .select("*")
-        .eq("project_id", projectId)
-        .order("created_at", { ascending: false });
+        try {
+          const { data: uData } = await supabase
+            .from("project_updates")
+            .select("*")
+            .eq("project_id", projectId)
+            .order("created_at", { ascending: false });
 
-      if (uData && uData.length > 0) {
-        setUpdates(uData as ProjectUpdate[]);
-      } else {
-        const localUpdates = typeof window !== "undefined" ? localStorage.getItem("portfolio_admin_updates_v1") : null;
-        if (localUpdates) {
-          try {
-            const parsed = JSON.parse(localUpdates);
-            if (parsed[projectId]) {
-              setUpdates(parsed[projectId]);
-            }
-          } catch (e) {}
-        }
+          if (uData && uData.length > 0) {
+            setUpdates(uData as ProjectUpdate[]);
+          }
+        } catch (e) {}
+      }
+
+      const localUpdates = typeof window !== "undefined" ? localStorage.getItem("portfolio_admin_updates_v1") : null;
+      if (localUpdates) {
+        try {
+          const parsed = JSON.parse(localUpdates);
+          if (parsed[projectId]) {
+            setUpdates(parsed[projectId]);
+          }
+        } catch (e) {}
       }
     } catch (err) {
       console.error("Error fetching project details:", err);
@@ -1535,13 +1546,12 @@ export default function AdminDashboardPage() {
     e.preventDefault();
     try {
       const candidates = getStatusCandidates(pStatus);
-      let successInDb = false;
-      let dbError: any = null;
+      const dbClientId = isDbUuid(pClientId) ? pClientId : null;
 
       const basePayload = {
         title: pTitle,
         description: pDescription,
-        client_id: pClientId || null,
+        client_id: dbClientId,
         progress: Number(pProgress),
         start_date: pStartDate || null,
         deadline: pDeadline || null,
@@ -1552,74 +1562,56 @@ export default function AdminDashboardPage() {
         updated_at: new Date().toISOString(),
       };
 
-      for (const cand of candidates) {
-        try {
-          const payload = { ...basePayload, status: cand };
-          if (editingProject) {
+      // Try Supabase update only if valid UUID
+      if (editingProject && isDbUuid(editingProject.id)) {
+        for (const cand of candidates) {
+          try {
+            const payload = { ...basePayload, status: cand };
             const { error } = await supabase
               .from("projects")
               .update(payload)
               .eq("id", editingProject.id);
-            if (!error) {
-              successInDb = true;
-              break;
-            }
-            dbError = error;
-            if (!error.message?.includes("projects_status_check")) {
-              throw error;
-            }
-          } else {
-            const { error } = await supabase.from("projects").insert([payload]);
-            if (!error) {
-              successInDb = true;
-              break;
-            }
-            dbError = error;
-            if (!error.message?.includes("projects_status_check")) {
-              throw error;
-            }
+            if (!error) break;
+          } catch (innerErr: any) {
+            console.warn("Supabase update error (falling back to server store):", innerErr);
           }
-        } catch (innerErr: any) {
-          dbError = innerErr;
-          if (!innerErr.message?.includes("projects_status_check")) {
-            throw innerErr;
+        }
+      } else if (!editingProject) {
+        for (const cand of candidates) {
+          try {
+            const payload = { ...basePayload, status: cand };
+            const { error } = await supabase.from("projects").insert([payload]);
+            if (!error) break;
+          } catch (innerErr: any) {
+            console.warn("Supabase insert error (falling back to server store):", innerErr);
           }
         }
       }
 
-      // Only fallback to local storage if database insert was blocked
-      if (!successInDb) {
-        const localId = editingProject?.id || `proj-${Date.now()}`;
-        const newProj: Project = {
-          id: localId,
-          client_id: pClientId || null,
-          title: pTitle,
-          description: pDescription,
-          status: pStatus,
-          progress: Number(pProgress),
-          start_date: pStartDate || null,
-          deadline: pDeadline || null,
-          preview_url: pPreviewUrl || null,
-          figma_url: pFigmaUrl || null,
-          repo_url: pRepoUrl || null,
-          category: pCategory,
-          created_at: editingProject?.created_at || new Date().toISOString(),
-        };
+      const localId = editingProject?.id || `proj-${Date.now()}`;
+      const newProj: Project = {
+        id: localId,
+        client_id: pClientId || null,
+        title: pTitle,
+        description: pDescription,
+        status: pStatus,
+        progress: Number(pProgress),
+        start_date: pStartDate || null,
+        deadline: pDeadline || null,
+        preview_url: pPreviewUrl || null,
+        figma_url: pFigmaUrl || null,
+        repo_url: pRepoUrl || null,
+        category: pCategory,
+        created_at: editingProject?.created_at || new Date().toISOString(),
+      };
 
-        try {
-          const existingLocal: Project[] = JSON.parse(localStorage.getItem("portfolio_local_projects_v1") || "[]");
-          const updatedLocal = editingProject
-            ? existingLocal.map((p) => (p.id === localId ? newProj : p))
-            : [newProj, ...existingLocal.filter((p) => p.id !== localId)];
-          localStorage.setItem("portfolio_local_projects_v1", JSON.stringify(updatedLocal));
-        } catch (e) {}
-      } else if (editingProject) {
-        try {
-          const existingLocal: Project[] = JSON.parse(localStorage.getItem("portfolio_local_projects_v1") || "[]");
-          const updatedLocal = existingLocal.filter((p) => p.id !== editingProject.id && p.title !== pTitle);
-          localStorage.setItem("portfolio_local_projects_v1", JSON.stringify(updatedLocal));
-        } catch (e) {}
-      }
+      try {
+        const existingLocal: Project[] = JSON.parse(localStorage.getItem("portfolio_local_projects_v1") || "[]");
+        const updatedLocal = editingProject
+          ? existingLocal.map((p) => (p.id === localId ? newProj : p))
+          : [newProj, ...existingLocal.filter((p) => p.id !== localId)];
+        localStorage.setItem("portfolio_local_projects_v1", JSON.stringify(updatedLocal));
+      } catch (e) {}
 
       // Always sync with server API and store
       try {
@@ -1629,7 +1621,7 @@ export default function AdminDashboardPage() {
             (c.email && c.email.toLowerCase() === pClientId?.toLowerCase())
         );
         const apiPayload = {
-          id: editingProject?.id || `proj-${Date.now()}`,
+          id: localId,
           title: pTitle,
           description: pDescription,
           client_id: pClientId || (matchedClient ? matchedClient.id : null),
@@ -1653,6 +1645,10 @@ export default function AdminDashboardPage() {
         console.warn("Could not save project to server API:", apiSaveErr);
       }
 
+      if (selectedProject && selectedProject.id === localId) {
+        setSelectedProject({ ...selectedProject, ...newProj });
+      }
+
       setProjectModalOpen(false);
       await fetchData();
     } catch (err: any) {
@@ -1662,16 +1658,32 @@ export default function AdminDashboardPage() {
 
   const handleQuickUpdateStatus = async (projectId: string, newStatus: ProjectStatus) => {
     try {
-      const candidates = getStatusCandidates(newStatus);
-      for (const cand of candidates) {
-        try {
-          const { error } = await supabase
-            .from("projects")
-            .update({ status: cand, updated_at: new Date().toISOString() })
-            .eq("id", projectId);
-          if (!error) break;
-        } catch (e) {}
+      if (isDbUuid(projectId)) {
+        const candidates = getStatusCandidates(newStatus);
+        for (const cand of candidates) {
+          try {
+            const { error } = await supabase
+              .from("projects")
+              .update({ status: cand, updated_at: new Date().toISOString() })
+              .eq("id", projectId);
+            if (!error) break;
+          } catch (e) {}
+        }
       }
+
+      try {
+        const targetProj = projects.find((p) => p.id === projectId);
+        if (targetProj) {
+          await fetch("/api/admin/projects", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ...targetProj,
+              status: newStatus,
+            }),
+          });
+        }
+      } catch (e) {}
 
       try {
         const localProjects: Project[] = JSON.parse(localStorage.getItem("portfolio_local_projects_v1") || "[]");
@@ -1684,21 +1696,37 @@ export default function AdminDashboardPage() {
       }
       await fetchData();
     } catch (err: any) {
-      alert("Erro ao alterar status do projeto: " + err.message);
+      console.warn("Erro ao alterar status do projeto:", err);
     }
   };
 
   const handleDeleteProject = async (id: string) => {
     if (!confirm("Tem certeza que deseja excluir este projeto? Esta ação não pode ser desfeita.")) return;
     try {
+      if (isDbUuid(id)) {
+        try {
+          await supabase.from("projects").delete().eq("id", id);
+        } catch (e) {}
+      }
+
       try {
-        await supabase.from("projects").delete().eq("id", id);
+        await fetch("/api/admin/delete-project", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id }),
+        });
       } catch (e) {}
+
       try {
         const localProjects: Project[] = JSON.parse(localStorage.getItem("portfolio_local_projects_v1") || "[]");
         const updatedLocal = localProjects.filter((p) => p.id !== id);
         localStorage.setItem("portfolio_local_projects_v1", JSON.stringify(updatedLocal));
       } catch (e) {}
+
+      if (selectedProject?.id === id) {
+        setSelectedProject(null);
+        setProjectDetailsModalOpen(false);
+      }
       await fetchData();
     } catch (err: any) {
       alert("Erro ao excluir: " + err.message);
@@ -1744,36 +1772,40 @@ export default function AdminDashboardPage() {
         mStatus
       );
 
-      if (editingMilestone) {
-        const { error } = await supabase
-          .from("project_milestones")
-          .update({
-            title: mTitle,
-            description: serializedDesc,
-            due_date: mDueDate || null,
-            completed: isApproved,
-            completed_at: isApproved ? (editingMilestone.completed_at || new Date().toISOString()) : null,
-          })
-          .eq("id", editingMilestone.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from("project_milestones").insert([
-          {
-            project_id: selectedProject.id,
-            title: mTitle,
-            description: serializedDesc,
-            due_date: mDueDate || null,
-            order_index: milestones.length + 1,
-            completed: isApproved,
-            completed_at: isApproved ? new Date().toISOString() : null,
-          },
-        ]);
-        if (error) throw error;
+      if (isDbUuid(selectedProject.id)) {
+        if (editingMilestone && isDbUuid(editingMilestone.id)) {
+          try {
+            await supabase
+              .from("project_milestones")
+              .update({
+                title: mTitle,
+                description: serializedDesc,
+                due_date: mDueDate || null,
+                completed: isApproved,
+                completed_at: isApproved ? (editingMilestone.completed_at || new Date().toISOString()) : null,
+              })
+              .eq("id", editingMilestone.id);
+          } catch (e) {}
+        } else {
+          try {
+            await supabase.from("project_milestones").insert([
+              {
+                project_id: selectedProject.id,
+                title: mTitle,
+                description: serializedDesc,
+                due_date: mDueDate || null,
+                order_index: milestones.length + 1,
+                completed: isApproved,
+                completed_at: isApproved ? new Date().toISOString() : null,
+              },
+            ]);
+          } catch (e) {}
+        }
       }
 
       //  Trigger 1: Email notification when delivery is completed
       if (isApproved && selectedProject) {
-        const matchedClient = clients.find((c) => c.id === selectedProject.client_id);
+        const matchedClient = clients.find((c) => matchProjectToClient(selectedProject, c));
         const clientEmail = matchedClient?.email || "cliente@empresa.com";
         const clientName = matchedClient?.full_name || "Cliente Contratante";
 
@@ -1800,21 +1832,23 @@ export default function AdminDashboardPage() {
       setMilestoneModalOpen(false);
       await fetchProjectDetails(selectedProject.id);
 
-      if (autoProgressEnabled) {
-        const updatedList = await supabase
-          .from("project_milestones")
-          .select("*")
-          .eq("project_id", selectedProject.id)
-          .order("order_index", { ascending: true });
-        if (updatedList.data) {
-          const newProg = calculateWeightedProgress(updatedList.data as Milestone[]);
-          await supabase
-            .from("projects")
-            .update({ progress: newProg, updated_at: new Date().toISOString() })
-            .eq("id", selectedProject.id);
-          setSelectedProject((prev) => (prev ? { ...prev, progress: newProg } : null));
-          setProjects((prev) => prev.map((p) => (p.id === selectedProject.id ? { ...p, progress: newProg } : p)));
-        }
+      if (autoProgressEnabled && isDbUuid(selectedProject.id)) {
+        try {
+          const updatedList = await supabase
+            .from("project_milestones")
+            .select("*")
+            .eq("project_id", selectedProject.id)
+            .order("order_index", { ascending: true });
+          if (updatedList.data) {
+            const newProg = calculateWeightedProgress(updatedList.data as Milestone[]);
+            await supabase
+              .from("projects")
+              .update({ progress: newProg, updated_at: new Date().toISOString() })
+              .eq("id", selectedProject.id);
+            setSelectedProject((prev) => (prev ? { ...prev, progress: newProg } : null));
+            setProjects((prev) => prev.map((p) => (p.id === selectedProject.id ? { ...p, progress: newProg } : p)));
+          }
+        } catch (e) {}
       }
     } catch (err: any) {
       alert("Erro ao salvar marco: " + err.message);
@@ -1838,19 +1872,22 @@ export default function AdminDashboardPage() {
         newStatus
       );
 
-      const { error } = await supabase
-        .from("project_milestones")
-        .update({
-          description: serializedDesc,
-          completed: isApproved,
-          completed_at: isApproved ? new Date().toISOString() : null,
-        })
-        .eq("id", milestone.id);
-      if (error) throw error;
+      if (isDbUuid(milestone.id)) {
+        try {
+          await supabase
+            .from("project_milestones")
+            .update({
+              description: serializedDesc,
+              completed: isApproved,
+              completed_at: isApproved ? new Date().toISOString() : null,
+            })
+            .eq("id", milestone.id);
+        } catch (e) {}
+      }
 
       //  Trigger 1: Email notification when delivery is completed
       if (isApproved && selectedProject) {
-        const matchedClient = clients.find((c) => c.id === selectedProject.client_id);
+        const matchedClient = clients.find((c) => matchProjectToClient(selectedProject, c));
         const clientEmail = matchedClient?.email || "cliente@empresa.com";
         const clientName = matchedClient?.full_name || "Cliente Contratante";
 
@@ -1876,21 +1913,23 @@ export default function AdminDashboardPage() {
 
       await fetchProjectDetails(selectedProject.id);
 
-      if (autoProgressEnabled) {
-        const updatedList = await supabase
-          .from("project_milestones")
-          .select("*")
-          .eq("project_id", selectedProject.id)
-          .order("order_index", { ascending: true });
-        if (updatedList.data) {
-          const newProg = calculateWeightedProgress(updatedList.data as Milestone[]);
-          await supabase
-            .from("projects")
-            .update({ progress: newProg, updated_at: new Date().toISOString() })
-            .eq("id", selectedProject.id);
-          setSelectedProject((prev) => (prev ? { ...prev, progress: newProg } : null));
-          setProjects((prev) => prev.map((p) => (p.id === selectedProject.id ? { ...p, progress: newProg } : p)));
-        }
+      if (autoProgressEnabled && isDbUuid(selectedProject.id)) {
+        try {
+          const updatedList = await supabase
+            .from("project_milestones")
+            .select("*")
+            .eq("project_id", selectedProject.id)
+            .order("order_index", { ascending: true });
+          if (updatedList.data) {
+            const newProg = calculateWeightedProgress(updatedList.data as Milestone[]);
+            await supabase
+              .from("projects")
+              .update({ progress: newProg, updated_at: new Date().toISOString() })
+              .eq("id", selectedProject.id);
+            setSelectedProject((prev) => (prev ? { ...prev, progress: newProg } : null));
+            setProjects((prev) => prev.map((p) => (p.id === selectedProject.id ? { ...p, progress: newProg } : p)));
+          }
+        } catch (e) {}
       }
     } catch (err: any) {
       alert("Erro ao atualizar status do marco: " + err.message);
@@ -1901,11 +1940,32 @@ export default function AdminDashboardPage() {
     if (!selectedProject) return;
     const newProg = calculateWeightedProgress(milestones);
     try {
-      const { error } = await supabase
-        .from("projects")
-        .update({ progress: newProg, updated_at: new Date().toISOString() })
-        .eq("id", selectedProject.id);
-      if (error) throw error;
+      if (isDbUuid(selectedProject.id)) {
+        try {
+          await supabase
+            .from("projects")
+            .update({ progress: newProg, updated_at: new Date().toISOString() })
+            .eq("id", selectedProject.id);
+        } catch (e) {}
+      }
+
+      try {
+        await fetch("/api/admin/projects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...selectedProject,
+            progress: newProg,
+          }),
+        });
+      } catch (e) {}
+
+      try {
+        const localProjects: Project[] = JSON.parse(localStorage.getItem("portfolio_local_projects_v1") || "[]");
+        const updatedLocal = localProjects.map((p) => (p.id === selectedProject.id ? { ...p, progress: newProg } : p));
+        localStorage.setItem("portfolio_local_projects_v1", JSON.stringify(updatedLocal));
+      } catch (e) {}
+
       setSelectedProject({ ...selectedProject, progress: newProg });
       setProjects((prev) => prev.map((p) => (p.id === selectedProject.id ? { ...p, progress: newProg } : p)));
     } catch (err: any) {
@@ -1917,24 +1977,30 @@ export default function AdminDashboardPage() {
     if (!selectedProject) return;
     if (!confirm("Deseja remover este marco?")) return;
     try {
-      await supabase.from("project_milestones").delete().eq("id", id);
+      if (isDbUuid(id)) {
+        try {
+          await supabase.from("project_milestones").delete().eq("id", id);
+        } catch (e) {}
+      }
       await fetchProjectDetails(selectedProject.id);
 
-      if (autoProgressEnabled) {
-        const updatedList = await supabase
-          .from("project_milestones")
-          .select("*")
-          .eq("project_id", selectedProject.id)
-          .order("order_index", { ascending: true });
-        if (updatedList.data) {
-          const newProg = calculateWeightedProgress(updatedList.data as Milestone[]);
-          await supabase
-            .from("projects")
-            .update({ progress: newProg, updated_at: new Date().toISOString() })
-            .eq("id", selectedProject.id);
-          setSelectedProject((prev) => (prev ? { ...prev, progress: newProg } : null));
-          setProjects((prev) => prev.map((p) => (p.id === selectedProject.id ? { ...p, progress: newProg } : p)));
-        }
+      if (autoProgressEnabled && isDbUuid(selectedProject.id)) {
+        try {
+          const updatedList = await supabase
+            .from("project_milestones")
+            .select("*")
+            .eq("project_id", selectedProject.id)
+            .order("order_index", { ascending: true });
+          if (updatedList.data) {
+            const newProg = calculateWeightedProgress(updatedList.data as Milestone[]);
+            await supabase
+              .from("projects")
+              .update({ progress: newProg, updated_at: new Date().toISOString() })
+              .eq("id", selectedProject.id);
+            setSelectedProject((prev) => (prev ? { ...prev, progress: newProg } : null));
+            setProjects((prev) => prev.map((p) => (p.id === selectedProject.id ? { ...p, progress: newProg } : p)));
+          }
+        } catch (e) {}
       }
     } catch (err: any) {
       console.error(err);

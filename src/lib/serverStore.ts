@@ -252,6 +252,20 @@ export function saveProject(proj: Partial<StoredProject> & { title: string; clie
   return projectToSave;
 }
 
+export function deleteProject(projectId: string): boolean {
+  const data = readPortalData();
+  const initialLength = data.projects.length;
+  data.projects = data.projects.filter((p) => p.id !== projectId);
+  if (data.projects.length !== initialLength) {
+    if (data.updates[projectId]) {
+      delete data.updates[projectId];
+    }
+    writePortalData(data);
+    return true;
+  }
+  return false;
+}
+
 export function getUpdatesForProject(projectId: string): StoredUpdate[] {
   const data = readPortalData();
   return data.updates[projectId] || [];
