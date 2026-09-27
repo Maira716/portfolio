@@ -1443,10 +1443,8 @@ export default function AdminDashboardPage() {
       }
       setDeliveryFeedbacks(storedFeedbacks);
 
-      if (pData && pData.length > 0) {
-        const current = selectedProject
-          ? pData.find((p) => p.id === selectedProject.id) || pData[0]
-          : pData[0];
+      if (selectedProject) {
+        const current = finalProjectsList.find((p) => p.id === selectedProject.id) || selectedProject;
         setSelectedProject(current);
         await fetchProjectDetails(current.id);
       }
