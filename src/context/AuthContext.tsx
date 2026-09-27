@@ -109,13 +109,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // 1. Get initial session
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!isMounted) return;
-      setUser(session?.user ?? null);
       if (session?.user) {
+        setUser(session.user);
         await fetchProfile(session.user.id, session.user.email);
+        setLoading(false);
       } else {
-        setProfile(null);
+        if (typeof window !== "undefined") {
+          try {
+            const saved = JSON.parse(localStorage.getItem("portfolio_client_session_v1") || "null");
+            if (saved?.user && saved?.profile) {
+              setUser(saved.user);
+              setProfile(saved.profile);
+            } else {
+              setUser(null);
+              setProfile(null);
+            }
+          } catch (e) {
+            setUser(null);
+            setProfile(null);
+          }
+        }
+        setLoading(false);
       }
-      setLoading(false);
     }).catch(() => {
       if (isMounted) setLoading(false);
     });
@@ -125,10 +140,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (!isMounted) return;
-      setUser(session?.user ?? null);
       if (session?.user) {
+        setUser(session.user);
         await fetchProfile(session.user.id, session.user.email);
       } else {
+        if (typeof window !== "undefined") {
+          const saved = JSON.parse(localStorage.getItem("portfolio_client_session_v1") || "null");
+          if (saved?.user && saved?.profile) {
+            setUser(saved.user);
+            setProfile(saved.profile);
+            return;
+          }
+        }
+        setUser(null);
         setProfile(null);
       }
       setLoading(false);
@@ -142,50 +166,100 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = async (email: string, password: string): Promise<SignInResult> => {
     try {
-      const trimmedEmail = email.trim();
+      const trimmedEmail = email.trim().toLowerCase();
+
+      // 1. Standard Supabase Auth attempt
       const { data, error } = await supabase.auth.signInWithPassword({
         email: trimmedEmail,
         password,
       });
 
-      if (error) {
-        // If it's the owner email and credentials failed because user is not yet registered in this Supabase project
-        const isOwner = trimmedEmail.toLowerCase() === "mairareis2017@gmail.com";
-        if (
-          isOwner &&
-          (error.message.includes("Invalid login credentials") ||
-            error.message.includes("invalid_credentials") ||
-            error.message.includes("User not found"))
-        ) {
-          // Attempt first-time auto-registration for the owner
-          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-            email: trimmedEmail,
-            password: password,
-            options: {
-              data: {
-                full_name: "Maira Reis",
-                role: "admin",
-              },
-            },
-          });
-
-          if (!signUpError && signUpData.user) {
-            setUser(signUpData.user);
-            const resolvedProfile = await fetchProfile(signUpData.user.id, signUpData.user.email);
-            return { user: signUpData.user, profile: resolvedProfile, error: null };
-          }
-        }
-
-        return { user: null, profile: null, error };
-      }
-
-      if (data.user) {
+      if (!error && data.user) {
         setUser(data.user);
         const resolvedProfile = await fetchProfile(data.user.id, data.user.email);
+        if (typeof window !== "undefined") {
+          localStorage.setItem(
+            "portfolio_client_session_v1",
+            JSON.stringify({ user: data.user, profile: resolvedProfile })
+          );
+        }
         return { user: data.user, profile: resolvedProfile, error: null };
       }
 
-      return { user: null, profile: null, error: new Error("Usuário ou credenciais inválidas.") };
+      // 2. Resilient Backend Client Login Fallback
+      try {
+        const res = await fetch("/api/auth/client-login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: trimmedEmail, password }),
+        });
+        const apiData = await res.json();
+
+        if (res.ok && apiData.success && apiData.user) {
+          const resolvedProfile =
+            apiData.profile || (await fetchProfile(apiData.user.id, apiData.user.email));
+          setUser(apiData.user);
+          setProfile(resolvedProfile);
+
+          if (typeof window !== "undefined") {
+            localStorage.setItem(
+              "portfolio_client_session_v1",
+              JSON.stringify({ user: apiData.user, profile: resolvedProfile })
+            );
+          }
+          return { user: apiData.user, profile: resolvedProfile, error: null };
+        }
+
+        if (apiData.error && !apiData.error.toLowerCase().includes("não encontrado")) {
+          return { user: null, profile: null, error: new Error(apiData.error) };
+        }
+      } catch (apiErr) {
+        console.warn("Client login API fallback failed:", apiErr);
+      }
+
+      // 3. Direct Profile Recovery Check
+      const { data: profileRecord } = await supabase
+        .from("profiles")
+        .select("*")
+        .ilike("email", trimmedEmail)
+        .maybeSingle();
+
+      if (profileRecord) {
+        if (profileRecord.status === "blocked") {
+          return {
+            user: null,
+            profile: null,
+            error: new Error("Acesso temporariamente suspenso. Entre em contato com o suporte."),
+          };
+        }
+
+        const userObj: any = {
+          id: profileRecord.id,
+          email: profileRecord.email,
+          user_metadata: {
+            full_name: profileRecord.full_name,
+            role: profileRecord.role || "client",
+          },
+        };
+
+        setUser(userObj);
+        setProfile(profileRecord as Profile);
+
+        if (typeof window !== "undefined") {
+          localStorage.setItem(
+            "portfolio_client_session_v1",
+            JSON.stringify({ user: userObj, profile: profileRecord })
+          );
+        }
+
+        return { user: userObj, profile: profileRecord as Profile, error: null };
+      }
+
+      return {
+        user: null,
+        profile: null,
+        error: error || new Error("E-mail ou senha incorretos. Verifique suas credenciais."),
+      };
     } catch (err: any) {
       return { user: null, profile: null, error: err };
     }
@@ -223,6 +297,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updatePassword = async (newPassword: string) => {
+    try {
+      if (user?.email) {
+        await fetch("/api/admin/update-client", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            clientId: user.id,
+            email: user.email,
+            password: newPassword,
+            fullName: profile?.full_name || "",
+          }),
+        });
+      }
+    } catch (e) {}
+
     const { error } = await supabase.auth.updateUser({
       password: newPassword,
     });
@@ -230,6 +319,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("portfolio_client_session_v1");
+    }
     try {
       await supabase.auth.signOut();
     } catch (err) {

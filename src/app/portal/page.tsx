@@ -214,49 +214,11 @@ export const calculateFinancialSummary = (financialData?: ProjectFinancialData |
 };
 
 export const generateDefaultProjectFinances = (project: Project): ProjectFinancialData => {
-  const baseValue = 14500;
   return {
     project_id: project.id,
-    total_contract_value: baseValue,
-    notes: `Contrato de desenvolvimento e licença de software - ${project.title}`,
-    installments: [
-      {
-        id: `${project.id}-inst-1`,
-        project_id: project.id,
-        installment_number: 1,
-        title: "Entrada / Sinal & Kickoff (40%)",
-        amount: 5800,
-        due_date: project.start_date || new Date().toISOString().split("T")[0],
-        paid_at: project.start_date || new Date().toISOString().split("T")[0],
-        payment_method: "pix",
-        receipt_url: "PIX-COMPROVANTE-SINAL-AUT-89421",
-        notes: "Sinal quitado e homologado no ato da assinatura contratual.",
-      },
-      {
-        id: `${project.id}-inst-2`,
-        project_id: project.id,
-        installment_number: 2,
-        title: "Entrega Front-end & Homologação Beta (30%)",
-        amount: 4350,
-        due_date: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-        paid_at: null,
-        payment_method: "pix",
-        receipt_url: null,
-        notes: "Vencimento condicionado à liberação do ambiente de testes para validação.",
-      },
-      {
-        id: `${project.id}-inst-3`,
-        project_id: project.id,
-        installment_number: 3,
-        title: "Publicação Oficial & Deploy em Produção (30%)",
-        amount: 4350,
-        due_date: project.deadline || new Date(Date.now() + 45 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-        paid_at: null,
-        payment_method: "pix",
-        receipt_url: null,
-        notes: "Vencimento na entrega final com código-fonte e publicação nas lojas/servidores.",
-      },
-    ],
+    total_contract_value: 0,
+    notes: "",
+    installments: [],
   };
 };
 
@@ -365,48 +327,41 @@ export const getQuickLinkCategoryInfo = (category: QuickLinkCategory) => {
 };
 
 export const generateDefaultProjectQuickLinks = (project: Project): ProjectQuickLink[] => {
-  return [
-    {
+  const links: ProjectQuickLink[] = [];
+  if (project.figma_url) {
+    links.push({
       id: `${project.id}-link-figma`,
       project_id: project.id,
-      label: "Protótipo Interativo Figma",
-      url: project.figma_url || "https://figma.com/@mairareis",
+      label: "Protótipo Figma",
+      url: project.figma_url,
       category: "figma",
-      description: "Acesse o design system, telas em alta fidelidade e fluxos de navegação.",
+      description: "Protótipo e Design UI/UX",
       is_active: true,
-    },
-    {
+    });
+  }
+  if (project.preview_url) {
+    links.push({
       id: `${project.id}-link-staging`,
       project_id: project.id,
-      label: "Ambiente de Testes (Staging)",
-      url: project.preview_url || "https://staging.mairareis.dev",
+      label: "Ambiente Staging / Preview",
+      url: project.preview_url,
       category: "staging",
-      description: "Valide as funcionalidades online antes da publicação definitiva.",
+      description: "Acesse a versão de homologação online",
       is_active: true,
-    },
-    {
-      id: `${project.id}-link-docs`,
+    });
+  }
+  if (project.repo_url) {
+    links.push({
+      id: `${project.id}-link-repo`,
       project_id: project.id,
-      label: "Documentação Técnica & Swagger",
-      url: "https://docs.mairareis.dev",
-      category: "docs",
-      description: "Especificações de endpoints, arquitetura e manuais de integração.",
+      label: "Repositório GitHub",
+      url: project.repo_url,
+      category: "github",
+      description: "Repositório do código-fonte",
       is_active: true,
-    },
-    ...(project.repo_url
-      ? [
-          {
-            id: `${project.id}-link-repo`,
-            project_id: project.id,
-            label: "Repositório de Código-Fonte",
-            url: project.repo_url,
-            category: "github" as const,
-            description: "Código-fonte estruturado com versionamento e histórico auditável.",
-            is_active: true,
-          },
-        ]
-      : []),
-  ];
+    });
+  }
+  return links;
 };
 
 export type DocumentCategory =
@@ -459,19 +414,19 @@ export const getDocumentCategoryInfo = (category: DocumentCategory) => {
       };
     case "termo_aceite":
       return {
-        label: "Termo de Aceite & Homologação",
+        label: "Termo de Aceite",
         badgeClass: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
         colorText: "text-emerald-400",
       };
     case "briefing":
       return {
-        label: "Briefing Técnico & Requisitos",
+        label: "Briefing Técnico",
         badgeClass: "bg-amber-500/15 text-amber-300 border-amber-500/30",
         colorText: "text-amber-400",
       };
     case "nda":
       return {
-        label: "Acordo de Confidencialidade (NDA)",
+        label: "Acordo NDA",
         badgeClass: "bg-cyan-500/15 text-cyan-300 border-cyan-500/30",
         colorText: "text-cyan-400",
       };
@@ -490,73 +445,7 @@ export const getDocumentCategoryInfo = (category: DocumentCategory) => {
   }
 };
 
-// FAQ & Contact Widget Types & Constants
-export interface FAQItem {
-  id: string;
-  question: string;
-  answer: string;
-  category: "suporte" | "entregas" | "financeiro" | "reunioes";
-  highlight?: string;
-}
-
-export const PORTAL_FAQS: FAQItem[] = [
-  {
-    id: "faq-1",
-    category: "entregas",
-    question: "Como solicitar um ajuste ou homologar uma entrega?",
-    answer:
-      "Na aba 'Linha do Tempo', identifique a entrega em andamento ou em homologação. Você encontrará os botões 'Aprovar Entrega' ou 'Solicitar Ajuste'. Ao preencher suas considerações, nossa equipe recebe uma notificação instantânea e inicia o tratamento em até 24h úteis.",
-    highlight: "Processo 100% registrado no dossiê do projeto.",
-  },
-  {
-    id: "faq-2",
-    category: "suporte",
-    question: "Quais são os horários e tempo médio de resposta do suporte?",
-    answer:
-      "Nosso atendimento operacional funciona de Segunda a Sexta-feira, das 09:00 às 18:00 (Horário de Brasília). Mensagens via WhatsApp possuem tempo médio de resposta inferior a 2 horas úteis. Para emergências fora do horário comercial, chamados críticos recebem triagem automática.",
-    highlight: "Atendimento ágil e direto com a desenvolvedora responsável.",
-  },
-  {
-    id: "faq-3",
-    category: "financeiro",
-    question: "Como emitir e baixar o recibo oficial de quitação das parcelas?",
-    answer:
-      "Acesse a aba 'Financeiro & Contrato' no topo da página. Ao lado de cada parcela com status 'Pago', clique no botão 'Baixar Recibo'. O sistema gera instantaneamente um documento padrão PDF A4 com dados fiscais, valor por extenso, termo irrevogável de quitação e chave de autenticação digital SHA-256.",
-    highlight: "Emissão em tempo real com validade fiscal e jurídica.",
-  },
-  {
-    id: "faq-4",
-    category: "reunioes",
-    question: "Como agendar uma reunião de alinhamento ou Sprint Review?",
-    answer:
-      "Você pode solicitar um alinhamento a qualquer momento através do nosso WhatsApp oficial de suporte ou clicando no botão 'Solicitar Reunião'. Nossas reuniões são realizadas via Google Meet com ata e resumo publicados automaticamente na sua Timeline de Updates.",
-    highlight: "Sessões com demonstração em tela e ata registrada.",
-  },
-  {
-    id: "faq-5",
-    category: "entregas",
-    question: "Como funciona a garantia e o suporte após o deploy em produção?",
-    answer:
-      "Todos os softwares e aplicações entregues contam com 30 dias corridos de garantia integral e gratuita para correção de qualquer instabilidade ou inconformidade. Além disso, disponibilizamos planos mensais de manutenção preventiva, atualizações de segurança e evolução contínua.",
-    highlight: "Tranquilidade e sustentabilidade para a sua operação.",
-  },
-];
-
-interface Project {
-  id: string;
-  client_id: string;
-  title: string;
-  description: string | null;
-  status: "planejamento" | "design" | "desenvolvimento" | "testes" | "concluido" | "pausado";
-  progress: number;
-  start_date: string | null;
-  deadline: string | null;
-  preview_url: string | null;
-  figma_url: string | null;
-  repo_url: string | null;
-  category: string | null;
-  created_at: string;
-}
+export const generateDefaultProjectDocuments = (project: Project): ProjectDocument[] => [];
 
 export interface Milestone {
   id: string;
@@ -569,148 +458,10 @@ export interface Milestone {
   due_date: string | null;
   stage?: string | null;
   deliverables?: string[] | null;
-  priority?: "alta" | "media" | "critica" | "normal" | null;
+  priority?: "alta" | "media" | "critica" | "normal" | "baixa" | null;
 }
 
-// Formal Feedback & Approval Types
-export type DeliveryReviewType = "approval" | "change_request";
-
-export interface DeliveryFeedbackItem {
-  id: string;
-  project_id: string;
-  milestone_id: string;
-  milestone_title: string;
-  stage_name?: string;
-  type: DeliveryReviewType;
-  author_name: string;
-  author_email: string;
-  notes: string;
-  created_at: string;
-  status: "pending_review" | "resolved" | "viewed";
-}
-
-export interface ActiveSprintTaskItem {
-  id: string;
-  title: string;
-  category: "front" | "back" | "design" | "qa";
-  status: "completed" | "in_progress" | "review";
-  progress: number;
-}
-
-export const getActiveSprintTasks = (): ActiveSprintTaskItem[] => [
-  {
-    id: "",
-    title: "Construção da interface responsiva do Portal do Cliente com Dark Glassmorphism",
-    category: "front",
-    status: "completed",
-    progress: 100,
-  },
-  {
-    id: "",
-    title: "Módulo Financeiro com extrato em tempo real, cálculo de saldos e quitação",
-    category: "front",
-    status: "completed",
-    progress: 100,
-  },
-  {
-    id: "",
-    title: "Linha do Tempo e visualizador temporal de entregas (Passado, Presente e Futuro)",
-    category: "front",
-    status: "in_progress",
-    progress: 90,
-  },
-  {
-    id: "",
-    title: "Validação de permissões e controle de acesso baseado em papéis (RBAC)",
-    category: "back",
-    status: "review",
-    progress: 95,
-  },
-  {
-    id: "",
-    title: "Homologação de performance em múltiplos navegadores e dispositivos móveis",
-    category: "qa",
-    status: "in_progress",
-    progress: 75,
-  },
-];
-
-export const generateDefaultMilestones = (project: Project): Milestone[] => {
-  const now = new Date();
-  const dCompleted1 = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-  const dCompleted2 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-  const dCurrent = new Date(now.getTime() + 4 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-  const dFuture1 = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-  const dFuture2 = new Date(now.getTime() + 28 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-
-  return [
-    {
-      id: `${project.id}-m-1`,
-      project_id: project.id,
-      title: "Briefing Técnico & Arquitetura de Requisitos",
-      description: "Mapeamento completo dos fluxos de usuário, modelagem do banco de dados e definição da stack moderna.",
-      order_index: 1,
-      completed: true,
-      completed_at: dCompleted1,
-      due_date: dCompleted1,
-      stage: "Planejamento & Escopo",
-      priority: "normal",
-      deliverables: ["Documento de Requisitos (PDF)", "Diagrama de Arquitetura", "Cronograma de Sprints"],
-    },
-    {
-      id: `${project.id}-m-2`,
-      project_id: project.id,
-      title: "Design System & Protótipo Navegável no Figma",
-      description: "Construção de telas de alta fidelidade no Figma, paleta Dark UI com glassmorphism e aprovação de layout.",
-      order_index: 2,
-      completed: true,
-      completed_at: dCompleted2,
-      due_date: dCompleted2,
-      stage: "UI/UX & Design",
-      priority: "alta",
-      deliverables: ["Link do Protótipo Figma", "Design System com Tokens", "Ata de Aprovação de Telas"],
-    },
-    {
-      id: `${project.id}-m-3`,
-      project_id: project.id,
-      title: "Desenvolvimento Front-end & Módulos Core (Sprint Atual)",
-      description: "Implementação dos componentes interativos, painel de cliente com RBAC, segurança e extrato em tempo real.",
-      order_index: 3,
-      completed: false,
-      completed_at: null,
-      due_date: dCurrent,
-      stage: "Desenvolvimento Ativo",
-      priority: "critica",
-      deliverables: ["Portal do Cliente Funcional", "Painel Administrativo", "Integração com Supabase"],
-    },
-    {
-      id: `${project.id}-m-4`,
-      project_id: project.id,
-      title: "Integração de APIs, Testes de Carga & QA de Segurança",
-      description: "Validação cruzada em múltiplos dispositivos móveis, testes de latência e auditoria de segurança.",
-      order_index: 4,
-      completed: false,
-      completed_at: null,
-      due_date: dFuture1,
-      stage: "Testes & Homologação",
-      priority: "alta",
-      deliverables: ["Ambiente de Staging para Cliente", "Checklist de QA e Validação", "Relatório de Performance"],
-    },
-    {
-      id: `${project.id}-m-5`,
-      project_id: project.id,
-      title: "Deploy em Produção, Publicação Final & Handover",
-      description: "Configuração do domínio oficial com SSL, entrega das chaves de acesso e período de suporte garantido.",
-      order_index: 5,
-      completed: false,
-      completed_at: null,
-      due_date: project.deadline || dFuture2,
-      stage: "Lançamento & Produção",
-      priority: "critica",
-      deliverables: ["Aplicação em Produção", "Código-Fonte Completo", "Termo de Garantia de 30 Dias"],
-    },
-  ];
-};
+export const generateDefaultMilestones = (project: Project): Milestone[] => [];
 
 export type UpdateType =
   | "reuniao"
@@ -781,44 +532,138 @@ export const getUpdateTypeInfo = (category: UpdateType | string) => {
   }
 };
 
-export const generateDefaultProjectUpdates = (project: Project): ProjectUpdate[] => {
-  const now = new Date();
-  const d1 = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000).toISOString();
-  const d2 = new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000).toISOString();
-  const d3 = new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000).toISOString();
+export const generateDefaultProjectUpdates = (project: Project): ProjectUpdate[] => [];
 
-  return [
-    {
-      id: `${project.id}-upd-1`,
-      project_id: project.id,
-      title: "Sprint Review & Release Beta v1.2.0",
-      category: "versao",
-      version_tag: "v1.2.0",
-      content:
-        "**Novidades desta versão:**\n- Finalização do fluxo de autenticação e perfis de acesso (RBAC).\n- Integração da tela de detalhes de pedidos e notificações push.\n- Otimizações de renderização no aplicativo móvel.\n\n*Ambiente de homologação atualizado para testes.*",
-      created_at: d1,
-    },
-    {
-      id: `${project.id}-upd-2`,
-      project_id: project.id,
-      title: "Reunião de Alinhamento de UI/UX e Aprovação do Protótipo",
-      category: "reuniao",
-      meeting_attendees: "Maira Reis, Equipe de Design e Cliente",
-      content:
-        "**Pautas alinhadas durante a reunião:**\n1. Apresentação das telas de onboarding e dashboard no Figma.\n2. Validação da paleta de cores primária e tipografia.\n3. Acordado prazo de homologação para a próxima sexta-feira.\n\n*Ata aprovada pelos participantes.*",
-      created_at: d2,
-    },
-    {
-      id: `${project.id}-upd-3`,
-      project_id: project.id,
-      title: "Comunicado: Início da Sprint 2 - Desenvolvimento Front-end",
-      category: "comunicado",
-      content:
-        "Informamos que as definições de arquitetura e design foram concluídas com sucesso. Iniciamos hoje a codificação dos componentes interativos no repositório oficial.\n\n> Previsão de primeira versão navegável em 10 dias úteis.",
-      created_at: d3,
-    },
-  ];
-};
+// FAQ & Contact Widget Types & Constants
+export interface FAQItem {
+  id: string;
+  question: string;
+  answer: string;
+  category: "suporte" | "entregas" | "financeiro" | "reunioes";
+  highlight?: string;
+}
+
+export const PORTAL_FAQS: FAQItem[] = [
+  {
+    id: "faq-1",
+    category: "entregas",
+    question: "Como solicitar um ajuste ou homologar uma entrega?",
+    answer:
+      "Na aba 'Linha do Tempo', identifique a entrega em andamento ou em homologação. Você encontrará os botões 'Aprovar Entrega' ou 'Solicitar Ajuste'. Ao preencher suas considerações, nossa equipe recebe uma notificação instantânea e inicia o tratamento em até 24h úteis.",
+    highlight: "Processo 100% registrado no dossiê do projeto.",
+  },
+  {
+    id: "faq-2",
+    category: "suporte",
+    question: "Quais são os horários e tempo médio de resposta do suporte?",
+    answer:
+      "Nosso atendimento operacional funciona de Segunda a Sexta-feira, das 09:00 às 18:00 (Horário de Brasília). Mensagens via WhatsApp possuem tempo médio de resposta inferior a 2 horas úteis. Para emergências fora do horário comercial, chamados críticos recebem triagem automática.",
+    highlight: "Atendimento ágil e direto com a desenvolvedora responsável.",
+  },
+  {
+    id: "faq-3",
+    category: "financeiro",
+    question: "Como emitir e baixar o recibo oficial de quitação das parcelas?",
+    answer:
+      "Acesse a aba 'Financeiro & Contrato' no topo da página. Ao lado de cada parcela com status 'Pago', clique no botão 'Baixar Recibo'. O sistema gera instantaneamente um documento padrão PDF A4 com dados fiscais, valor por extenso, termo irrevogável de quitação e chave de autenticação digital SHA-256.",
+    highlight: "Emissão em tempo real com validade fiscal e jurídica.",
+  },
+  {
+    id: "faq-4",
+    category: "reunioes",
+    question: "Como agendar uma reunião de alinhamento ou Sprint Review?",
+    answer:
+      "Você pode solicitar um alinhamento a qualquer momento através do nosso WhatsApp oficial de suporte ou clicando no botão 'Solicitar Reunião'. Nossas reuniões são realizadas via Google Meet com ata e resumo publicados automaticamente na sua Timeline de Updates.",
+    highlight: "Sessões com demonstração em tela e ata registrada.",
+  },
+  {
+    id: "faq-5",
+    category: "entregas",
+    question: "Como funciona a garantia e o suporte após o deploy em produção?",
+    answer:
+      "Todos os softwares e aplicações entregues contam com 30 dias corridos de garantia integral e gratuita para correção de qualquer instabilidade ou inconformidade. Além disso, disponibilizamos planos mensais de manutenção preventiva, atualizações de segurança e evolução contínua.",
+    highlight: "Tranquilidade e sustentabilidade para a sua operação.",
+  },
+];
+
+interface Project {
+  id: string;
+  client_id: string;
+  title: string;
+  description: string | null;
+  status: "planejamento" | "design" | "desenvolvimento" | "testes" | "concluido" | "pausado";
+  progress: number;
+  start_date: string | null;
+  deadline: string | null;
+  preview_url: string | null;
+  figma_url: string | null;
+  repo_url: string | null;
+  category: string | null;
+  created_at: string;
+}
+
+// Formal Feedback & Approval Types
+export type DeliveryReviewType = "approval" | "change_request";
+
+export interface DeliveryFeedbackItem {
+  id: string;
+  project_id: string;
+  milestone_id: string;
+  milestone_title: string;
+  stage_name?: string;
+  type: DeliveryReviewType;
+  author_name: string;
+  author_email: string;
+  notes: string;
+  created_at: string;
+  status: "pending_review" | "resolved" | "viewed";
+}
+
+export interface ActiveSprintTaskItem {
+  id: string;
+  title: string;
+  category: "front" | "back" | "design" | "qa";
+  status: "completed" | "in_progress" | "review";
+  progress: number;
+}
+
+export const getActiveSprintTasks = (): ActiveSprintTaskItem[] => [
+  {
+    id: "",
+    title: "Construção da interface responsiva do Portal do Cliente com Dark Glassmorphism",
+    category: "front",
+    status: "completed",
+    progress: 100,
+  },
+  {
+    id: "",
+    title: "Módulo Financeiro com extrato em tempo real, cálculo de saldos e quitação",
+    category: "front",
+    status: "completed",
+    progress: 100,
+  },
+  {
+    id: "",
+    title: "Linha do Tempo e visualizador temporal de entregas (Passado, Presente e Futuro)",
+    category: "front",
+    status: "in_progress",
+    progress: 90,
+  },
+  {
+    id: "",
+    title: "Validação de permissões e controle de acesso baseado em papéis (RBAC)",
+    category: "back",
+    status: "review",
+    progress: 95,
+  },
+  {
+    id: "",
+    title: "Homologação de performance em múltiplos navegadores e dispositivos móveis",
+    category: "qa",
+    status: "in_progress",
+    progress: 75,
+  },
+];
 
 export const renderInlineFormatting = (text: string) => {
   const parts = text.split(/(\*\*.*?\*\*)/g);
@@ -1201,53 +1046,6 @@ function ClientPortalContent() {
           );
         }
       }
-      if (list.length === 0) {
-        // Fallback initial client documents
-        list = [
-          {
-            id: `${projectId}-doc-1`,
-            project_id: projectId,
-            title: `Contrato de Prestação de Serviços - ${projectTitle}`,
-            filename: `Contrato_Desenvolvimento_${projectTitle.replace(/\s+/g, "_")}.pdf`,
-            category: "contrato",
-            visibility: "client",
-            file_url: "#",
-            file_size_bytes: 1450000,
-            file_size_formatted: "1.4 MB",
-            mime_type: "application/pdf",
-            uploaded_at: new Date().toISOString(),
-            notes: "Contrato formal de desenvolvimento de software e cessão de direitos com assinatura digital.",
-          },
-          {
-            id: `${projectId}-doc-2`,
-            project_id: projectId,
-            title: `Proposta Comercial & Escopo Técnico - ${projectTitle}`,
-            filename: `Proposta_Comercial_${projectTitle.replace(/\s+/g, "_")}.pdf`,
-            category: "proposta",
-            visibility: "client",
-            file_url: "#",
-            file_size_bytes: 840000,
-            file_size_formatted: "840 KB",
-            mime_type: "application/pdf",
-            uploaded_at: new Date().toISOString(),
-            notes: "Detalhamento de funcionalidades, cronograma de sprints e condições comerciais acordadas.",
-          },
-          {
-            id: `${projectId}-doc-3`,
-            project_id: projectId,
-            title: `Termo de Aceite & Homologação de Entrega`,
-            filename: `Termo_Aceite_${projectTitle.replace(/\s+/g, "_")}.pdf`,
-            category: "termo_aceite",
-            visibility: "client",
-            file_url: "#",
-            file_size_bytes: 520000,
-            file_size_formatted: "520 KB",
-            mime_type: "application/pdf",
-            uploaded_at: new Date().toISOString(),
-            notes: "Documento oficial para validação e homologação dos entregáveis.",
-          },
-        ];
-      }
       setDocuments(list);
     } catch (err) {
       console.error("Error loading project documents:", err);
@@ -1260,23 +1058,64 @@ function ClientPortalContent() {
     setLoadingData(true);
     try {
       // Multi-tenant isolation:
-      // If client, fetch ONLY projects where client_id === user.id
-      let query = supabase
-        .from("projects")
-        .select("*")
-        .order("created_at", { ascending: false });
+      // If client, fetch ONLY projects where client_id === user.id or matching client_email
+      let clientProjects: Project[] = [];
+      try {
+        let query = supabase
+          .from("projects")
+          .select("*")
+          .order("created_at", { ascending: false });
 
-      if (profile && profile.role !== "admin") {
-        query = query.eq("client_id", user.id);
+        if (profile && profile.role !== "admin") {
+          query = query.eq("client_id", user.id);
+        }
+
+        const { data: projData, error: projError } = await query;
+        if (!projError && projData && Array.isArray(projData)) {
+          clientProjects = (projData as Project[]).map((p) => ({
+            ...p,
+            status: (p.status as any) || "planejamento",
+          }));
+        }
+      } catch (e) {}
+
+      // Resilient server API fetch
+      try {
+        const isAdmin = profile?.role === "admin";
+        const apiUrl = `/api/portal/projects?clientId=${encodeURIComponent(user.id)}&clientEmail=${encodeURIComponent(user.email || "")}&isAdmin=${isAdmin}`;
+        const res = await fetch(apiUrl);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.projects && Array.isArray(json.projects)) {
+            for (const sp of json.projects) {
+              if (!clientProjects.some((cp) => cp.id === sp.id || cp.title === sp.title)) {
+                clientProjects.push({
+                  ...sp,
+                  status: sp.status || "planejamento",
+                });
+              }
+            }
+          }
+        }
+      } catch (apiErr) {
+        console.warn("Portal projects API load failed:", apiErr);
       }
 
-      const { data: projData, error: projError } = await query;
-
-      if (projError) {
-        console.error("Error fetching projects:", projError);
-      }
-
-      let clientProjects = (projData as Project[]) || [];
+      try {
+        const localProjects: Project[] = JSON.parse(localStorage.getItem("portfolio_local_projects_v1") || "[]");
+        for (const lp of localProjects) {
+          if (!clientProjects.some((cp) => cp.id === lp.id || (cp.title === lp.title && cp.client_id === lp.client_id))) {
+            if (
+              profile?.role === "admin" ||
+              !lp.client_id ||
+              lp.client_id === user.id ||
+              (user.email && lp.client_id === user.email.toLowerCase())
+            ) {
+              clientProjects.push(lp);
+            }
+          }
+        }
+      } catch (e) {}
 
       let current: Project | null = null;
       if (impersonateProjectId) {
@@ -1365,50 +1204,48 @@ function ClientPortalContent() {
 
       if (mData && mData.length > 0) {
         milestonesList = mData as Milestone[];
-      } else {
-        const targetProj =
-          currentProj ||
-          selectedProject ||
-          ({ id: projectId, title: projectTitle } as Project);
-        milestonesList = generateDefaultMilestones(targetProj);
       }
       setMilestones(milestonesList);
 
-      // Load updates from Supabase + localStorage fallback
+      // Load updates from API + Supabase + localStorage fallback
       let projectUpdatesList: ProjectUpdate[] = [];
-      const { data: uData } = await supabase
-        .from("project_updates")
-        .select("*")
-        .eq("project_id", projectId)
-        .order("created_at", { ascending: false });
-
-      if (uData && uData.length > 0) {
-        projectUpdatesList = uData as ProjectUpdate[];
-      } else {
-        const rawUpdates =
-          typeof window !== "undefined"
-            ? localStorage.getItem("portfolio_admin_updates_v1")
-            : null;
-        if (rawUpdates) {
-          try {
-            const parsed = JSON.parse(rawUpdates);
-            if (Array.isArray(parsed)) {
-              projectUpdatesList = parsed.filter(
-                (u: ProjectUpdate) => u.project_id === projectId
-              );
-            }
-          } catch (e) {
-            console.error("Error reading updates from localStorage:", e);
+      try {
+        const upRes = await fetch(`/api/portal/updates?projectId=${encodeURIComponent(projectId)}`);
+        if (upRes.ok) {
+          const upJson = await upRes.json();
+          if (upJson.updates && Array.isArray(upJson.updates) && upJson.updates.length > 0) {
+            projectUpdatesList = upJson.updates;
           }
         }
-      }
+      } catch (e) {}
 
       if (projectUpdatesList.length === 0) {
-        const targetProj =
-          currentProj ||
-          selectedProject ||
-          ({ id: projectId, title: projectTitle } as Project);
-        projectUpdatesList = generateDefaultProjectUpdates(targetProj);
+        const { data: uData } = await supabase
+          .from("project_updates")
+          .select("*")
+          .eq("project_id", projectId)
+          .order("created_at", { ascending: false });
+
+        if (uData && uData.length > 0) {
+          projectUpdatesList = uData as ProjectUpdate[];
+        } else {
+          const rawUpdates =
+            typeof window !== "undefined"
+              ? localStorage.getItem("portfolio_admin_updates_v1")
+              : null;
+          if (rawUpdates) {
+            try {
+              const parsed = JSON.parse(rawUpdates);
+              if (Array.isArray(parsed)) {
+                projectUpdatesList = parsed.filter(
+                  (u: ProjectUpdate) => u.project_id === projectId
+                );
+              }
+            } catch (e) {
+              console.error("Error reading updates from localStorage:", e);
+            }
+          }
+        }
       }
 
       setUpdates(projectUpdatesList);
@@ -1476,6 +1313,22 @@ function ClientPortalContent() {
   useEffect(() => {
     if (user && profile) {
       loadData();
+
+      // Real-time instant synchronization polling (every 5 seconds)
+      const pollInterval = setInterval(() => {
+        loadData();
+      }, 5000);
+
+      // Instant refresh on tab focus
+      const handleFocus = () => {
+        loadData();
+      };
+      window.addEventListener("focus", handleFocus);
+
+      return () => {
+        clearInterval(pollInterval);
+        window.removeEventListener("focus", handleFocus);
+      };
     }
   }, [user, profile]);
 

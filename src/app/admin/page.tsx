@@ -102,6 +102,108 @@ export type ProjectStatus =
   | "testes"
   | "pausado";
 
+export const normalizeProjectStatus = (status: string | null | undefined): ProjectStatus => {
+  if (!status) return "planejamento";
+  const s = String(status).toLowerCase().trim();
+  if (
+    s === "em_andamento" ||
+    s === "in_progress" ||
+    s === "active" ||
+    s === "em andamento" ||
+    s === "desenvolvimento" ||
+    s === "design"
+  ) {
+    return "em_andamento";
+  }
+  if (
+    s === "planejamento" ||
+    s === "planning" ||
+    s === "draft" ||
+    s === "pending"
+  ) {
+    return "planejamento";
+  }
+  if (
+    s === "homologacao" ||
+    s === "review" ||
+    s === "testing" ||
+    s === "testes" ||
+    s === "homologação"
+  ) {
+    return "homologacao";
+  }
+  if (
+    s === "concluido" ||
+    s === "completed" ||
+    s === "done" ||
+    s === "concluído" ||
+    s === "finished"
+  ) {
+    return "concluido";
+  }
+  if (
+    s === "pausado" ||
+    s === "paused" ||
+    s === "on_hold" ||
+    s === "cancelled"
+  ) {
+    return "pausado";
+  }
+  return "em_andamento";
+};
+
+export const getStatusCandidates = (status: ProjectStatus): string[] => {
+  switch (status) {
+    case "em_andamento":
+      return [
+        "em_andamento",
+        "in_progress",
+        "active",
+        "desenvolvimento",
+        "design",
+        "em andamento",
+        "pending",
+        "planejamento",
+      ];
+    case "planejamento":
+      return [
+        "planejamento",
+        "planning",
+        "pending",
+        "draft",
+        "in_progress",
+        "active",
+      ];
+    case "homologacao":
+      return [
+        "homologacao",
+        "review",
+        "testing",
+        "testes",
+        "homologação",
+        "in_progress",
+      ];
+    case "concluido":
+      return [
+        "concluido",
+        "completed",
+        "done",
+        "concluído",
+        "finished",
+      ];
+    case "pausado":
+      return [
+        "pausado",
+        "paused",
+        "on_hold",
+        "cancelled",
+        "pending",
+      ];
+    default:
+      return [status, "in_progress", "planning", "completed", "pending", "active"];
+  }
+};
+
 export interface Project {
   id: string;
   client_id: string | null;
@@ -348,42 +450,7 @@ export const getUpdateTypeInfo = (category: UpdateType | string) => {
 };
 
 export const generateDefaultProjectUpdates = (project: Project): ProjectUpdate[] => {
-  const now = new Date();
-  const d1 = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000).toISOString();
-  const d2 = new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000).toISOString();
-  const d3 = new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000).toISOString();
-
-  return [
-    {
-      id: `${project.id}-upd-1`,
-      project_id: project.id,
-      title: "Sprint Review & Release Beta v1.2.0",
-      category: "versao",
-      version_tag: "v1.2.0",
-      content:
-        "**Novidades desta versão:**\n- Finalização do fluxo de autenticação e perfis de acesso (RBAC).\n- Integração da tela de detalhes de pedidos e notificações push.\n- Otimizações de renderização no aplicativo móvel.\n\n*Ambiente de homologação atualizado para testes.*",
-      created_at: d1,
-    },
-    {
-      id: `${project.id}-upd-2`,
-      project_id: project.id,
-      title: "Reunião de Alinhamento de UI/UX e Aprovação do Protótipo",
-      category: "reuniao",
-      meeting_attendees: "Maira Reis, Equipe de Design e Cliente",
-      content:
-        "**Pautas alinhadas durante a reunião:**\n1. Apresentação das telas de onboarding e dashboard no Figma.\n2. Validação da paleta de cores primária e tipografia.\n3. Acordado prazo de homologação para a próxima sexta-feira.\n\n*Ata aprovada pelos participantes.*",
-      created_at: d2,
-    },
-    {
-      id: `${project.id}-upd-3`,
-      project_id: project.id,
-      title: "Comunicado: Início da Sprint 2 - Desenvolvimento Front-end",
-      category: "comunicado",
-      content:
-        "Informamos que as definições de arquitetura e design foram concluídas com sucesso. Iniciamos hoje a codificação dos componentes interativos no repositório oficial.\n\n> Previsão de primeira versão navegável em 10 dias úteis.",
-      created_at: d3,
-    },
-  ];
+  return [];
 };
 
 export const renderInlineFormatting = (text: string) => {
@@ -619,49 +686,11 @@ export const calculateFinancialSummary = (financialData?: ProjectFinancialData) 
 };
 
 export const generateDefaultProjectFinances = (project: Project): ProjectFinancialData => {
-  const baseValue = 14500;
   return {
     project_id: project.id,
-    total_contract_value: baseValue,
-    notes: `Contrato de desenvolvimento - ${project.title}`,
-    installments: [
-      {
-        id: `${project.id}-inst-1`,
-        project_id: project.id,
-        installment_number: 1,
-        title: "Entrada / Sinal (40%)",
-        amount: 5800,
-        due_date: project.start_date || new Date().toISOString().split("T")[0],
-        paid_at: project.start_date || new Date().toISOString().split("T")[0],
-        payment_method: "pix",
-        receipt_url: "PIX-COMPROVANTE-SINAL-AUT-89421",
-        notes: "Sinal quitado na assinatura da proposta comercial",
-      },
-      {
-        id: `${project.id}-inst-2`,
-        project_id: project.id,
-        installment_number: 2,
-        title: "Entrega Front-end & Homologação (30%)",
-        amount: 4350,
-        due_date: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-        paid_at: null,
-        payment_method: "pix",
-        receipt_url: null,
-        notes: "Vencimento na liberação do ambiente de testes",
-      },
-      {
-        id: `${project.id}-inst-3`,
-        project_id: project.id,
-        installment_number: 3,
-        title: "Publicação & Deploy Final (30%)",
-        amount: 4350,
-        due_date: project.deadline || new Date(Date.now() + 45 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-        paid_at: null,
-        payment_method: "pix",
-        receipt_url: null,
-        notes: "Vencimento na entrega final das chaves e código",
-      },
-    ],
+    total_contract_value: 0,
+    notes: "",
+    installments: [],
   };
 };
 
@@ -748,50 +777,7 @@ export const getDocumentCategoryInfo = (category: DocumentCategory) => {
 };
 
 export const generateDefaultProjectDocuments = (project: Project): ProjectDocument[] => {
-  return [
-    {
-      id: `${project.id}-doc-1`,
-      project_id: project.id,
-      title: `Contrato de Prestação de Serviços - ${project.title}`,
-      filename: "Contrato_Prestacao_Servicos_Desenvolvimento.pdf",
-      category: "contrato",
-      visibility: "client",
-      file_url: "#",
-      file_size_bytes: 2450000,
-      file_size_formatted: "2.4 MB",
-      mime_type: "application/pdf",
-      uploaded_at: project.start_date || new Date().toISOString().split("T")[0],
-      notes: "Contrato assinado digitalmente com escopo, cláusulas de entrega e SLA.",
-    },
-    {
-      id: `${project.id}-doc-2`,
-      project_id: project.id,
-      title: `Proposta Comercial & Cronograma Detalhado`,
-      filename: "Proposta_Comercial_Cronograma_Escopo.pdf",
-      category: "proposta",
-      visibility: "client",
-      file_url: "#",
-      file_size_bytes: 1820000,
-      file_size_formatted: "1.8 MB",
-      mime_type: "application/pdf",
-      uploaded_at: project.start_date || new Date().toISOString().split("T")[0],
-      notes: "Proposta com detalhamento de sprints, arquitetura e formas de pagamento.",
-    },
-    {
-      id: `${project.id}-doc-3`,
-      project_id: project.id,
-      title: `Termo de Aceite & Homologação de Etapa`,
-      filename: "Termo_Aceite_Homologacao_Design.pdf",
-      category: "termo_aceite",
-      visibility: "internal",
-      file_url: "#",
-      file_size_bytes: 950000,
-      file_size_formatted: "950 KB",
-      mime_type: "application/pdf",
-      uploaded_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-      notes: "Validação interna de requisitos técnicos e checklist de QA.",
-    },
-  ];
+  return [];
 };
 
 // Quick Links Types & Helpers
@@ -899,35 +885,41 @@ export const getQuickLinkCategoryInfo = (category: QuickLinkCategory) => {
 };
 
 export const generateDefaultProjectQuickLinks = (project: Project): ProjectQuickLink[] => {
-  return [
-    {
+  const links: ProjectQuickLink[] = [];
+  if (project.figma_url) {
+    links.push({
       id: `${project.id}-link-figma`,
       project_id: project.id,
-      label: "Protótipo Interativo Figma",
-      url: project.figma_url || "https://figma.com/@mairareis",
+      label: "Protótipo Figma",
+      url: project.figma_url,
       category: "figma",
-      description: "Acesse o design system, telas em alta fidelidade e fluxos de navegação.",
+      description: "Protótipo e Design UI/UX",
       is_active: true,
-    },
-    {
+    });
+  }
+  if (project.preview_url) {
+    links.push({
       id: `${project.id}-link-staging`,
       project_id: project.id,
-      label: "Ambiente de Testes (Staging)",
-      url: project.preview_url || "https://staging.mairareis.dev",
+      label: "Ambiente Staging / Preview",
+      url: project.preview_url,
       category: "staging",
-      description: "Valide as funcionalidades online antes da publicação definitiva.",
+      description: "Acesse a versão em homologação",
       is_active: true,
-    },
-    {
-      id: `${project.id}-link-docs`,
+    });
+  }
+  if (project.repo_url) {
+    links.push({
+      id: `${project.id}-link-repo`,
       project_id: project.id,
-      label: "Documentação Técnica & Swagger",
-      url: "https://docs.mairareis.dev",
-      category: "docs",
-      description: "Especificações de endpoints, arquitetura e manuais de integração.",
+      label: "Repositório GitHub",
+      url: project.repo_url,
+      category: "github",
+      description: "Repositório oficial do código",
       is_active: true,
-    },
-  ];
+    });
+  }
+  return links;
 };
 
 // Formal Feedback & Approval Types
@@ -947,34 +939,7 @@ export interface DeliveryFeedbackItem {
   status: "pending_review" | "resolved" | "viewed";
 }
 
-export const generateDefaultDeliveryFeedbacks = (project: Project): DeliveryFeedbackItem[] => [
-  {
-    id: `${project.id}-fb-1`,
-    project_id: project.id,
-    milestone_id: `${project.id}-m-1`,
-    milestone_title: "Briefing Técnico & Arquitetura de Requisitos",
-    stage_name: "Planejamento & Escopo",
-    type: "approval",
-    author_name: "Cliente do Projeto",
-    author_email: "cliente@empresa.com.br",
-    notes: "Escopo e arquitetura 100% validados. Excelente detalhamento dos requisitos.",
-    created_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-    status: "resolved",
-  },
-  {
-    id: `${project.id}-fb-2`,
-    project_id: project.id,
-    milestone_id: `${project.id}-m-2`,
-    milestone_title: "Design System & Protótipo Navegável no Figma",
-    stage_name: "UI/UX & Design",
-    type: "approval",
-    author_name: "Cliente do Projeto",
-    author_email: "cliente@empresa.com.br",
-    notes: "Telas aprovadas no Figma com as cores e fluxo principal. Autorizado o início do Front-end.",
-    created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-    status: "resolved",
-  },
-];
+export const generateDefaultDeliveryFeedbacks = (project: Project): DeliveryFeedbackItem[] => [];
 
 type TabKey = "overview" | "projects" | "clients" | "finance" | "updates" | "proposals" | "settings";
 
@@ -1021,11 +986,26 @@ export default function AdminDashboardPage() {
   const [splitGeneratorOpen, setSplitGeneratorOpen] = useState(false);
   const [splitCount, setSplitCount] = useState<number>(3);
   const [splitMethod, setSplitMethod] = useState<PaymentMethod>("pix");
+  const [splitStartDate, setSplitStartDate] = useState<string>("");
+  const [splitFirstPaid, setSplitFirstPaid] = useState<boolean>(true);
+  const [splitInstallmentAmount, setSplitInstallmentAmount] = useState<number | string>("");
+  const [splitTotalContractAmount, setSplitTotalContractAmount] = useState<number | string>("");
 
   // Transactional Email Notifications State
   const [emailToast, setEmailToast] = useState<{ message: string; type: "delivery" | "payment" } | null>(null);
   const [emailLogsModalOpen, setEmailLogsModalOpen] = useState(false);
   const [emailLogs, setEmailLogs] = useState<DispatchedEmailLog[]>([]);
+
+  // Instant WhatsApp Update Notification State
+  const [waNotifyModal, setWaNotifyModal] = useState<{
+    open: boolean;
+    clientName: string;
+    clientPhone?: string | null;
+    projectTitle: string;
+    updateTitle: string;
+    updateSummary: string;
+  } | null>(null);
+  const [copiedWaNotify, setCopiedWaNotify] = useState(false);
 
   // Document & Contract Management State
   const [projectDocuments, setProjectDocuments] = useState<Record<string, ProjectDocument[]>>({});
@@ -1135,6 +1115,7 @@ export default function AdminDashboardPage() {
     name: string;
     email: string;
     pass: string;
+    phone?: string;
   } | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -1199,20 +1180,142 @@ export default function AdminDashboardPage() {
     setLoading(true);
     try {
       // 1. Fetch all projects
-      const { data: pData } = await supabase
-        .from("projects")
-        .select("*")
-        .order("created_at", { ascending: false });
-      setProjects((pData as Project[]) || []);
+      let pData: any[] = [];
+      try {
+        const { data, error } = await supabase
+          .from("projects")
+          .select("*")
+          .order("created_at", { ascending: false });
+        if (!error && data) {
+          pData = data;
+        }
+      } catch (pErr) {
+        console.warn("Could not fetch projects from supabase, relying on local sync:", pErr);
+      }
 
-      // 2. Fetch all profiles (clients)
-      const { data: cData } = await supabase
-        .from("profiles")
-        .select("*")
-        .order("created_at", { ascending: false });
-      setClients((cData as Profile[]) || []);
+      let localProjects: Project[] = [];
+      try {
+        localProjects = JSON.parse(localStorage.getItem("portfolio_local_projects_v1") || "[]");
+      } catch (e) {}
 
-      // 3. Load or seed financial data
+      const dbProjects = (pData || []).map((p: any) => ({
+        ...p,
+        status: normalizeProjectStatus(p.status),
+      }));
+
+      // Deduplicate: if a local project already exists in db (by id or by title + client_id), clean from local storage
+      const filteredLocal = localProjects.filter((lp) => {
+        return !dbProjects.some(
+          (dbp) => dbp.id === lp.id || (dbp.title === lp.title && dbp.client_id === lp.client_id)
+        );
+      });
+
+      try {
+        localStorage.setItem("portfolio_local_projects_v1", JSON.stringify(filteredLocal));
+      } catch (e) {}
+
+      const mergedMap = new Map<string, Project>();
+      for (const p of dbProjects) {
+        mergedMap.set(p.id, p);
+      }
+      for (const p of filteredLocal) {
+        if (!mergedMap.has(p.id)) {
+          mergedMap.set(p.id, { ...p, status: normalizeProjectStatus(p.status) });
+        }
+      }
+
+      // Final safety deduplication by title + client_id
+      const finalProjectsList: Project[] = [];
+      const seenKey = new Set<string>();
+      for (const p of Array.from(mergedMap.values())) {
+        const key = `${p.title.trim().toLowerCase()}__${p.client_id || "none"}`;
+        if (!seenKey.has(key)) {
+          seenKey.add(key);
+          finalProjectsList.push(p);
+        } else if (pData.some((dp) => dp.id === p.id)) {
+          // If this is a DB record, make sure it is preferred
+          const idx = finalProjectsList.findIndex((item) => `${item.title.trim().toLowerCase()}__${item.client_id || "none"}` === key);
+          if (idx !== -1 && !pData.some((dp) => dp.id === finalProjectsList[idx].id)) {
+            finalProjectsList[idx] = p;
+          }
+        }
+      }
+
+      setProjects(finalProjectsList);
+
+      // 2. Fetch all profiles (clients) with resilient API and DB support
+      let rawProfiles: Profile[] = [];
+      try {
+        const { data: cData } = await supabase
+          .from("profiles")
+          .select("*")
+          .order("created_at", { ascending: false });
+        if (cData && Array.isArray(cData)) {
+          rawProfiles = cData as Profile[];
+        }
+      } catch (dbErr) {
+        console.warn("Direct DB profiles fetch failed:", dbErr);
+      }
+
+      // Fetch from resilient server clients API
+      try {
+        const apiRes = await fetch("/api/admin/clients");
+        if (apiRes.ok) {
+          const apiJson = await apiRes.json();
+          if (apiJson.clients && Array.isArray(apiJson.clients)) {
+            for (const ac of apiJson.clients) {
+              if (!rawProfiles.some((p) => p.email?.toLowerCase() === ac.email?.toLowerCase())) {
+                rawProfiles.push(ac);
+              }
+            }
+          }
+        }
+      } catch (apiErr) {
+        console.warn("Clients API fetch failed:", apiErr);
+      }
+
+      let localClientMeta: Record<string, any> = {};
+      if (typeof window !== "undefined") {
+        try {
+          localClientMeta = JSON.parse(localStorage.getItem("portfolio_admin_clients_metadata_v1") || "{}");
+        } catch (e) {}
+      }
+
+      const mergedClients: Profile[] = rawProfiles.map((p) => {
+        const meta = localClientMeta[p.id] || (p.email ? localClientMeta[p.email.toLowerCase()] : {}) || {};
+        return {
+          ...p,
+          company: p.company || meta.company || null,
+          phone: p.phone || meta.phone || null,
+          status: ((p.status || meta.status || "active") as "active" | "blocked"),
+        };
+      });
+
+      setClients(mergedClients);
+
+      // Clean up any legacy mock data from storage
+      if (typeof window !== "undefined") {
+        try {
+          const rawFin = localStorage.getItem("portfolio_admin_finances_v1");
+          if (rawFin && rawFin.includes("PIX-COMPROVANTE-SINAL-AUT-89421")) {
+            localStorage.removeItem("portfolio_admin_finances_v1");
+          }
+          const rawDocs = localStorage.getItem("portfolio_admin_documents_v1");
+          if (rawDocs && rawDocs.includes("Contrato_Prestacao_Servicos_Desenvolvimento.pdf")) {
+            localStorage.removeItem("portfolio_admin_documents_v1");
+          }
+          const rawUpd = localStorage.getItem("portfolio_admin_updates_v1");
+          if (rawUpd && rawUpd.includes("Sprint Review & Release Beta v1.2.0")) {
+            localStorage.removeItem("portfolio_admin_updates_v1");
+          }
+          const rawFb = localStorage.getItem("portfolio_delivery_feedbacks_v1");
+          if (rawFb && rawFb.includes("Briefing Técnico & Arquitetura de Requisitos")) {
+            localStorage.removeItem("portfolio_delivery_feedbacks_v1");
+          }
+        } catch (e) {}
+      }
+
+      // 3. Load financial data
       let storedFinances: Record<string, ProjectFinancialData> = {};
       try {
         const local = localStorage.getItem("portfolio_admin_finances_v1");
@@ -1222,24 +1325,9 @@ export default function AdminDashboardPage() {
       } catch (e) {
         console.error("Error reading finances from storage:", e);
       }
-
-      if (pData && pData.length > 0) {
-        let hasChanges = false;
-        for (const p of pData as Project[]) {
-          if (!storedFinances[p.id]) {
-            storedFinances[p.id] = generateDefaultProjectFinances(p);
-            hasChanges = true;
-          }
-        }
-        if (hasChanges) {
-          try {
-            localStorage.setItem("portfolio_admin_finances_v1", JSON.stringify(storedFinances));
-          } catch (e) {}
-        }
-      }
       setProjectFinances(storedFinances);
 
-      // 4. Load or seed project documents
+      // 4. Load project documents
       let storedDocs: Record<string, ProjectDocument[]> = {};
       try {
         const localDocs = localStorage.getItem("portfolio_admin_documents_v1");
@@ -1249,24 +1337,9 @@ export default function AdminDashboardPage() {
       } catch (e) {
         console.error("Error reading documents from storage:", e);
       }
-
-      if (pData && pData.length > 0) {
-        let hasDocChanges = false;
-        for (const p of pData as Project[]) {
-          if (!storedDocs[p.id]) {
-            storedDocs[p.id] = generateDefaultProjectDocuments(p);
-            hasDocChanges = true;
-          }
-        }
-        if (hasDocChanges) {
-          try {
-            localStorage.setItem("portfolio_admin_documents_v1", JSON.stringify(storedDocs));
-          } catch (e) {}
-        }
-      }
       setProjectDocuments(storedDocs);
 
-      // 5. Load or seed project updates
+      // 5. Load project updates
       let storedUpdates: Record<string, ProjectUpdate[]> = {};
       try {
         const localUpdates = localStorage.getItem("portfolio_admin_updates_v1");
@@ -1276,24 +1349,9 @@ export default function AdminDashboardPage() {
       } catch (e) {
         console.error("Error reading updates from storage:", e);
       }
-
-      if (pData && pData.length > 0) {
-        let hasUpdateChanges = false;
-        for (const p of pData as Project[]) {
-          if (!storedUpdates[p.id] || storedUpdates[p.id].length === 0) {
-            storedUpdates[p.id] = generateDefaultProjectUpdates(p);
-            hasUpdateChanges = true;
-          }
-        }
-        if (hasUpdateChanges) {
-          try {
-            localStorage.setItem("portfolio_admin_updates_v1", JSON.stringify(storedUpdates));
-          } catch (e) {}
-        }
-      }
       setProjectUpdates(storedUpdates);
 
-      // 6. Load or seed project quick links
+      // 6. Load project quick links
       let storedQuickLinks: Record<string, ProjectQuickLink[]> = {};
       try {
         const localLinks = localStorage.getItem("portfolio_admin_quick_links_v1");
@@ -1305,22 +1363,18 @@ export default function AdminDashboardPage() {
       }
 
       if (pData && pData.length > 0) {
-        let hasLinksChanges = false;
         for (const p of pData as Project[]) {
-          if (!storedQuickLinks[p.id] || storedQuickLinks[p.id].length === 0) {
-            storedQuickLinks[p.id] = generateDefaultProjectQuickLinks(p);
-            hasLinksChanges = true;
+          if (!storedQuickLinks[p.id]) {
+            const dynamicLinks = generateDefaultProjectQuickLinks(p);
+            if (dynamicLinks.length > 0) {
+              storedQuickLinks[p.id] = dynamicLinks;
+            }
           }
-        }
-        if (hasLinksChanges) {
-          try {
-            localStorage.setItem("portfolio_admin_quick_links_v1", JSON.stringify(storedQuickLinks));
-          } catch (e) {}
         }
       }
       setProjectQuickLinks(storedQuickLinks);
 
-      // 7. Load or seed delivery feedbacks
+      // 7. Load delivery feedbacks
       let storedFeedbacks: Record<string, DeliveryFeedbackItem[]> = {};
       try {
         const localFb = localStorage.getItem("portfolio_delivery_feedbacks_v1");
@@ -1337,22 +1391,6 @@ export default function AdminDashboardPage() {
         }
       } catch (e) {
         console.error("Error reading delivery feedbacks from storage:", e);
-      }
-
-      if (pData && pData.length > 0) {
-        let hasFbChanges = false;
-        for (const p of pData as Project[]) {
-          if (!storedFeedbacks[p.id] || storedFeedbacks[p.id].length === 0) {
-            storedFeedbacks[p.id] = generateDefaultDeliveryFeedbacks(p);
-            hasFbChanges = true;
-          }
-        }
-        if (hasFbChanges) {
-          try {
-            const flatList = Object.values(storedFeedbacks).flat();
-            localStorage.setItem("portfolio_delivery_feedbacks_v1", JSON.stringify(flatList));
-          } catch (e) {}
-        }
       }
       setDeliveryFeedbacks(storedFeedbacks);
 
@@ -1450,11 +1488,14 @@ export default function AdminDashboardPage() {
   const handleSaveProject = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const projectPayload = {
+      const candidates = getStatusCandidates(pStatus);
+      let successInDb = false;
+      let dbError: any = null;
+
+      const basePayload = {
         title: pTitle,
         description: pDescription,
         client_id: pClientId || null,
-        status: pStatus,
         progress: Number(pProgress),
         start_date: pStartDate || null,
         deadline: pDeadline || null,
@@ -1465,15 +1506,74 @@ export default function AdminDashboardPage() {
         updated_at: new Date().toISOString(),
       };
 
-      if (editingProject) {
-        const { error } = await supabase
-          .from("projects")
-          .update(projectPayload)
-          .eq("id", editingProject.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from("projects").insert([projectPayload]);
-        if (error) throw error;
+      for (const cand of candidates) {
+        try {
+          const payload = { ...basePayload, status: cand };
+          if (editingProject) {
+            const { error } = await supabase
+              .from("projects")
+              .update(payload)
+              .eq("id", editingProject.id);
+            if (!error) {
+              successInDb = true;
+              break;
+            }
+            dbError = error;
+            if (!error.message?.includes("projects_status_check")) {
+              throw error;
+            }
+          } else {
+            const { error } = await supabase.from("projects").insert([payload]);
+            if (!error) {
+              successInDb = true;
+              break;
+            }
+            dbError = error;
+            if (!error.message?.includes("projects_status_check")) {
+              throw error;
+            }
+          }
+        } catch (innerErr: any) {
+          dbError = innerErr;
+          if (!innerErr.message?.includes("projects_status_check")) {
+            throw innerErr;
+          }
+        }
+      }
+
+      // Only fallback to local storage if database insert was blocked
+      if (!successInDb) {
+        const localId = editingProject?.id || `proj-${Date.now()}`;
+        const newProj: Project = {
+          id: localId,
+          client_id: pClientId || null,
+          title: pTitle,
+          description: pDescription,
+          status: pStatus,
+          progress: Number(pProgress),
+          start_date: pStartDate || null,
+          deadline: pDeadline || null,
+          preview_url: pPreviewUrl || null,
+          figma_url: pFigmaUrl || null,
+          repo_url: pRepoUrl || null,
+          category: pCategory,
+          created_at: editingProject?.created_at || new Date().toISOString(),
+        };
+
+        try {
+          const existingLocal: Project[] = JSON.parse(localStorage.getItem("portfolio_local_projects_v1") || "[]");
+          const updatedLocal = editingProject
+            ? existingLocal.map((p) => (p.id === localId ? newProj : p))
+            : [newProj, ...existingLocal.filter((p) => p.id !== localId)];
+          localStorage.setItem("portfolio_local_projects_v1", JSON.stringify(updatedLocal));
+        } catch (e) {}
+      } else if (editingProject) {
+        // Clean any matching local cache
+        try {
+          const existingLocal: Project[] = JSON.parse(localStorage.getItem("portfolio_local_projects_v1") || "[]");
+          const updatedLocal = existingLocal.filter((p) => p.id !== editingProject.id && p.title !== pTitle);
+          localStorage.setItem("portfolio_local_projects_v1", JSON.stringify(updatedLocal));
+        } catch (e) {}
       }
 
       setProjectModalOpen(false);
@@ -1485,11 +1585,23 @@ export default function AdminDashboardPage() {
 
   const handleQuickUpdateStatus = async (projectId: string, newStatus: ProjectStatus) => {
     try {
-      const { error } = await supabase
-        .from("projects")
-        .update({ status: newStatus, updated_at: new Date().toISOString() })
-        .eq("id", projectId);
-      if (error) throw error;
+      const candidates = getStatusCandidates(newStatus);
+      for (const cand of candidates) {
+        try {
+          const { error } = await supabase
+            .from("projects")
+            .update({ status: cand, updated_at: new Date().toISOString() })
+            .eq("id", projectId);
+          if (!error) break;
+        } catch (e) {}
+      }
+
+      try {
+        const localProjects: Project[] = JSON.parse(localStorage.getItem("portfolio_local_projects_v1") || "[]");
+        const updatedLocal = localProjects.map((p) => (p.id === projectId ? { ...p, status: newStatus } : p));
+        localStorage.setItem("portfolio_local_projects_v1", JSON.stringify(updatedLocal));
+      } catch (e) {}
+
       if (selectedProject?.id === projectId) {
         setSelectedProject({ ...selectedProject, status: newStatus });
       }
@@ -1502,7 +1614,14 @@ export default function AdminDashboardPage() {
   const handleDeleteProject = async (id: string) => {
     if (!confirm("Tem certeza que deseja excluir este projeto? Esta ação não pode ser desfeita.")) return;
     try {
-      await supabase.from("projects").delete().eq("id", id);
+      try {
+        await supabase.from("projects").delete().eq("id", id);
+      } catch (e) {}
+      try {
+        const localProjects: Project[] = JSON.parse(localStorage.getItem("portfolio_local_projects_v1") || "[]");
+        const updatedLocal = localProjects.filter((p) => p.id !== id);
+        localStorage.setItem("portfolio_local_projects_v1", JSON.stringify(updatedLocal));
+      } catch (e) {}
       await fetchData();
     } catch (err: any) {
       alert("Erro ao excluir: " + err.message);
@@ -1826,6 +1945,17 @@ export default function AdminDashboardPage() {
       console.warn("Supabase update fallback to localStorage:", err);
     }
 
+    // Sync to real-time serverStore
+    try {
+      await fetch("/api/portal/updates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId: projId, update: newUpdate }),
+      });
+    } catch (apiErr) {
+      console.warn("API portal updates sync failed:", apiErr);
+    }
+
     // Update local storage dictionary
     const currentList = projectUpdates[projId] || generateDefaultProjectUpdates(projects.find((p) => p.id === projId) || ({ id: projId } as Project));
     let updatedList: ProjectUpdate[];
@@ -1846,6 +1976,26 @@ export default function AdminDashboardPage() {
     }
 
     setUpdateModalOpen(false);
+
+    // Trigger instant WhatsApp notification modal for the client
+    const currentProj = projects.find((p) => p.id === projId) || selectedProject;
+    const clientRecord = clients.find(
+      (c) =>
+        c.id === currentProj?.client_id ||
+        ((currentProj as any)?.client_email &&
+          c.email?.toLowerCase() === (currentProj as any).client_email.toLowerCase())
+    );
+
+    if (currentProj) {
+      setWaNotifyModal({
+        open: true,
+        clientName: clientRecord?.full_name || "Cliente",
+        clientPhone: clientRecord?.phone || "553598030543",
+        projectTitle: currentProj.title,
+        updateTitle: newUpdate.title,
+        updateSummary: newUpdate.content,
+      });
+    }
   };
 
   const handleDeleteUpdate = async (projId: string, id: string) => {
@@ -1867,7 +2017,9 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // Helper to generate secure random password
+  // Default client password and generator
+  const DEFAULT_CLIENT_PASSWORD = "Cliente@123";
+
   const generateRandomPassword = () => {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%";
     let pass = "";
@@ -1875,6 +2027,39 @@ export default function AdminDashboardPage() {
       pass += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     setCPassword(pass);
+  };
+
+  const getClientMetaLocal = (id: string, email?: string) => {
+    if (typeof window === "undefined") return null;
+    try {
+      const current = JSON.parse(localStorage.getItem("portfolio_admin_clients_metadata_v1") || "{}");
+      if (id && current[id]) return current[id];
+      if (email && current[email.toLowerCase()]) return current[email.toLowerCase()];
+    } catch (e) {}
+    return null;
+  };
+
+  // Local client metadata storage (preserves company, phone, status, and initial_password)
+  const saveClientMetaLocal = (
+    id: string,
+    email: string,
+    meta: {
+      company?: string | null;
+      phone?: string | null;
+      status?: "active" | "blocked";
+      full_name?: string | null;
+      initial_password?: string | null;
+    }
+  ) => {
+    if (typeof window === "undefined") return;
+    try {
+      const current = JSON.parse(localStorage.getItem("portfolio_admin_clients_metadata_v1") || "{}");
+      const existing = current[id] || (email ? current[email.toLowerCase()] : {}) || {};
+      const updated = { ...existing, ...meta, email, id };
+      current[id] = updated;
+      if (email) current[email.toLowerCase()] = updated;
+      localStorage.setItem("portfolio_admin_clients_metadata_v1", JSON.stringify(current));
+    } catch (e) {}
   };
 
   const handleOpenClientModal = (client?: Profile) => {
@@ -1885,7 +2070,8 @@ export default function AdminDashboardPage() {
       setCPhone(client.phone || "");
       setCCompany(client.company || "");
       setCStatus(client.status || "active");
-      setCPassword("");
+      const meta = getClientMetaLocal(client.id, client.email);
+      setCPassword(meta?.initial_password || DEFAULT_CLIENT_PASSWORD);
     } else {
       setEditingClient(null);
       setCFullName("");
@@ -1893,7 +2079,7 @@ export default function AdminDashboardPage() {
       setCPhone("");
       setCCompany("");
       setCStatus("active");
-      generateRandomPassword();
+      setCPassword(DEFAULT_CLIENT_PASSWORD);
     }
     setCreatedClientInfo(null);
     setClientModalOpen(true);
@@ -1904,31 +2090,87 @@ export default function AdminDashboardPage() {
     setClientDetailsModalOpen(true);
   };
 
+  const safeUpdateProfileInDb = async (clientId: string, payload: any) => {
+    let toSend = { ...payload };
+    for (let i = 0; i < 4; i++) {
+      const { error } = await supabase.from("profiles").update(toSend).eq("id", clientId);
+      if (!error) return true;
+      const msg = (error.message || "").toLowerCase();
+      if (msg.includes("company")) delete toSend.company;
+      else if (msg.includes("phone")) delete toSend.phone;
+      else if (msg.includes("status")) delete toSend.status;
+      else if (msg.includes("column") && msg.includes("schema cache")) {
+        toSend = { full_name: payload.full_name, email: payload.email };
+      } else {
+        throw error;
+      }
+    }
+    return false;
+  };
+
   // Client Registration & Edit Action
   const handleSaveClient = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    const cleanEmail = cEmail.trim().toLowerCase();
+    const cleanFullName = cFullName.trim();
+    const cleanPassword = cPassword.trim() || DEFAULT_CLIENT_PASSWORD;
+    
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+    if (!emailRegex.test(cleanEmail)) {
+      alert(`O e-mail "${cleanEmail}" está incompleto ou inválido.\n\nPor favor, informe um e-mail com domínio completo (ex: nome@hotmail.com, nome@gmail.com ou nome@empresa.com.br).`);
+      return;
+    }
+
     setClientSaving(true);
     try {
       if (editingClient) {
-        // Update existing profile
-        const { error } = await supabase
-          .from("profiles")
-          .update({
-            full_name: cFullName,
-            phone: cPhone || null,
-            company: cCompany || null,
-            status: cStatus,
-          })
-          .eq("id", editingClient.id);
+        // Save locally first to guarantee immediate persistence
+        saveClientMetaLocal(editingClient.id, cleanEmail, {
+          company: cCompany ? cCompany.trim() : null,
+          phone: cPhone ? cPhone.trim() : null,
+          status: cStatus,
+          full_name: cleanFullName,
+          initial_password: cleanPassword,
+        });
 
-        if (error) throw error;
+        // Call backend update API to sync profile and update password in Supabase Auth if service role exists
+        try {
+          await fetch("/api/admin/update-client", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              clientId: editingClient.id,
+              email: cleanEmail,
+              password: cleanPassword,
+              fullName: cleanFullName,
+              phone: cPhone ? cPhone.trim() : null,
+              company: cCompany ? cCompany.trim() : null,
+              status: cStatus,
+            }),
+          });
+        } catch (apiErr) {
+          console.warn("Update API call failed, updating directly in DB:", apiErr);
+        }
+
+        // Update database with schema-resilient helper
+        await safeUpdateProfileInDb(editingClient.id, {
+          full_name: cleanFullName,
+          email: cleanEmail,
+          phone: cPhone ? cPhone.trim() : null,
+          company: cCompany ? cCompany.trim() : null,
+          status: cStatus,
+        });
+
         setClientModalOpen(false);
+        setEditingClient(null);
         if (selectedClientDetails?.id === editingClient.id) {
           setSelectedClientDetails({
             ...selectedClientDetails,
-            full_name: cFullName,
-            phone: cPhone || null,
-            company: cCompany || null,
+            full_name: cleanFullName,
+            email: cleanEmail,
+            phone: cPhone ? cPhone.trim() : null,
+            company: cCompany ? cCompany.trim() : null,
             status: cStatus,
           });
         }
@@ -1938,21 +2180,32 @@ export default function AdminDashboardPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            fullName: cFullName,
-            email: cEmail,
-            password: cPassword,
-            phone: cPhone,
-            company: cCompany,
+            fullName: cleanFullName,
+            email: cleanEmail,
+            password: cleanPassword,
+            phone: cPhone ? cPhone.trim() : null,
+            company: cCompany ? cCompany.trim() : null,
             status: cStatus,
           }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Erro ao cadastrar cliente");
 
+        if (data.user?.id) {
+          saveClientMetaLocal(data.user.id, cleanEmail, {
+            company: cCompany ? cCompany.trim() : null,
+            phone: cPhone ? cPhone.trim() : null,
+            status: cStatus,
+            full_name: cleanFullName,
+            initial_password: cleanPassword,
+          });
+        }
+
         setCreatedClientInfo({
-          name: cFullName,
-          email: cEmail,
-          pass: cPassword,
+          name: cleanFullName,
+          email: cleanEmail,
+          pass: cleanPassword,
+          phone: cPhone ? cPhone.trim() : "",
         });
       }
 
@@ -1967,23 +2220,20 @@ export default function AdminDashboardPage() {
   const handleToggleClientStatus = async (client: Profile) => {
     try {
       const newStatus = client.status === "blocked" ? "active" : "blocked";
-      const { error } = await supabase
-        .from("profiles")
-        .update({ status: newStatus })
-        .eq("id", client.id);
-
-      if (error) throw error;
+      saveClientMetaLocal(client.id, client.email, { status: newStatus });
+      await safeUpdateProfileInDb(client.id, { status: newStatus });
       if (selectedClientDetails?.id === client.id) {
         setSelectedClientDetails({ ...selectedClientDetails, status: newStatus });
       }
       await fetchData();
     } catch (err: any) {
-      alert("Erro ao alterar status: " + err.message);
+      console.warn("Could not toggle status directly in DB, saved locally:", err);
+      await fetchData();
     }
   };
 
   const handleDeleteClient = async (id: string) => {
-    if (!confirm("Tem certeza que deseja excluir este cliente? Seus projetos ficarão desvinculados.")) return;
+    if (!confirm("Tem certeza que deseja excluir este cliente permanentemente? Seus projetos vinculados serão desassociados.")) return;
     try {
       const { error } = await supabase.from("profiles").delete().eq("id", id);
       if (error) throw error;
@@ -1991,16 +2241,166 @@ export default function AdminDashboardPage() {
         setClientDetailsModalOpen(false);
         setSelectedClientDetails(null);
       }
+      setClientModalOpen(false);
+      setEditingClient(null);
       await fetchData();
     } catch (err: any) {
       alert("Erro ao excluir cliente: " + err.message);
     }
   };
 
+  const getClientLoginUrl = () => {
+    return "https://www.mairareis.com.br/login";
+  };
+
+  const composeClientAccessMessage = (clientName: string, clientEmail: string, clientPassword?: string | null) => {
+    const loginUrl = getClientLoginUrl();
+    const pass = (clientPassword || "").trim() || DEFAULT_CLIENT_PASSWORD;
+    const name = (clientName || "").trim() || "Cliente";
+    return `Olá ${name}!\n\nAqui estão os seus dados de acesso ao Portal do Cliente para você acompanhar o desenvolvimento do seu projeto em tempo real:\n\n*Link de Acesso:* ${loginUrl}\n*E-mail de Login:* ${clientEmail}\n*Senha Inicial:* ${pass}\n\nVocê já pode fazer login para visualizar o andamento, entregas, extrato e documentos. Qualquer dúvida estou à disposição!`;
+  };
+
+  const getClientWhatsAppMessage = () => {
+    if (!createdClientInfo) return "";
+    return composeClientAccessMessage(
+      createdClientInfo.name,
+      createdClientInfo.email,
+      createdClientInfo.pass
+    );
+  };
+
+  const formatPhoneForWhatsApp = (raw?: string | null): string => {
+    if (!raw) return "";
+    let digits = raw.replace(/\D/g, "");
+    if (digits.startsWith("0")) {
+      digits = digits.substring(1);
+    }
+    if (digits.length === 10 || digits.length === 11) {
+      digits = "55" + digits;
+    }
+    return digits;
+  };
+
+  // 1. Direct Redirection ONLY to conversation on WhatsApp (no text attached)
+  const handleOpenWhatsAppChatOnly = async (client: Profile) => {
+    const clientName = client.full_name || "Cliente";
+    let phoneDigits = formatPhoneForWhatsApp(client.phone);
+
+    if (!phoneDigits || phoneDigits.length < 10) {
+      const typed = prompt(
+        `O cliente ${clientName} ainda não tem telefone cadastrado.\nDigite o WhatsApp com DDD para abrir a conversa:\n(Ex: 16974007791 ou 11999998888)`,
+        ""
+      );
+      if (typed) {
+        phoneDigits = formatPhoneForWhatsApp(typed);
+        try {
+          await supabase.from("profiles").update({ phone: typed.trim() }).eq("id", client.id);
+          client.phone = typed.trim();
+          saveClientMetaLocal(client.id, client.email, { phone: typed.trim() });
+          if (selectedClientDetails?.id === client.id) {
+            setSelectedClientDetails({ ...selectedClientDetails, phone: typed.trim() });
+          }
+        } catch (e) {}
+      }
+    }
+
+    if (phoneDigits && phoneDigits.length >= 10) {
+      window.open(`https://wa.me/${phoneDigits}`, "_blank");
+    } else {
+      window.open(`https://web.whatsapp.com`, "_blank");
+    }
+  };
+
+  // 2. "Enviar Acesso": Sends the formatted access credentials message to the client on WhatsApp
+  const handleSendClientAccess = async (client: Profile) => {
+    const clientName = client.full_name || "Cliente";
+    const meta = getClientMetaLocal(client.id, client.email);
+    const clientPassword = meta?.initial_password || DEFAULT_CLIENT_PASSWORD;
+    const msg = composeClientAccessMessage(
+      clientName,
+      client.email,
+      clientPassword
+    );
+
+    let phoneDigits = formatPhoneForWhatsApp(client.phone);
+
+    if (!phoneDigits || phoneDigits.length < 10) {
+      const typed = prompt(
+        `O cliente ${clientName} ainda não tem telefone cadastrado.\nDigite o WhatsApp com DDD para enviar os dados de acesso:\n(Ex: 16974007791 ou 11999998888)`,
+        ""
+      );
+      if (typed) {
+        phoneDigits = formatPhoneForWhatsApp(typed);
+        try {
+          await supabase.from("profiles").update({ phone: typed.trim() }).eq("id", client.id);
+          client.phone = typed.trim();
+          saveClientMetaLocal(client.id, client.email, { phone: typed.trim() });
+          if (selectedClientDetails?.id === client.id) {
+            setSelectedClientDetails({ ...selectedClientDetails, phone: typed.trim() });
+          }
+        } catch (e) {}
+      }
+    }
+
+    // Copy to clipboard as well
+    try {
+      navigator.clipboard.writeText(msg);
+    } catch (e) {}
+
+    const encodedMsg = encodeURIComponent(msg);
+    if (phoneDigits && phoneDigits.length >= 10) {
+      window.open(`https://wa.me/${phoneDigits}?text=${encodedMsg}`, "_blank");
+    } else {
+      window.open(`https://api.whatsapp.com/send?text=${encodedMsg}`, "_blank");
+    }
+  };
+
+  const handleOpenWhatsAppDirect = () => {
+    if (!createdClientInfo) return;
+    const msg = getClientWhatsAppMessage();
+    const encodedMsg = encodeURIComponent(msg);
+
+    let phoneDigits = formatPhoneForWhatsApp(createdClientInfo.phone || cPhone);
+    if (!phoneDigits || phoneDigits.length < 10) {
+      const typed = prompt(
+        `Informe o número do WhatsApp com DDD do cliente para enviar o acesso:\n(Ex: 16974007791 ou 11999998888)`,
+        createdClientInfo.phone || cPhone || ""
+      );
+      if (typed) {
+        phoneDigits = formatPhoneForWhatsApp(typed);
+      }
+    }
+
+    if (phoneDigits && phoneDigits.length >= 10) {
+      window.open(`https://wa.me/${phoneDigits}?text=${encodedMsg}`, "_blank");
+    } else {
+      window.open(`https://api.whatsapp.com/send?text=${encodedMsg}`, "_blank");
+    }
+  };
+
+  const handleOpenWhatsAppChatDirect = () => {
+    if (!createdClientInfo) return;
+    let phoneDigits = formatPhoneForWhatsApp(createdClientInfo.phone || cPhone);
+    if (!phoneDigits || phoneDigits.length < 10) {
+      const typed = prompt(
+        `Informe o número do WhatsApp com DDD do cliente para abrir a conversa:\n(Ex: 16974007791 ou 11999998888)`,
+        createdClientInfo.phone || cPhone || ""
+      );
+      if (typed) {
+        phoneDigits = formatPhoneForWhatsApp(typed);
+      }
+    }
+
+    if (phoneDigits && phoneDigits.length >= 10) {
+      window.open(`https://wa.me/${phoneDigits}`, "_blank");
+    } else {
+      window.open(`https://web.whatsapp.com`, "_blank");
+    }
+  };
+
   const copyWhatsAppMessage = () => {
     if (!createdClientInfo) return;
-    const siteUrl = typeof window !== "undefined" ? window.location.origin : "https://www.mairareis.com.br";
-    const msg = `Olá ${createdClientInfo.name}! 🚀\nSeu acesso ao Portal do Cliente está pronto para você acompanhar o desenvolvimento do seu projeto em tempo real:\n\n🌐 Link: ${siteUrl}/login\n📧 E-mail: ${createdClientInfo.email}\n🔑 Senha: ${createdClientInfo.pass}\n\nQualquer dúvida estou à disposição!`;
+    const msg = getClientWhatsAppMessage();
     navigator.clipboard.writeText(msg);
     setCopied(true);
     setTimeout(() => setCopied(false), 3000);
@@ -2245,9 +2645,53 @@ export default function AdminDashboardPage() {
 
   const handleOpenSplitGenerator = (projectId: string) => {
     setTargetProjectIdForInstallment(projectId);
-    setSplitCount(3);
+    setSplitCount(12);
+    setSplitStartDate(new Date().toISOString().split("T")[0]);
+    setSplitFirstPaid(true);
     setSplitMethod("pix");
+
+    const currentFin = projectFinances[projectId];
+    const contractTotal = currentFin?.total_contract_value || 0;
+    if (contractTotal > 0) {
+      setSplitTotalContractAmount(contractTotal);
+      setSplitInstallmentAmount(Math.round((contractTotal / 12) * 100) / 100);
+    } else {
+      setSplitTotalContractAmount("");
+      setSplitInstallmentAmount("");
+    }
+
     setSplitGeneratorOpen(true);
+  };
+
+  const handleInstallmentAmountChange = (val: string) => {
+    setSplitInstallmentAmount(val);
+    const num = parseFloat(val.replace(",", "."));
+    if (!isNaN(num) && num >= 0) {
+      setSplitTotalContractAmount(Math.round(num * splitCount * 100) / 100);
+    } else if (val === "") {
+      setSplitTotalContractAmount("");
+    }
+  };
+
+  const handleTotalContractAmountChange = (val: string) => {
+    setSplitTotalContractAmount(val);
+    const num = parseFloat(val.replace(",", "."));
+    if (!isNaN(num) && num >= 0) {
+      setSplitInstallmentAmount(Math.round((num / splitCount) * 100) / 100);
+    } else if (val === "") {
+      setSplitInstallmentAmount("");
+    }
+  };
+
+  const handleSplitCountChange = (newCount: number) => {
+    setSplitCount(newCount);
+    const instNum = parseFloat(String(splitInstallmentAmount).replace(",", "."));
+    const totalNum = parseFloat(String(splitTotalContractAmount).replace(",", "."));
+    if (!isNaN(instNum) && instNum > 0) {
+      setSplitTotalContractAmount(Math.round(instNum * newCount * 100) / 100);
+    } else if (!isNaN(totalNum) && totalNum > 0) {
+      setSplitInstallmentAmount(Math.round((totalNum / newCount) * 100) / 100);
+    }
   };
 
   const handleExecuteSplitGenerator = (e: React.FormEvent) => {
@@ -2255,26 +2699,42 @@ export default function AdminDashboardPage() {
     if (!targetProjectIdForInstallment) return;
     const projectId = targetProjectIdForInstallment;
     const currentFin = projectFinances[projectId];
-    const contractTotal = currentFin?.total_contract_value || 12000;
-    const count = Math.max(1, Math.min(12, splitCount));
-    const partAmount = Math.round((contractTotal / count) * 100) / 100;
+    
+    const count = Math.max(1, Math.min(12, Number(splitCount) || 1));
+    const rawInstNum = parseFloat(String(splitInstallmentAmount).replace(",", "."));
+    const rawTotalNum = parseFloat(String(splitTotalContractAmount).replace(",", "."));
+
+    let finalPartAmount = 0;
+    let finalContractTotal = 0;
+
+    if (!isNaN(rawInstNum) && rawInstNum > 0) {
+      finalPartAmount = rawInstNum;
+      finalContractTotal = !isNaN(rawTotalNum) && rawTotalNum > 0 ? rawTotalNum : rawInstNum * count;
+    } else if (!isNaN(rawTotalNum) && rawTotalNum > 0) {
+      finalContractTotal = rawTotalNum;
+      finalPartAmount = Math.round((rawTotalNum / count) * 100) / 100;
+    } else if (currentFin && currentFin.total_contract_value > 0) {
+      finalContractTotal = currentFin.total_contract_value;
+      finalPartAmount = Math.round((currentFin.total_contract_value / count) * 100) / 100;
+    }
 
     const generated: ProjectInstallment[] = [];
-    const baseDate = new Date();
+    const baseDateStr = splitStartDate || new Date().toISOString().split("T")[0];
+    const [startYear, startMonth, startDay] = baseDateStr.split("-").map(Number);
 
     for (let i = 1; i <= count; i++) {
-      const d = new Date(baseDate);
-      d.setMonth(d.getMonth() + (i - 1));
-      const isFirstPaid = i === 1;
+      const targetDate = new Date(startYear, startMonth - 1 + (i - 1), startDay || 1);
+      const formattedDueDate = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, "0")}-${String(targetDate.getDate()).padStart(2, "0")}`;
+      const isFirstPaid = i === 1 && splitFirstPaid;
 
       generated.push({
         id: `inst-gen-${Date.now()}-${i}`,
         project_id: projectId,
         installment_number: i,
         title: count === 1 ? "Pagamento Único (À Vista)" : `Parcela ${i}/${count}`,
-        amount: partAmount,
-        due_date: d.toISOString().split("T")[0],
-        paid_at: isFirstPaid ? baseDate.toISOString().split("T")[0] : null,
+        amount: finalPartAmount,
+        due_date: formattedDueDate,
+        paid_at: isFirstPaid ? baseDateStr : null,
         payment_method: splitMethod,
         receipt_url: isFirstPaid ? "REC-ENTRADA-SPLIT-AUTO" : null,
         notes: `Parcelamento automático gerado (${count}x)`,
@@ -2285,8 +2745,8 @@ export default function AdminDashboardPage() {
       ...projectFinances,
       [projectId]: {
         project_id: projectId,
-        total_contract_value: contractTotal,
-        notes: `Contrato parcelado em ${count}x via ${getPaymentMethodLabel(splitMethod)}`,
+        total_contract_value: finalContractTotal,
+        notes: `Contrato parcelado em ${count}x de ${formatBRL(finalPartAmount)} via ${getPaymentMethodLabel(splitMethod)}`,
         installments: generated,
       },
     });
@@ -3272,11 +3732,27 @@ export default function AdminDashboardPage() {
                       </button>
                     </div>
                   ) : (
-                    <div className="space-y-3">
+                    <div className="space-y-3.5">
                       {filteredProjects.map((proj) => {
                         const client = clients.find((c) => c.id === proj.client_id);
                         const isSelected = selectedProject?.id === proj.id;
                         const statusCfg = getStatusConfig(proj.status);
+                        const projMilestones = milestones.filter((m) => m.project_id === proj.id);
+                        const completedMilestones = projMilestones.filter((m) => m.completed).length;
+                        const cat = (proj.category || "").toLowerCase();
+
+                        // Category visual identity
+                        const isMobile = cat.includes("mobile") || cat.includes("app") || cat.includes("react native") || cat.includes("flutter");
+                        const isWeb = cat.includes("saas") || cat.includes("painel") || cat.includes("web") || cat.includes("plataforma");
+                        const isDesign = cat.includes("design") || cat.includes("ui") || cat.includes("ux") || cat.includes("figma");
+
+                        const iconGradient = isMobile
+                          ? "from-violet-600 via-indigo-600 to-purple-700 shadow-violet-500/20"
+                          : isWeb
+                          ? "from-cyan-600 via-blue-600 to-indigo-700 shadow-cyan-500/20"
+                          : isDesign
+                          ? "from-pink-600 via-rose-600 to-purple-700 shadow-pink-500/20"
+                          : "from-indigo-600 via-purple-600 to-slate-800 shadow-indigo-500/20";
 
                         return (
                           <div
@@ -3285,76 +3761,148 @@ export default function AdminDashboardPage() {
                               setSelectedProject(proj);
                               fetchProjectDetails(proj.id);
                             }}
-                            className={`p-5 rounded-3xl border transition-all cursor-pointer relative group ${
+                            className={`p-5 rounded-3xl border transition-all cursor-pointer relative group flex flex-col justify-between gap-3.5 ${
                               isSelected
-                                ? "bg-indigo-950/50 border-indigo-500 shadow-xl shadow-indigo-500/20 ring-1 ring-indigo-500/50"
-                                : "bg-slate-900/70 border-white/10 hover:border-white/20 hover:bg-slate-900/90"
+                                ? "bg-gradient-to-br from-indigo-950/70 via-slate-900/95 to-purple-950/50 border-indigo-500 shadow-2xl shadow-indigo-500/20 ring-2 ring-indigo-500/50 -translate-y-0.5"
+                                : "bg-slate-900/80 border-white/10 hover:border-indigo-500/40 hover:bg-slate-900/95 hover:shadow-xl hover:shadow-black/40 hover:-translate-y-0.5"
                             }`}
                           >
-                            {/* Top metadata */}
-                            <div className="flex items-start justify-between gap-2 mb-2">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-full bg-white/5 text-gray-300 border border-white/10">
-                                  {proj.category || "App Mobile"}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleOpenClientPreview(proj);
-                                  }}
-                                  className="px-2 py-0.5 rounded-full bg-purple-500/15 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
-                                  title="Simular Visão do Cliente"
+                            {/* Top Header Row: Category Avatar + Title + Status Badge */}
+                            <div className="space-y-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className={`w-11 h-11 rounded-2xl bg-gradient-to-br ${iconGradient} flex items-center justify-center font-bold text-white shadow-lg shrink-0 group-hover:scale-105 transition-transform`}>
+                                    {isMobile ? (
+                                      <Smartphone size={19} />
+                                    ) : isWeb ? (
+                                      <Globe size={19} />
+                                    ) : isDesign ? (
+                                      <Palette size={19} />
+                                    ) : (
+                                      <FolderKanban size={19} />
+                                    )}
+                                  </div>
+
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2 mb-0.5">
+                                      <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-white/5 text-gray-300 border border-white/10">
+                                        {proj.category || "Software"}
+                                      </span>
+                                      {isSelected && (
+                                        <span className="text-[10px] font-bold text-indigo-300 bg-indigo-500/20 px-2 py-0.5 rounded-full border border-indigo-500/30 flex items-center gap-1">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
+                                          Em Edição
+                                        </span>
+                                      )}
+                                    </div>
+                                    <h4 className="text-sm sm:text-base font-bold text-white group-hover:text-indigo-300 transition-colors truncate">
+                                      {proj.title}
+                                    </h4>
+                                  </div>
+                                </div>
+
+                                <span
+                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border shrink-0 ${statusCfg.badgeClass}`}
                                 >
-                                  <Eye size={10} />
-                                  <span>Ver como Cliente</span>
-                                </button>
+                                  <span className={`w-2 h-2 rounded-full ${statusCfg.dotClass} animate-pulse`} />
+                                  {statusCfg.label}
+                                </span>
                               </div>
-                              <span
-                                className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${statusCfg.badgeClass}`}
+
+                              {/* Client & Deadline Context Card */}
+                              <div className="p-3 rounded-2xl bg-black/40 border border-white/5 space-y-2 text-xs">
+                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-purple-500 to-indigo-500 flex items-center justify-center text-[11px] font-bold text-white shrink-0">
+                                      {client?.full_name?.charAt(0) || client?.email?.charAt(0).toUpperCase() || "C"}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="font-semibold text-white truncate text-xs">
+                                        {client?.full_name || client?.email || "Sem cliente atribuído"}
+                                      </p>
+                                      {client?.company && (
+                                        <p className="text-[10px] text-indigo-300 truncate">
+                                          🏢 {client.company}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-1 text-[11px] text-gray-400 font-medium">
+                                    <Calendar size={12} className="text-gray-500" />
+                                    <span>
+                                      {proj.deadline
+                                        ? `Prazo: ${new Date(proj.deadline).toLocaleDateString("pt-BR")}`
+                                        : "Sem prazo definido"}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Quick Stats Pills */}
+                                <div className="pt-2 border-t border-white/5 flex items-center gap-2 flex-wrap text-[11px] text-gray-400">
+                                  <span className="px-2 py-0.5 rounded-lg bg-white/5 border border-white/5 flex items-center gap-1 text-gray-300 font-medium">
+                                    <Sparkles size={11} className="text-amber-400" />
+                                    <span>{projMilestones.length > 0 ? `${completedMilestones}/${projMilestones.length} fases` : "Fases a definir"}</span>
+                                  </span>
+                                  {proj.preview_url && (
+                                    <span className="px-2 py-0.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 flex items-center gap-1 font-medium">
+                                      <Globe size={11} />
+                                      <span>Link Ativo</span>
+                                    </span>
+                                  )}
+                                  {proj.figma_url && (
+                                    <span className="px-2 py-0.5 rounded-lg bg-pink-500/10 border border-pink-500/20 text-pink-300 flex items-center gap-1 font-medium">
+                                      <Palette size={11} />
+                                      <span>Figma</span>
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Progress Bar Section */}
+                              <div className="space-y-1.5">
+                                <div className="flex justify-between items-center text-xs font-semibold">
+                                  <span className="text-gray-400">Progresso Geral da Entrega</span>
+                                  <span className="font-bold text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-lg border border-indigo-500/20 text-[11px] font-mono">
+                                    {proj.progress}%
+                                  </span>
+                                </div>
+                                <div className="w-full h-2 bg-black/60 rounded-full overflow-hidden p-0.5 border border-white/5">
+                                  <div
+                                    className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full transition-all duration-500 shadow-sm shadow-indigo-500/50"
+                                    style={{ width: `${Math.max(4, proj.progress)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Action Footer */}
+                            <div className="pt-2 border-t border-white/5 flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenClientPreview(proj);
+                                }}
+                                className="flex-1 py-2 px-3 rounded-xl bg-purple-600/15 hover:bg-purple-600/30 text-purple-300 hover:text-purple-200 border border-purple-500/30 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                                title="Simular visualização do cliente"
                               >
-                                <span className={`w-1.5 h-1.5 rounded-full ${statusCfg.dotClass}`} />
-                                {statusCfg.label}
-                              </span>
-                            </div>
+                                <Eye size={13} />
+                                <span>Ver como Cliente</span>
+                              </button>
 
-                            {/* Title & Scope preview */}
-                            <h4 className="text-sm sm:text-base font-bold text-white group-hover:text-indigo-300 transition-colors line-clamp-1">
-                              {proj.title}
-                            </h4>
-
-                            {proj.description && (
-                              <p className="text-xs text-gray-400 line-clamp-2 mt-1">
-                                {proj.description}
-                              </p>
-                            )}
-
-                            {/* Client & Deadline Info */}
-                            <div className="mt-3 pt-2.5 border-t border-white/5 flex items-center justify-between text-[11px] text-gray-400">
-                              <span className="flex items-center gap-1 text-gray-300 truncate max-w-[180px]">
-                                <User size={12} className="text-indigo-400 shrink-0" />
-                                <strong className="font-medium text-white truncate">
-                                  {client?.full_name || client?.email || "Interno / Sem cliente"}
-                                </strong>
-                              </span>
-
-                              <span>
-                                {proj.deadline ? `Prazo: ${new Date(proj.deadline).toLocaleDateString("pt-BR")}` : "Sem prazo"}
-                              </span>
-                            </div>
-
-                            {/* Progress bar */}
-                            <div className="mt-2.5 space-y-1">
-                              <div className="flex justify-between text-[10px] text-gray-400 font-semibold">
-                                <span>Progresso da Entrega</span>
-                                <span className="text-indigo-300 font-mono">{proj.progress}%</span>
-                              </div>
-                              <div className="w-full h-1.5 bg-black/50 rounded-full overflow-hidden">
-                                <div
-                                  className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full transition-all duration-300"
-                                  style={{ width: `${proj.progress}%` }}
-                                />
-                              </div>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenProjectModal(proj);
+                                }}
+                                className="py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                                title="Editar dados básicos do projeto"
+                              >
+                                <Edit2 size={13} className="text-gray-400" />
+                                <span>Editar</span>
+                              </button>
                             </div>
                           </div>
                         );
@@ -5187,13 +5735,14 @@ export default function AdminDashboardPage() {
                         return (
                           <div
                             key={c.id}
-                            className="p-5 sm:p-6 rounded-3xl bg-slate-900/80 border border-white/10 hover:border-purple-500/40 transition-all flex flex-col justify-between gap-4 shadow-lg group hover:bg-slate-900"
+                            onClick={() => handleOpenClientDetails(c)}
+                            className="p-5 sm:p-6 rounded-3xl bg-slate-900/80 border border-white/10 hover:border-purple-500/50 transition-all flex flex-col justify-between gap-4 shadow-lg group hover:bg-slate-900/95 cursor-pointer hover:shadow-purple-500/10 hover:-translate-y-0.5"
                           >
                             <div>
                               {/* Header Card: Avatar, Name, Status Badge */}
                               <div className="flex items-start justify-between gap-3 mb-3">
                                 <div className="flex items-center gap-3">
-                                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-600 flex items-center justify-center font-black text-sm text-white shadow-md">
+                                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-600 flex items-center justify-center font-black text-sm text-white shadow-md shrink-0 group-hover:scale-105 transition-transform">
                                     {c.full_name?.charAt(0) || c.email.charAt(0).toUpperCase()}
                                   </div>
                                   <div>
@@ -5231,14 +5780,9 @@ export default function AdminDashboardPage() {
                                 {c.phone && (
                                   <div className="flex items-center gap-2">
                                     <Phone size={13} className="text-emerald-400 shrink-0" />
-                                    <a
-                                      href={`https://wa.me/${c.phone.replace(/\D/g, "")}`}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="text-emerald-400 hover:underline"
-                                    >
+                                    <span className="text-emerald-400 font-medium">
                                       {c.phone}
-                                    </a>
+                                    </span>
                                   </div>
                                 )}
                               </div>
@@ -5253,21 +5797,56 @@ export default function AdminDashboardPage() {
                                 </span>
                               </div>
 
-                              <div className="grid grid-cols-2 gap-2">
+                              {/* Action Buttons Toolbar */}
+                              <div className="flex items-center gap-2 pt-0.5">
                                 <button
-                                  onClick={() => handleOpenClientDetails(c)}
-                                  className="px-3 py-2 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 text-xs font-semibold border border-purple-500/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenClientModal(c);
+                                  }}
+                                  className="py-2 px-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-200 hover:text-white text-xs font-semibold border border-white/10 transition-all flex items-center justify-center gap-1 cursor-pointer shrink-0"
                                 >
-                                  <FolderKanban size={13} />
-                                  <span>Ver Projetos</span>
+                                  <Edit2 size={12} className="text-purple-400" />
+                                  <span>Editar</span>
                                 </button>
 
                                 <button
-                                  onClick={() => handleOpenClientModal(c)}
-                                  className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white text-xs font-semibold border border-white/10 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenWhatsAppChatOnly(c);
+                                  }}
+                                  className="py-2 px-2.5 rounded-xl bg-emerald-600/15 hover:bg-emerald-600/25 text-emerald-300 text-xs font-semibold border border-emerald-500/25 transition-all flex items-center justify-center gap-1 cursor-pointer shrink-0"
+                                  title="Abrir conversa direta no WhatsApp"
                                 >
-                                  <Edit2 size={13} />
-                                  <span>Editar</span>
+                                  <MessageCircle size={12} className="text-emerald-400" />
+                                  <span>WhatsApp</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSendClientAccess(c);
+                                  }}
+                                  className="flex-1 py-2 px-2.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 hover:text-indigo-200 text-xs font-semibold border border-indigo-500/30 transition-all flex items-center justify-center gap-1 cursor-pointer"
+                                  title="Enviar dados de acesso (link, e-mail e senha padrão) no WhatsApp"
+                                >
+                                  <Send size={12} className="text-indigo-400" />
+                                  <span className="truncate">Enviar Acesso</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteClient(c.id);
+                                  }}
+                                  className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/20 transition-all flex items-center justify-center cursor-pointer shrink-0"
+                                  title="Excluir Cliente"
+                                >
+                                  <Trash2 size={13} />
                                 </button>
                               </div>
                             </div>
@@ -6461,21 +7040,65 @@ export default function AdminDashboardPage() {
                     <p className="text-xs text-gray-300 mt-1">
                       As credenciais de acesso abaixo já estão ativas para login no portal:
                     </p>
-                    <div className="mt-3 p-3.5 rounded-xl bg-black/60 font-mono text-xs space-y-1.5 text-white border border-white/10">
-                      <p><span className="text-gray-400">Nome:</span> <strong className="text-white">{createdClientInfo.name}</strong></p>
-                      <p><span className="text-gray-400">E-mail:</span> <strong className="text-purple-300">{createdClientInfo.email}</strong></p>
-                      <p><span className="text-gray-400">Senha Provisória:</span> <strong className="text-emerald-400">{createdClientInfo.pass}</strong></p>
+                    <div className="mt-3 p-3.5 rounded-xl bg-black/60 font-mono text-xs space-y-2 text-white border border-white/10">
+                      <p className="flex items-center justify-between">
+                        <span className="text-gray-400">Nome:</span>
+                        <strong className="text-white">{createdClientInfo.name}</strong>
+                      </p>
+                      <p className="flex items-center justify-between">
+                        <span className="text-gray-400">E-mail de Login:</span>
+                        <strong className="text-purple-300">{createdClientInfo.email}</strong>
+                      </p>
+                      <p className="flex items-center justify-between">
+                        <span className="text-gray-400">Senha Provisória:</span>
+                        <strong className="text-emerald-400">{createdClientInfo.pass}</strong>
+                      </p>
+                      <div className="pt-2 border-t border-white/10 flex items-center justify-between gap-2 flex-wrap">
+                        <span className="text-gray-400">Link de Login:</span>
+                        <a
+                          href={getClientLoginUrl()}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-cyan-400 hover:text-cyan-300 underline font-semibold flex items-center gap-1"
+                        >
+                          <span>{getClientLoginUrl()}</span>
+                          <ExternalLink size={12} />
+                        </a>
+                      </div>
                     </div>
                   </div>
 
+                  {/* Primary WhatsApp Access Send Button */}
                   <button
                     type="button"
-                    onClick={copyWhatsAppMessage}
-                    className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition-all cursor-pointer"
+                    onClick={handleOpenWhatsAppDirect}
+                    className="w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition-all cursor-pointer active:scale-[0.99]"
                   >
-                    {copied ? <Check size={16} /> : <Copy size={16} />}
-                    <span>{copied ? "Mensagem Copiada!" : "Copiar Dados formatados para WhatsApp"}</span>
+                    <Send size={16} className="text-white" />
+                    <span>Enviar Acesso no WhatsApp</span>
+                    <ArrowUpRight size={16} />
                   </button>
+
+                  {/* Secondary Action Buttons */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={handleOpenWhatsAppChatDirect}
+                      className="py-2.5 px-3 rounded-xl bg-emerald-600/15 hover:bg-emerald-600/25 text-emerald-300 hover:text-emerald-200 font-semibold text-xs flex items-center justify-center gap-2 border border-emerald-500/25 transition-all cursor-pointer"
+                    >
+                      <MessageCircle size={14} className="text-emerald-400" />
+                      <span>Conversar no WhatsApp</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={copyWhatsAppMessage}
+                      className="py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-gray-200 hover:text-white font-semibold text-xs flex items-center justify-center gap-2 border border-white/10 transition-all cursor-pointer"
+                    >
+                      {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                      <span>{copied ? "Acesso Copiado!" : "Copiar Acesso"}</span>
+                    </button>
+                  </div>
 
                   <button
                     type="button"
@@ -6483,7 +7106,7 @@ export default function AdminDashboardPage() {
                       setCreatedClientInfo(null);
                       setClientModalOpen(false);
                     }}
-                    className="w-full py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-semibold cursor-pointer"
+                    className="w-full py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white text-xs font-semibold cursor-pointer transition-colors"
                   >
                     Concluir e Fechar
                   </button>
@@ -6512,19 +7135,11 @@ export default function AdminDashboardPage() {
                       <input
                         type="email"
                         required
-                        disabled={!!editingClient}
                         value={cEmail}
                         onChange={(e) => setCEmail(e.target.value)}
                         placeholder="cliente@empresa.com"
-                        className={`w-full px-4 py-2.5 rounded-xl border text-white text-sm outline-none focus:border-purple-500 ${
-                          editingClient
-                            ? "bg-white/5 border-white/5 text-gray-400 cursor-not-allowed"
-                            : "bg-black/40 border border-white/10"
-                        }`}
+                        className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-sm outline-none focus:border-purple-500"
                       />
-                      {editingClient && (
-                        <p className="text-[10px] text-gray-500 mt-1">E-mail fixo de autenticação</p>
-                      )}
                     </div>
 
                     <div>
@@ -6594,59 +7209,72 @@ export default function AdminDashboardPage() {
                     </div>
                   </div>
 
-                  {/* Senha Inicial (Only on creation) */}
-                  {!editingClient && (
-                    <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                          Senha Inicial de Acesso *
-                        </label>
-                        <button
-                          type="button"
-                          onClick={generateRandomPassword}
-                          className="text-[11px] text-purple-400 hover:text-purple-300 flex items-center gap-1 font-semibold cursor-pointer"
-                        >
-                          <Sparkles size={12} />
-                          <span>Gerar Senha Segura</span>
-                        </button>
-                      </div>
-                      <input
-                        type="text"
-                        required
-                        minLength={6}
-                        value={cPassword}
-                        onChange={(e) => setCPassword(e.target.value)}
-                        placeholder="Ex: Cliente2026!MR"
-                        className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-sm outline-none focus:border-purple-500 font-mono"
-                      />
-                      <p className="text-[10px] text-gray-500 mt-1">
-                        Esta senha será exibida após o cadastro para envio imediato ao cliente via WhatsApp ou e-mail.
-                      </p>
+                  {/* Senha de Acesso */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
+                        {editingClient ? "Senha de Acesso (Padrão ou Atualizada) *" : "Senha Inicial de Acesso *"}
+                      </label>
+                      <button
+                        type="button"
+                        onClick={generateRandomPassword}
+                        className="text-[11px] text-purple-400 hover:text-purple-300 flex items-center gap-1 font-semibold cursor-pointer"
+                      >
+                        <Sparkles size={12} />
+                        <span>Gerar Aleatória</span>
+                      </button>
                     </div>
-                  )}
+                    <input
+                      type="text"
+                      required
+                      minLength={6}
+                      value={cPassword}
+                      onChange={(e) => setCPassword(e.target.value)}
+                      placeholder="Ex: Cliente@123"
+                      className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-sm outline-none focus:border-purple-500 font-mono"
+                    />
+                    <p className="text-[10px] text-gray-500 mt-1">
+                      Esta senha padrão será enviada nas mensagens do WhatsApp e usada pelo cliente para login no portal.
+                    </p>
+                  </div>
 
-                  <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/10">
-                    <button
-                      type="button"
-                      onClick={() => setClientModalOpen(false)}
-                      className="px-4 py-2.5 rounded-xl text-xs font-semibold text-gray-400 hover:text-white cursor-pointer"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={clientSaving}
-                      className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white text-xs font-bold shadow-lg shadow-purple-600/30 flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                    >
-                      {clientSaving ? (
-                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      ) : (
-                        <>
-                          <Check size={14} />
-                          <span>{editingClient ? "Salvar Alterações" : "Cadastrar e Gerar Credenciais"}</span>
-                        </>
-                      )}
-                    </button>
+                  <div className="flex items-center justify-between gap-3 pt-4 border-t border-white/10">
+                    {editingClient ? (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteClient(editingClient.id)}
+                        className="px-3.5 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/30 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-all"
+                      >
+                        <Trash2 size={14} />
+                        <span>Excluir Cliente</span>
+                      </button>
+                    ) : (
+                      <div />
+                    )}
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setClientModalOpen(false)}
+                        className="px-4 py-2.5 rounded-xl text-xs font-semibold text-gray-400 hover:text-white cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={clientSaving}
+                        className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white text-xs font-bold shadow-lg shadow-purple-600/30 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                      >
+                        {clientSaving ? (
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        ) : (
+                          <>
+                            <Check size={14} />
+                            <span>{editingClient ? "Salvar Alterações" : "Cadastrar e Gerar Credenciais"}</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </form>
               )}
@@ -6725,12 +7353,21 @@ export default function AdminDashboardPage() {
               {/* Scrollable Content */}
               <div className="overflow-y-auto space-y-6 pt-6 pr-1 custom-scrollbar">
                 {/* Info Cards Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5">
                   <div className="p-4 rounded-2xl bg-black/40 border border-white/5">
                     <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider block mb-1">
                       E-mail de Acesso
                     </span>
                     <p className="text-xs font-bold text-white break-all">{selectedClientDetails.email}</p>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-black/40 border border-white/5">
+                    <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider block mb-1">
+                      Senha Padrão / Acesso
+                    </span>
+                    <p className="text-xs font-mono font-bold text-emerald-400 break-all">
+                      {getClientMetaLocal(selectedClientDetails.id, selectedClientDetails.email)?.initial_password || DEFAULT_CLIENT_PASSWORD}
+                    </p>
                   </div>
 
                   <div className="p-4 rounded-2xl bg-black/40 border border-white/5">
@@ -6741,7 +7378,7 @@ export default function AdminDashboardPage() {
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-xs font-bold text-emerald-400">{selectedClientDetails.phone}</p>
                         <a
-                          href={`https://wa.me/${selectedClientDetails.phone.replace(/\D/g, "")}`}
+                          href={`https://wa.me/${formatPhoneForWhatsApp(selectedClientDetails.phone)}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 text-[10px] font-bold hover:bg-emerald-500/30 transition-colors flex items-center gap-1"
@@ -6776,6 +7413,27 @@ export default function AdminDashboardPage() {
                 {/* Quick Action Bar */}
                 <div className="flex items-center gap-2.5 flex-wrap p-3 rounded-2xl bg-white/[0.02] border border-white/5">
                   <button
+                    type="button"
+                    onClick={() => handleOpenWhatsAppChatOnly(selectedClientDetails)}
+                    className="px-3.5 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="Abrir conversa direta no WhatsApp"
+                  >
+                    <MessageCircle size={13} className="text-emerald-400" />
+                    <span>Conversar no WhatsApp</span>
+                    <ArrowUpRight size={12} />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSendClientAccess(selectedClientDetails)}
+                    className="px-3.5 py-2 rounded-xl bg-indigo-600/25 hover:bg-indigo-600/35 text-indigo-300 hover:text-indigo-200 border border-indigo-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="Enviar link, e-mail e senha padrão para o cliente no WhatsApp"
+                  >
+                    <Send size={13} className="text-indigo-400" />
+                    <span>Enviar Acesso</span>
+                  </button>
+
+                  <button
                     onClick={() => {
                       setClientDetailsModalOpen(false);
                       handleOpenClientModal(selectedClientDetails);
@@ -6806,7 +7464,7 @@ export default function AdminDashboardPage() {
                     className="px-3.5 py-2 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 text-xs font-semibold flex items-center gap-1.5 border border-purple-500/30 transition-colors cursor-pointer"
                   >
                     <Plus size={13} className="text-purple-300" />
-                    <span>Novo Projeto para este Cliente</span>
+                    <span>Novo Projeto</span>
                   </button>
 
                   <button
@@ -6820,12 +7478,12 @@ export default function AdminDashboardPage() {
                     {selectedClientDetails.status === "blocked" ? (
                       <>
                         <Unlock size={13} />
-                        <span>Desbloquear Acesso</span>
+                        <span>Desbloquear</span>
                       </>
                     ) : (
                       <>
                         <Lock size={13} />
-                        <span>Bloquear Acesso</span>
+                        <span>Bloquear</span>
                       </>
                     )}
                   </button>
@@ -7709,12 +8367,12 @@ export default function AdminDashboardPage() {
       {/* Modal: Smart Split Installments Generator */}
       <AnimatePresence>
         {splitGeneratorOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-white/10 shadow-2xl relative"
+              className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-white/10 shadow-2xl relative my-6"
             >
               <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/10">
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -7735,19 +8393,42 @@ export default function AdminDashboardPage() {
                   Gere automaticamente o plano de parcelamento dividindo o valor total do contrato em datas mensais consecutivas:
                 </p>
 
+                {/* Number of Installments - Dropdown (1x to 12x) */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-300 uppercase mb-1.5">
-                    Número de Parcelas
+                  <label className="block text-xs font-semibold text-gray-300 uppercase mb-1.5 flex items-center justify-between">
+                    <span>Número de Parcelas (1x até 12x)</span>
+                    <span className="text-purple-400 font-mono font-bold text-xs">{splitCount}x</span>
                   </label>
-                  <div className="grid grid-cols-5 gap-2">
-                    {[1, 2, 3, 4, 6].map((n) => (
+                  
+                  <select
+                    value={splitCount}
+                    onChange={(e) => handleSplitCountChange(Number(e.target.value))}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-xs font-semibold outline-none focus:border-purple-500 cursor-pointer mb-2"
+                  >
+                    <option value={1}>1x (À Vista - Pagamento Único)</option>
+                    <option value={2}>2x Meses (Entrada + 1 Parcela)</option>
+                    <option value={3}>3x Meses (Trimestral - 3 Parcelas)</option>
+                    <option value={4}>4x Meses (4 Parcelas)</option>
+                    <option value={5}>5x Meses (5 Parcelas)</option>
+                    <option value={6}>6x Meses (Semestral - 6 Parcelas)</option>
+                    <option value={7}>7x Meses (7 Parcelas)</option>
+                    <option value={8}>8x Meses (8 Parcelas)</option>
+                    <option value={9}>9x Meses (9 Parcelas)</option>
+                    <option value={10}>10x Meses (10 Parcelas)</option>
+                    <option value={11}>11x Meses (11 Parcelas)</option>
+                    <option value={12}>12x Meses (Anual - 12 Parcelas)</option>
+                  </select>
+
+                  {/* Fast Quick Chips */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[1, 2, 3, 4, 6, 10, 12].map((n) => (
                       <button
                         type="button"
                         key={n}
-                        onClick={() => setSplitCount(n)}
-                        className={`py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                        onClick={() => handleSplitCountChange(n)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
                           splitCount === n
-                            ? "bg-purple-600 text-white border-purple-500 shadow-md shadow-purple-600/30"
+                            ? "bg-purple-600 text-white border-purple-500 shadow-sm shadow-purple-600/30"
                             : "bg-black/30 border-white/10 text-gray-400 hover:text-white"
                         }`}
                       >
@@ -7757,6 +8438,66 @@ export default function AdminDashboardPage() {
                   </div>
                 </div>
 
+                {/* Values Inputs: Installment Amount & Total Contract */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-2xl bg-black/40 border border-purple-500/20">
+                  <div>
+                    <label className="block text-xs font-semibold text-purple-300 uppercase mb-1">
+                      Valor por Parcela (R$) *
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-mono text-xs font-bold">
+                        R$
+                      </span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        required
+                        placeholder="Ex: 500.00"
+                        value={splitInstallmentAmount}
+                        onChange={(e) => handleInstallmentAmountChange(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950/80 border border-purple-500/30 text-emerald-400 font-mono font-bold text-xs outline-none focus:border-purple-400"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-300 uppercase mb-1">
+                      Valor Total do Contrato (R$)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-mono text-xs font-bold">
+                        R$
+                      </span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="Ex: 6000.00"
+                        value={splitTotalContractAmount}
+                        onChange={(e) => handleTotalContractAmountChange(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950/80 border border-white/10 text-white font-mono font-bold text-xs outline-none focus:border-purple-400"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Start Date */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 uppercase mb-1.5 flex items-center justify-between">
+                    <span>Data de Início / 1ª Parcela *</span>
+                    <span className="text-[10px] text-gray-400 font-normal">Vencimento inicial</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={splitStartDate}
+                    onChange={(e) => setSplitStartDate(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-xs outline-none focus:border-purple-500"
+                  />
+                </div>
+
+                {/* Default Payment Method */}
                 <div>
                   <label className="block text-xs font-semibold text-gray-300 uppercase mb-1">
                     Método de Pagamento Padrão
@@ -7764,17 +8505,46 @@ export default function AdminDashboardPage() {
                   <select
                     value={splitMethod}
                     onChange={(e) => setSplitMethod(e.target.value as PaymentMethod)}
-                    className="w-full px-3 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-xs outline-none focus:border-purple-500 cursor-pointer"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-xs outline-none focus:border-purple-500 cursor-pointer"
                   >
                     <option value="pix">Pix Instantâneo</option>
-                    <option value="boleto">Boleto Bancário</option>
                     <option value="cartao">Cartão de Crédito</option>
+                    <option value="boleto">Boleto Bancário</option>
                     <option value="transferencia">Transferência / TED</option>
+                    <option value="cripto">Cripto / USDT</option>
+                    <option value="dinheiro">Dinheiro em Espécie</option>
                   </select>
                 </div>
 
-                <div className="p-3.5 rounded-2xl bg-purple-950/20 border border-purple-500/20 text-xs text-purple-200">
-                  ✨ A 1ª parcela será gerada com status <strong>Pago (Entrada)</strong> na data de hoje e as demais parcelas a cada 30 dias em status <strong>Em Aberto</strong>.
+                {/* First Installment Status Toggle */}
+                <label className="flex items-start gap-2.5 p-3 rounded-2xl bg-purple-950/20 border border-purple-500/20 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={splitFirstPaid}
+                    onChange={(e) => setSplitFirstPaid(e.target.checked)}
+                    className="w-4 h-4 mt-0.5 rounded text-purple-600 accent-purple-500 cursor-pointer"
+                  />
+                  <div className="text-xs">
+                    <span className="text-white font-semibold block">Marcar 1ª parcela como Paga (Entrada / Sinal)</span>
+                    <span className="text-gray-400 text-[11px]">
+                      {splitCount === 1
+                        ? "O pagamento único será registrado como quitado na data de início."
+                        : `A 1ª parcela será quitada na data de início e as demais (${splitCount - 1} parcelas) geradas a cada 30 dias com status Em Aberto.`}
+                    </span>
+                  </div>
+                </label>
+
+                {/* Dynamic Summary / Simulation */}
+                <div className="p-3 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between text-xs">
+                  <span className="text-gray-400">Total a faturar:</span>
+                  <div className="text-right">
+                    <span className="text-emerald-400 font-mono font-bold block">
+                      {splitCount}x de {formatBRL(Number(splitInstallmentAmount) || 0)}
+                    </span>
+                    <span className="text-[10px] text-gray-400">
+                      Total: {formatBRL(Number(splitTotalContractAmount) || (Number(splitInstallmentAmount) || 0) * splitCount)}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/10">
@@ -9118,6 +9888,114 @@ export default function AdminDashboardPage() {
                   className="px-4 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-semibold transition-colors"
                 >
                   Fechar
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Instant WhatsApp Update Notification Modal */}
+      <AnimatePresence>
+        {waNotifyModal && waNotifyModal.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="w-full max-w-lg rounded-3xl bg-slate-900 border border-emerald-500/30 shadow-2xl overflow-hidden"
+            >
+              {/* Header */}
+              <div className="p-5 bg-emerald-950/40 border-b border-emerald-500/20 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center font-bold">
+                    <Send size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                      <span>Notificar Cliente no WhatsApp</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                        Instantâneo
+                      </span>
+                    </h3>
+                    <p className="text-xs text-gray-300">
+                      Atualização salva e sincronizada com o Portal em tempo real!
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setWaNotifyModal(null)}
+                  className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-5 space-y-4">
+                <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 text-xs text-gray-300 space-y-2">
+                  <div className="flex items-center justify-between text-gray-400">
+                    <span>Cliente: <strong className="text-white">{waNotifyModal.clientName}</strong></span>
+                    <span>Projeto: <strong className="text-white">{waNotifyModal.projectTitle}</strong></span>
+                  </div>
+                  <div className="text-xs font-semibold text-emerald-300">
+                    📌 {waNotifyModal.updateTitle}
+                  </div>
+                </div>
+
+                {/* Pre-formatted Message Box */}
+                <div className="p-4 rounded-2xl bg-black/40 border border-white/10 text-xs font-mono text-gray-300 space-y-2 select-text">
+                  <p className="text-[11px] text-gray-400 uppercase font-sans font-bold">Mensagem que será enviada:</p>
+                  <p className="text-white font-sans whitespace-pre-line text-xs leading-relaxed">
+                    {`Olá, ${waNotifyModal.clientName}! 👋\n\n` +
+                     `🚀 *Nova Atualização no seu Projeto!* \n` +
+                     `📁 *Projeto:* ${waNotifyModal.projectTitle}\n` +
+                     `📌 *Resumo:* ${waNotifyModal.updateTitle}\n\n` +
+                     `As alterações já estão disponíveis no seu Portal do Cliente:\n` +
+                     `🔗 https://www.mairareis.com.br/portal`}
+                  </p>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="p-5 bg-black/40 border-t border-white/10 flex items-center justify-end gap-3">
+                <button
+                  onClick={() => {
+                    const msg =
+                      `Olá, ${waNotifyModal.clientName}! 👋\n\n` +
+                      `🚀 *Nova Atualização no seu Projeto!* \n` +
+                      `📁 *Projeto:* ${waNotifyModal.projectTitle}\n` +
+                      `📌 *Resumo:* ${waNotifyModal.updateTitle}\n\n` +
+                      `As alterações já estão disponíveis no seu Portal do Cliente:\n` +
+                      `🔗 https://www.mairareis.com.br/portal`;
+                    navigator.clipboard.writeText(msg);
+                    setCopiedWaNotify(true);
+                    setTimeout(() => setCopiedWaNotify(false), 2000);
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-semibold transition-colors flex items-center gap-1.5"
+                >
+                  {copiedWaNotify ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                  <span>{copiedWaNotify ? "Copiado!" : "Copiar Texto"}</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    const phone = (waNotifyModal.clientPhone || "553598030543").replace(/\D/g, "");
+                    const msg = encodeURIComponent(
+                      `Olá, ${waNotifyModal.clientName}! 👋\n\n` +
+                      `🚀 *Nova Atualização no seu Projeto!* \n` +
+                      `📁 *Projeto:* ${waNotifyModal.projectTitle}\n` +
+                      `📌 *Resumo:* ${waNotifyModal.updateTitle}\n\n` +
+                      `As alterações já estão disponíveis no seu Portal do Cliente:\n` +
+                      `🔗 https://www.mairareis.com.br/portal`
+                    );
+                    window.open(`https://wa.me/${phone}?text=${msg}`, "_blank");
+                    setWaNotifyModal(null);
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-lg shadow-emerald-600/30 flex items-center gap-2"
+                >
+                  <Send size={14} />
+                  <span>Enviar no WhatsApp</span>
                 </button>
               </div>
             </motion.div>

@@ -82,8 +82,11 @@ function LoginForm() {
     setSuccessMsg("");
     setLoading(true);
 
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPassword = password.trim();
+
     try {
-      const { profile: signedInProfile, error } = await signIn(email, password);
+      const { profile: signedInProfile, error } = await signIn(cleanEmail, cleanPassword);
       if (error) {
         if (
           error.message.includes("Invalid login credentials") ||
