@@ -291,7 +291,7 @@ export const getStatusConfig = (status: string) => {
   }
 };
 
-export type MilestoneStatus = "pending" | "in_review" | "approved";
+export type MilestoneStatus = "pendente" | "em_andamento" | "concluido";
 
 export interface Milestone {
   id: string;
@@ -304,100 +304,57 @@ export interface Milestone {
   due_date: string | null;
 }
 
-export interface ParsedMilestone {
-  id: string;
-  project_id: string;
-  title: string;
-  rawDescription: string | null;
-  description: string;
-  stage: string;
-  progress: number;
-  weight: number;
-  status: MilestoneStatus;
-  completed: boolean;
-  completed_at: string | null;
-  due_date: string | null;
-  order_index: number;
-}
-
-export const PROJECT_STAGES = [
-  "Design UI/UX",
-  "Front-end Mobile/Web",
-  "Back-end & APIs",
-  "Homologação & QA",
-  "Deploy & Publicação",
-] as const;
-
-export const parseMilestone = (m: Milestone): ParsedMilestone => {
-  let stage = "Design UI/UX";
-  let weight = 1;
-  let progress = m.completed ? 100 : 0;
-  let status: MilestoneStatus = m.completed ? "approved" : "pending";
-  let cleanDesc = m.description || "";
-
-  if (m.description && m.description.startsWith("[ETAPA:")) {
-    const headerEnd = m.description.indexOf("]\n");
-    if (headerEnd !== -1) {
-      const meta = m.description.slice(7, headerEnd);
-      cleanDesc = m.description.slice(headerEnd + 2);
-      const parts = meta.split("|").map((p) => p.trim());
-      for (const part of parts) {
-        if (part.startsWith("stage=")) stage = part.replace("stage=", "");
-        if (part.startsWith("weight=")) weight = Number(part.replace("weight=", "")) || 1;
-        if (part.startsWith("progress=")) progress = Number(part.replace("progress=", "")) || 0;
-        if (part.startsWith("status=")) status = part.replace("status=", "") as MilestoneStatus;
-      }
+export const getMilestoneStatus = (m: Milestone): MilestoneStatus => {
+  if (m.completed) return "concluido";
+  // Check if description has status metadata
+  if (m.description && m.description.startsWith("[STATUS:")) {
+    const end = m.description.indexOf("]");
+    if (end !== -1) {
+      const status = m.description.slice(8, end).trim() as MilestoneStatus;
+      if (["pendente", "em_andamento", "concluido"].includes(status)) return status;
     }
   }
+  return "pendente";
+};
 
-  if (m.completed && status !== "approved") {
-    status = "approved";
-    progress = 100;
+export const getMilestoneCleanDescription = (m: Milestone): string => {
+  if (!m.description) return "";
+  if (m.description.startsWith("[STATUS:")) {
+    const end = m.description.indexOf("]");
+    if (end !== -1) return m.description.slice(end + 1).trim();
   }
-  if (status === "approved") progress = 100;
-
-  return {
-    id: m.id,
-    project_id: m.project_id,
-    title: m.title,
-    rawDescription: m.description,
-    description: cleanDesc,
-    stage,
-    progress,
-    weight,
-    status,
-    completed: status === "approved" || m.completed,
-    completed_at: m.completed_at || null,
-    due_date: m.due_date || null,
-    order_index: m.order_index,
-  };
+  // Also handle legacy [ETAPA: ...] format
+  if (m.description.startsWith("[ETAPA:")) {
+    const end = m.description.indexOf("]\n");
+    if (end !== -1) return m.description.slice(end + 2).trim();
+  }
+  return m.description;
 };
 
 export const serializeMilestoneDescription = (
   cleanDesc: string,
-  stage: string,
-  weight: number,
-  progress: number,
-  status: string
+  status: MilestoneStatus
 ) => {
-  return `[ETAPA: stage=${stage} | weight=${weight} | progress=${progress} | status=${status}]\n${cleanDesc || ""}`;
+  return `[STATUS: ${status}]${cleanDesc ? "\n" + cleanDesc : ""}`;
 };
 
-export const calculateWeightedProgress = (milestoneList: Milestone[]) => {
+export const calculateSimpleProgress = (milestoneList: Milestone[]) => {
   if (!milestoneList || milestoneList.length === 0) return 0;
-  const parsed = milestoneList.map(parseMilestone);
-  let totalWeight = 0;
-  let totalWeightedProgress = 0;
+  const total = milestoneList.length;
+  const completed = milestoneList.filter((m) => m.completed || getMilestoneStatus(m) === "concluido").length;
+  return Math.round((completed / total) * 100);
+};
 
-  for (const pm of parsed) {
-    const w = pm.weight || 1;
-    const p = pm.status === "approved" ? 100 : pm.progress || 0;
-    totalWeight += w;
-    totalWeightedProgress += p * w;
+export const getMilestoneStatusConfig = (status: MilestoneStatus) => {
+  switch (status) {
+    case "concluido":
+      return { label: "Concluído", color: "emerald", icon: "check" };
+    case "em_andamento":
+      return { label: "Em Andamento", color: "blue", icon: "play" };
+    case "pendente":
+    default:
+      return { label: "Pendente", color: "amber", icon: "clock" };
   }
-
-  if (totalWeight === 0) return 0;
-  return Math.min(100, Math.max(0, Math.round(totalWeightedProgress / totalWeight)));
 };
 
 // Timeline Updates & Notes Types & Helpers
@@ -1075,10 +1032,6 @@ export default function AdminDashboardPage() {
   const isDbUuid = (id?: string | null): boolean =>
     !!id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
-  // Selected Stage Filter in Project Details
-  const [selectedStageFilter, setSelectedStageFilter] = useState<string>("all");
-  const [autoProgressEnabled, setAutoProgressEnabled] = useState<boolean>(true);
-
   // Modals
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [projectDetailsModalOpen, setProjectDetailsModalOpen] = useState(false);
@@ -1107,13 +1060,10 @@ export default function AdminDashboardPage() {
   const [pRepoUrl, setPRepoUrl] = useState("");
   const [pCategory, setPCategory] = useState("Mobile App (React Native)");
 
-  // Form states for milestone / etapa
+  // Form states for milestone / etapa (simplified checklist)
   const [mTitle, setMTitle] = useState("");
   const [mDescription, setMDescription] = useState("");
-  const [mStage, setMStage] = useState<string>("Design UI/UX");
-  const [mStatus, setMStatus] = useState<MilestoneStatus>("pending");
-  const [mProgress, setMProgress] = useState<number>(0);
-  const [mWeight, setMWeight] = useState<number>(1);
+  const [mStatus, setMStatus] = useState<MilestoneStatus>("pendente");
   const [mDueDate, setMDueDate] = useState("");
 
   // Timeline & Updates Management State
@@ -1758,43 +1708,49 @@ export default function AdminDashboardPage() {
   };
 
   // Milestone & Stage Actions
-  const handleOpenMilestoneModal = (milestone?: Milestone, defaultStage?: string) => {
+  const handleOpenMilestoneModal = (milestone?: Milestone) => {
     if (milestone) {
-      const pm = parseMilestone(milestone);
       setEditingMilestone(milestone);
-      setMTitle(pm.title);
-      setMDescription(pm.description);
-      setMStage(pm.stage);
-      setMStatus(pm.status);
-      setMProgress(pm.progress);
-      setMWeight(pm.weight);
-      setMDueDate(pm.due_date || "");
+      setMTitle(milestone.title);
+      setMDescription(getMilestoneCleanDescription(milestone));
+      setMStatus(getMilestoneStatus(milestone));
+      setMDueDate(milestone.due_date || "");
     } else {
       setEditingMilestone(null);
       setMTitle("");
       setMDescription("");
-      setMStage(defaultStage || "Design UI/UX");
-      setMStatus("pending");
-      setMProgress(0);
-      setMWeight(1);
+      setMStatus("pendente");
       setMDueDate("");
     }
     setMilestoneModalOpen(true);
+  };
+
+  const syncProjectProgress = async (projectId: string) => {
+    if (!isDbUuid(projectId)) return;
+    try {
+      const updatedList = await supabase
+        .from("project_milestones")
+        .select("*")
+        .eq("project_id", projectId)
+        .order("order_index", { ascending: true });
+      if (updatedList.data) {
+        const newProg = calculateSimpleProgress(updatedList.data as Milestone[]);
+        await supabase
+          .from("projects")
+          .update({ progress: newProg, updated_at: new Date().toISOString() })
+          .eq("id", projectId);
+        setSelectedProject((prev) => (prev ? { ...prev, progress: newProg } : null));
+        setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, progress: newProg } : p)));
+      }
+    } catch (e) {}
   };
 
   const handleSaveMilestone = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProject) return;
     try {
-      const isApproved = mStatus === "approved";
-      const finalProgress = isApproved ? 100 : mProgress;
-      const serializedDesc = serializeMilestoneDescription(
-        mDescription,
-        mStage,
-        mWeight,
-        finalProgress,
-        mStatus
-      );
+      const isCompleted = mStatus === "concluido";
+      const serializedDesc = serializeMilestoneDescription(mDescription, mStatus);
 
       if (isDbUuid(selectedProject.id)) {
         if (editingMilestone && isDbUuid(editingMilestone.id)) {
@@ -1805,8 +1761,8 @@ export default function AdminDashboardPage() {
                 title: mTitle,
                 description: serializedDesc,
                 due_date: mDueDate || null,
-                completed: isApproved,
-                completed_at: isApproved ? (editingMilestone.completed_at || new Date().toISOString()) : null,
+                completed: isCompleted,
+                completed_at: isCompleted ? (editingMilestone.completed_at || new Date().toISOString()) : null,
               })
               .eq("id", editingMilestone.id);
           } catch (e) {}
@@ -1819,16 +1775,15 @@ export default function AdminDashboardPage() {
                 description: serializedDesc,
                 due_date: mDueDate || null,
                 order_index: milestones.length + 1,
-                completed: isApproved,
-                completed_at: isApproved ? new Date().toISOString() : null,
+                completed: isCompleted,
+                completed_at: isCompleted ? new Date().toISOString() : null,
               },
             ]);
           } catch (e) {}
         }
       }
 
-      //  Trigger 1: Email notification when delivery is completed
-      if (isApproved && selectedProject) {
+      if (isCompleted && selectedProject) {
         const matchedClient = clients.find((c) => matchProjectToClient(selectedProject, c));
         const clientEmail = matchedClient?.email || "cliente@empresa.com";
         const clientName = matchedClient?.full_name || "Cliente Contratante";
@@ -1840,9 +1795,9 @@ export default function AdminDashboardPage() {
           projectName: selectedProject.title,
           projectId: selectedProject.id,
           milestoneTitle: mTitle,
-          stageName: mStage || "Homologação & Entrega",
+          stageName: "Entrega",
           completedAt: new Date().toISOString(),
-          deliverables: ["Validação técnica em homologação", "Checklist de entrega finalizado"],
+          deliverables: ["Etapa concluída com sucesso"],
           notes: mDescription || undefined,
         });
 
@@ -1855,27 +1810,9 @@ export default function AdminDashboardPage() {
 
       setMilestoneModalOpen(false);
       await fetchProjectDetails(selectedProject.id);
-
-      if (autoProgressEnabled && isDbUuid(selectedProject.id)) {
-        try {
-          const updatedList = await supabase
-            .from("project_milestones")
-            .select("*")
-            .eq("project_id", selectedProject.id)
-            .order("order_index", { ascending: true });
-          if (updatedList.data) {
-            const newProg = calculateWeightedProgress(updatedList.data as Milestone[]);
-            await supabase
-              .from("projects")
-              .update({ progress: newProg, updated_at: new Date().toISOString() })
-              .eq("id", selectedProject.id);
-            setSelectedProject((prev) => (prev ? { ...prev, progress: newProg } : null));
-            setProjects((prev) => prev.map((p) => (p.id === selectedProject.id ? { ...p, progress: newProg } : p)));
-          }
-        } catch (e) {}
-      }
+      await syncProjectProgress(selectedProject.id);
     } catch (err: any) {
-      alert("Erro ao salvar marco: " + err.message);
+      alert("Erro ao salvar etapa: " + err.message);
     }
   };
 
@@ -1885,16 +1822,9 @@ export default function AdminDashboardPage() {
   ) => {
     if (!selectedProject) return;
     try {
-      const pm = parseMilestone(milestone);
-      const isApproved = newStatus === "approved";
-      const newProgress = isApproved ? 100 : newStatus === "in_review" ? 75 : 0;
-      const serializedDesc = serializeMilestoneDescription(
-        pm.description,
-        pm.stage,
-        pm.weight,
-        newProgress,
-        newStatus
-      );
+      const isCompleted = newStatus === "concluido";
+      const cleanDesc = getMilestoneCleanDescription(milestone);
+      const serializedDesc = serializeMilestoneDescription(cleanDesc, newStatus);
 
       if (isDbUuid(milestone.id)) {
         try {
@@ -1902,15 +1832,14 @@ export default function AdminDashboardPage() {
             .from("project_milestones")
             .update({
               description: serializedDesc,
-              completed: isApproved,
-              completed_at: isApproved ? new Date().toISOString() : null,
+              completed: isCompleted,
+              completed_at: isCompleted ? new Date().toISOString() : null,
             })
             .eq("id", milestone.id);
         } catch (e) {}
       }
 
-      //  Trigger 1: Email notification when delivery is completed
-      if (isApproved && selectedProject) {
+      if (isCompleted && selectedProject) {
         const matchedClient = clients.find((c) => matchProjectToClient(selectedProject, c));
         const clientEmail = matchedClient?.email || "cliente@empresa.com";
         const clientName = matchedClient?.full_name || "Cliente Contratante";
@@ -1922,10 +1851,10 @@ export default function AdminDashboardPage() {
           projectName: selectedProject.title,
           projectId: selectedProject.id,
           milestoneTitle: milestone.title,
-          stageName: pm.stage || "Homologação & Entrega",
+          stageName: "Entrega",
           completedAt: new Date().toISOString(),
-          deliverables: (pm as any).deliverables || ["Validação técnica em homologação", "Checklist de entrega finalizado"],
-          notes: pm.description || undefined,
+          deliverables: ["Etapa concluída com sucesso"],
+          notes: cleanDesc || undefined,
         });
 
         setEmailToast({
@@ -1936,70 +1865,15 @@ export default function AdminDashboardPage() {
       }
 
       await fetchProjectDetails(selectedProject.id);
-
-      if (autoProgressEnabled && isDbUuid(selectedProject.id)) {
-        try {
-          const updatedList = await supabase
-            .from("project_milestones")
-            .select("*")
-            .eq("project_id", selectedProject.id)
-            .order("order_index", { ascending: true });
-          if (updatedList.data) {
-            const newProg = calculateWeightedProgress(updatedList.data as Milestone[]);
-            await supabase
-              .from("projects")
-              .update({ progress: newProg, updated_at: new Date().toISOString() })
-              .eq("id", selectedProject.id);
-            setSelectedProject((prev) => (prev ? { ...prev, progress: newProg } : null));
-            setProjects((prev) => prev.map((p) => (p.id === selectedProject.id ? { ...p, progress: newProg } : p)));
-          }
-        } catch (e) {}
-      }
+      await syncProjectProgress(selectedProject.id);
     } catch (err: any) {
-      alert("Erro ao atualizar status do marco: " + err.message);
-    }
-  };
-
-  const handleApplyCalculatedProgress = async () => {
-    if (!selectedProject) return;
-    const newProg = calculateWeightedProgress(milestones);
-    try {
-      if (isDbUuid(selectedProject.id)) {
-        try {
-          await supabase
-            .from("projects")
-            .update({ progress: newProg, updated_at: new Date().toISOString() })
-            .eq("id", selectedProject.id);
-        } catch (e) {}
-      }
-
-      try {
-        await fetch("/api/admin/projects", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...selectedProject,
-            progress: newProg,
-          }),
-        });
-      } catch (e) {}
-
-      try {
-        const localProjects: Project[] = JSON.parse(localStorage.getItem("portfolio_local_projects_v1") || "[]");
-        const updatedLocal = localProjects.map((p) => (p.id === selectedProject.id ? { ...p, progress: newProg } : p));
-        localStorage.setItem("portfolio_local_projects_v1", JSON.stringify(updatedLocal));
-      } catch (e) {}
-
-      setSelectedProject({ ...selectedProject, progress: newProg });
-      setProjects((prev) => prev.map((p) => (p.id === selectedProject.id ? { ...p, progress: newProg } : p)));
-    } catch (err: any) {
-      alert("Erro ao aplicar progresso calculado: " + err.message);
+      alert("Erro ao atualizar status: " + err.message);
     }
   };
 
   const handleDeleteMilestone = async (id: string) => {
     if (!selectedProject) return;
-    if (!confirm("Deseja remover este marco?")) return;
+    if (!confirm("Deseja remover esta etapa?")) return;
     try {
       if (isDbUuid(id)) {
         try {
@@ -2007,29 +1881,12 @@ export default function AdminDashboardPage() {
         } catch (e) {}
       }
       await fetchProjectDetails(selectedProject.id);
-
-      if (autoProgressEnabled && isDbUuid(selectedProject.id)) {
-        try {
-          const updatedList = await supabase
-            .from("project_milestones")
-            .select("*")
-            .eq("project_id", selectedProject.id)
-            .order("order_index", { ascending: true });
-          if (updatedList.data) {
-            const newProg = calculateWeightedProgress(updatedList.data as Milestone[]);
-            await supabase
-              .from("projects")
-              .update({ progress: newProg, updated_at: new Date().toISOString() })
-              .eq("id", selectedProject.id);
-            setSelectedProject((prev) => (prev ? { ...prev, progress: newProg } : null));
-            setProjects((prev) => prev.map((p) => (p.id === selectedProject.id ? { ...p, progress: newProg } : p)));
-          }
-        } catch (e) {}
-      }
+      await syncProjectProgress(selectedProject.id);
     } catch (err: any) {
       console.error(err);
     }
   };
+
 
   // Timeline Updates & Notes Actions
   const saveUpdatesToStorage = (updated: Record<string, ProjectUpdate[]>) => {
@@ -4036,7 +3893,7 @@ export default function AdminDashboardPage() {
                               <div className="pt-2 border-t border-white/5 flex items-center gap-2 flex-wrap text-[11px] text-gray-400">
                                 <span className="px-2 py-0.5 rounded-lg bg-white/5 border border-white/5 flex items-center gap-1 text-gray-300 font-medium">
                                   <Sparkles size={11} className="text-amber-400" />
-                                  <span>{projMilestones.length > 0 ? `${completedMilestones}/${projMilestones.length} fases` : "Fases a definir"}</span>
+                                  <span>{projMilestones.length > 0 ? `${completedMilestones}/${projMilestones.length} etapas` : "Etapas a definir"}</span>
                                 </span>
                                 {proj.preview_url && (
                                   <span className="px-2 py-0.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 flex items-center gap-1 font-medium">
@@ -5799,418 +5656,205 @@ export default function AdminDashboardPage() {
                         );
                       })()}
 
-                      {/* Milestones / Gestão de Etapas, Tarefas e Progresso */}
+                      {/* Checklist de Etapas do Projeto */}
                       <div className="p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-5">
                         {/* Header */}
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
                           <div>
                             <div className="flex items-center gap-2">
                               <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                                <CheckCircle2 size={16} className="text-emerald-400" />
-                                <span>Gestão de Milestones & Etapas</span>
+                                <ListTodo size={16} className="text-emerald-400" />
+                                <span>Etapas & Entregáveis</span>
                               </h3>
                               <span className="px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[10px] font-bold border border-indigo-500/30">
-                                {milestones.length} {milestones.length === 1 ? "marco" : "marcos"}
+                                {milestones.filter((m) => m.completed || getMilestoneStatus(m) === "concluido").length}/{milestones.length} concluídas
                               </span>
                             </div>
                             <p className="text-xs text-gray-400 mt-0.5">
-                              Estrutura de sprints/etapas, pesos, homologação e cálculo automático de progresso.
+                              Lista de entregas do projeto com status e prazo previsto.
                             </p>
                           </div>
 
                           <button
-                            onClick={() =>
-                              handleOpenMilestoneModal(
-                                undefined,
-                                selectedStageFilter === "all" ? "Design UI/UX" : selectedStageFilter
-                              )
-                            }
+                            onClick={() => handleOpenMilestoneModal()}
                             className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-900/30 border border-emerald-400/30 flex items-center justify-center gap-1.5 cursor-pointer transition-all shrink-0"
                           >
                             <Plus size={14} />
-                            <span>Novo Marco / Tarefa</span>
+                            <span>Nova Etapa</span>
                           </button>
                         </div>
 
-                        {/* Automatic Progress & Override Console */}
-                        {(() => {
-                          const calculatedProg = calculateWeightedProgress(milestones);
-                          const isSynced = selectedProject.progress === calculatedProg;
-
+                        {/* Progress Bar */}
+                        {milestones.length > 0 && (() => {
+                          const completedCount = milestones.filter((m) => m.completed || getMilestoneStatus(m) === "concluido").length;
+                          const progressPct = Math.round((completedCount / milestones.length) * 100);
                           return (
-                            <div className="p-4 rounded-2xl bg-black/40 border border-white/10 space-y-3">
-                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
-                                    <BarChart3 size={20} />
-                                  </div>
-                                  <div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-xs font-bold text-white">
-                                        Progresso do Projeto:{" "}
-                                        <span className="text-indigo-400 font-extrabold">{selectedProject.progress}%</span>
-                                      </span>
-                                      <span className="text-[11px] text-gray-400">
-                                        (Média Ponderada das Etapas: <strong className="text-emerald-400">{calculatedProg}%</strong>)
-                                      </span>
-                                    </div>
-                                    <p className="text-[11px] text-gray-400">
-                                      {autoProgressEnabled
-                                        ? "Sincronização automática ativa: o progresso é recalculado ao alterar marcos."
-                                        : "Modo Override Manual: você pode definir manualmente ou sincronizar com 1 clique."}
-                                    </p>
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center gap-2 self-end sm:self-center">
-                                  <button
-                                    type="button"
-                                    onClick={() => setAutoProgressEnabled(!autoProgressEnabled)}
-                                    className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
-                                      autoProgressEnabled
-                                        ? "bg-indigo-600/30 border-indigo-500/40 text-indigo-200"
-                                        : "bg-white/5 border-white/10 text-gray-400 hover:text-white"
-                                    }`}
-                                    title="Alternar entre cálculo automático e manual"
-                                  >
-                                    <Sparkles size={13} className={autoProgressEnabled ? "text-indigo-400" : "text-gray-400"} />
-                                    <span>{autoProgressEnabled ? "Auto: Ligado" : "Auto: Desligado"}</span>
-                                  </button>
-
-                                  {!isSynced && (
-                                    <button
-                                      type="button"
-                                      onClick={handleApplyCalculatedProgress}
-                                      className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
-                                      title="Aplicar média calculada ao progresso geral"
-                                    >
-                                      <RefreshCw size={12} />
-                                      <span>Aplicar Média ({calculatedProg}%)</span>
-                                    </button>
-                                  )}
-                                </div>
+                            <div className="p-4 rounded-2xl bg-black/40 border border-white/10 space-y-2">
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="font-bold text-gray-300 flex items-center gap-1.5">
+                                  <CheckCircle2 size={14} className="text-emerald-400" />
+                                  <span>Progresso do Projeto</span>
+                                </span>
+                                <span className="font-mono font-bold text-emerald-300">
+                                  {progressPct}% ({completedCount} de {milestones.length} etapas)
+                                </span>
                               </div>
-
-                              {/* Dual Visual Progress Bars */}
-                              <div className="space-y-1.5">
-                                <div className="h-2.5 w-full bg-white/5 rounded-full overflow-hidden flex">
-                                  <div
-                                    className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 transition-all duration-500"
-                                    style={{ width: `${selectedProject.progress}%` }}
-                                  />
-                                </div>
-                                <div className="flex justify-between text-[10px] text-gray-400">
-                                  <span>Início (0%)</span>
-                                  <span>
-                                    {selectedProject.progress >= 100
-                                      ? "✅ 100% Concluído"
-                                      : `${selectedProject.progress}% em andamento`}
-                                  </span>
-                                  <span>Entrega Final (100%)</span>
-                                </div>
+                              <div className="h-2.5 w-full bg-white/5 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-gradient-to-r from-emerald-500 via-teal-500 to-indigo-500 transition-all duration-500 rounded-full"
+                                  style={{ width: `${progressPct}%` }}
+                                />
                               </div>
                             </div>
                           );
                         })()}
 
-                        {/* Stages / Sprints Tabs Filter with Stage Progress % */}
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold text-gray-300 flex items-center gap-1.5">
-                              <Layers size={14} className="text-indigo-400" />
-                              <span>Etapas do Projeto (Sprints)</span>
-                            </span>
-                            <span className="text-[11px] text-gray-400">
-                              Filtre para visualizar as tarefas ativas da etapa
-                            </span>
-                          </div>
-
-                          <div className="flex flex-wrap gap-2">
-                            {/* All Filter */}
+                        {/* Checklist Items */}
+                        {milestones.length === 0 ? (
+                          <div className="p-8 rounded-2xl bg-black/30 border border-dashed border-white/10 text-center space-y-2">
+                            <ListTodo size={28} className="mx-auto text-gray-600" />
+                            <p className="text-xs text-gray-400">
+                              Nenhuma etapa cadastrada para este projeto.
+                            </p>
                             <button
-                              type="button"
-                              onClick={() => setSelectedStageFilter("all")}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer border ${
-                                selectedStageFilter === "all"
-                                  ? "bg-indigo-600 text-white border-indigo-500 shadow-md shadow-indigo-600/30"
-                                  : "bg-black/30 text-gray-400 border-white/5 hover:text-white hover:bg-white/5"
-                              }`}
+                              onClick={() => handleOpenMilestoneModal()}
+                              className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer inline-flex items-center gap-1 pt-1"
                             >
-                              <span>Todas</span>
-                              <span className="px-1.5 py-0.2 rounded-md bg-white/10 text-[10px]">
-                                {milestones.length}
-                              </span>
+                              <Plus size={13} />
+                              <span>Criar primeira etapa</span>
                             </button>
-
-                            {/* Stage Tabs */}
-                            {PROJECT_STAGES.map((stg) => {
-                              const stgMilestones = milestones
-                                .map(parseMilestone)
-                                .filter((m) => m.stage === stg);
-                              const totalWeight = stgMilestones.reduce((acc, curr) => acc + curr.weight, 0);
-                              const stageProg =
-                                stgMilestones.length === 0
-                                  ? 0
-                                  : Math.round(
-                                      stgMilestones.reduce((acc, curr) => {
-                                        const p = curr.status === "approved" ? 100 : curr.progress;
-                                        return acc + p * curr.weight;
-                                      }, 0) / (totalWeight || 1)
-                                    );
-                              const isSelected = selectedStageFilter === stg;
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {milestones.map((m) => {
+                              const status = getMilestoneStatus(m);
+                              const statusCfg = getMilestoneStatusConfig(status);
+                              const cleanDesc = getMilestoneCleanDescription(m);
+                              const isDone = status === "concluido";
+                              const isActive = status === "em_andamento";
 
                               return (
-                                <button
-                                  key={stg}
-                                  type="button"
-                                  onClick={() => setSelectedStageFilter(stg)}
-                                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer border ${
-                                    isSelected
-                                      ? "bg-indigo-600 text-white border-indigo-500 shadow-md shadow-indigo-600/30"
-                                      : "bg-black/30 text-gray-400 border-white/5 hover:text-white hover:bg-white/5"
+                                <div
+                                  key={m.id}
+                                  className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                                    isDone
+                                      ? "bg-emerald-950/10 border-emerald-500/20"
+                                      : isActive
+                                      ? "bg-blue-950/10 border-blue-500/20"
+                                      : "bg-white/[0.02] border-white/5 hover:border-white/10"
                                   }`}
                                 >
-                                  <span>{stg}</span>
-                                  {stgMilestones.length > 0 ? (
-                                    <span
-                                      className={`px-1.5 py-0.2 rounded-md text-[10px] font-bold ${
-                                        stageProg === 100
-                                          ? "bg-emerald-500/20 text-emerald-300"
-                                          : stageProg > 0
-                                          ? "bg-indigo-500/20 text-indigo-300"
-                                          : "bg-white/10 text-gray-400"
-                                      }`}
+                                  {/* Left: Status icon + Info */}
+                                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                                    <div className="pt-0.5">
+                                      {isDone ? (
+                                        <div className="w-6 h-6 rounded-lg bg-emerald-500 text-white flex items-center justify-center">
+                                          <Check size={14} />
+                                        </div>
+                                      ) : isActive ? (
+                                        <div className="w-6 h-6 rounded-lg bg-blue-500/20 text-blue-300 border border-blue-500/40 flex items-center justify-center">
+                                          <Zap size={13} />
+                                        </div>
+                                      ) : (
+                                        <div className="w-6 h-6 rounded-lg bg-white/5 border border-white/20 flex items-center justify-center text-gray-400">
+                                          <Clock size={13} />
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    <div className="min-w-0 space-y-1">
+                                      <h4 className={`text-xs font-bold truncate ${isDone ? "text-emerald-300 line-through" : "text-white"}`}>
+                                        {m.title}
+                                      </h4>
+
+                                      {cleanDesc && (
+                                        <p className="text-[11px] text-gray-400 line-clamp-1">{cleanDesc}</p>
+                                      )}
+
+                                      <div className="flex flex-wrap items-center gap-2 text-[10px] text-gray-400">
+                                        {m.due_date && (
+                                          <span className="flex items-center gap-1">
+                                            <Calendar size={10} className="text-gray-500" />
+                                            <span>Prazo: {new Date(m.due_date).toLocaleDateString("pt-BR")}</span>
+                                          </span>
+                                        )}
+                                        {isDone && m.completed_at && (
+                                          <span className="flex items-center gap-1 text-emerald-400">
+                                            <ShieldCheck size={10} />
+                                            <span>Concluído em {new Date(m.completed_at).toLocaleDateString("pt-BR")}</span>
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Right: Status Switcher + Actions */}
+                                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                                    {/* Status Switcher */}
+                                    <div className="flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/10">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleQuickUpdateMilestoneStatus(m, "pendente")}
+                                        className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${
+                                          status === "pendente"
+                                            ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                                            : "text-gray-400 hover:text-white"
+                                        }`}
+                                        title="Pendente"
+                                      >
+                                        Pendente
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleQuickUpdateMilestoneStatus(m, "em_andamento")}
+                                        className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${
+                                          status === "em_andamento"
+                                            ? "bg-blue-500/20 text-blue-300 border border-blue-500/30"
+                                            : "text-gray-400 hover:text-white"
+                                        }`}
+                                        title="Em Andamento"
+                                      >
+                                        Em Andamento
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleQuickUpdateMilestoneStatus(m, "concluido")}
+                                        className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${
+                                          status === "concluido"
+                                            ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                                            : "text-gray-400 hover:text-white"
+                                        }`}
+                                        title="Concluído"
+                                      >
+                                        Concluído
+                                      </button>
+                                    </div>
+
+                                    {/* Edit */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenMilestoneModal(m)}
+                                      className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-colors cursor-pointer"
+                                      title="Editar etapa"
                                     >
-                                      {stageProg}%
-                                    </span>
-                                  ) : (
-                                    <span className="text-[10px] text-gray-400 opacity-60">0</span>
-                                  )}
-                                </button>
+                                      <Edit2 size={13} />
+                                    </button>
+
+                                    {/* Delete */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteMilestone(m.id)}
+                                      className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer"
+                                      title="Excluir etapa"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </div>
+                                </div>
                               );
                             })}
                           </div>
-                        </div>
-
-                        {/* Listagem das Tarefas / Marcos Ativos */}
-                        {(() => {
-                          const parsedAll = milestones.map(parseMilestone);
-                          const filtered =
-                            selectedStageFilter === "all"
-                              ? parsedAll
-                              : parsedAll.filter((m) => m.stage === selectedStageFilter);
-
-                          if (filtered.length === 0) {
-                            return (
-                              <div className="p-8 rounded-2xl bg-black/30 border border-dashed border-white/10 text-center space-y-2">
-                                <ListTodo size={28} className="mx-auto text-gray-600" />
-                                <p className="text-xs text-gray-400">
-                                  {selectedStageFilter === "all"
-                                    ? "Nenhum marco cadastrado para este projeto."
-                                    : `Nenhuma tarefa ativa cadastrada na etapa "${selectedStageFilter}".`}
-                                </p>
-                                <button
-                                  onClick={() =>
-                                    handleOpenMilestoneModal(
-                                      undefined,
-                                      selectedStageFilter === "all" ? "Design UI/UX" : selectedStageFilter
-                                    )
-                                  }
-                                  className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer inline-flex items-center gap-1 pt-1"
-                                >
-                                  <Plus size={13} />
-                                  <span>Criar primeiro marco desta etapa</span>
-                                </button>
-                              </div>
-                            );
-                          }
-
-                          return (
-                            <div className="space-y-2.5">
-                              {filtered.map((m) => {
-                                const original = milestones.find((x) => x.id === m.id)!;
-                                const isApproved = m.status === "approved";
-                                const isInReview = m.status === "in_review";
-
-                                return (
-                                  <div
-                                    key={m.id}
-                                    className={`p-4 rounded-2xl border transition-all space-y-3 ${
-                                      isApproved
-                                        ? "bg-emerald-950/10 border-emerald-500/20"
-                                        : isInReview
-                                        ? "bg-blue-950/10 border-blue-500/20"
-                                        : "bg-white/[0.02] border-white/5 hover:border-white/10"
-                                    }`}
-                                  >
-                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                                      {/* Title & Stage Pill */}
-                                      <div className="flex items-start gap-3">
-                                        <div className="pt-0.5">
-                                          {isApproved ? (
-                                            <div className="w-5 h-5 rounded-lg bg-emerald-500 text-white flex items-center justify-center">
-                                              <Check size={13} />
-                                            </div>
-                                          ) : isInReview ? (
-                                            <div className="w-5 h-5 rounded-lg bg-blue-500/20 text-blue-300 border border-blue-500/40 flex items-center justify-center">
-                                              <Eye size={12} />
-                                            </div>
-                                          ) : (
-                                            <div className="w-5 h-5 rounded-lg bg-white/5 border border-white/20 flex items-center justify-center text-gray-400">
-                                              <Clock size={12} />
-                                            </div>
-                                          )}
-                                        </div>
-
-                                        <div className="space-y-1">
-                                          <div className="flex flex-wrap items-center gap-2">
-                                            <h4
-                                              className={`text-xs font-bold ${
-                                                isApproved ? "text-emerald-300" : "text-white"
-                                              }`}
-                                            >
-                                              {m.title}
-                                            </h4>
-
-                                            <span className="px-2 py-0.5 rounded-md bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-[10px] font-semibold">
-                                              {m.stage}
-                                            </span>
-
-                                            <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-gray-400 text-[10px] font-semibold">
-                                              Peso: {m.weight}x
-                                            </span>
-                                          </div>
-
-                                          {m.description && (
-                                            <p className="text-[11px] text-gray-400">{m.description}</p>
-                                          )}
-                                        </div>
-                                      </div>
-
-                                      {/* Status Switcher & Action Buttons */}
-                                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                                        {/* Status Switcher */}
-                                        <div className="flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/10">
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              handleQuickUpdateMilestoneStatus(original, "pending")
-                                            }
-                                            className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${
-                                              m.status === "pending"
-                                                ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-                                                : "text-gray-400 hover:text-white"
-                                            }`}
-                                            title="Marcar como Pendente"
-                                          >
-                                            Pendente
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              handleQuickUpdateMilestoneStatus(original, "in_review")
-                                            }
-                                            className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${
-                                              m.status === "in_review"
-                                                ? "bg-blue-500/20 text-blue-300 border border-blue-500/30"
-                                                : "text-gray-400 hover:text-white"
-                                            }`}
-                                            title="Enviar para Homologação"
-                                          >
-                                            Em Homologação
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              handleQuickUpdateMilestoneStatus(original, "approved")
-                                            }
-                                            className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${
-                                              m.status === "approved"
-                                                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                                                : "text-gray-400 hover:text-white"
-                                            }`}
-                                            title="Aprovar Marco"
-                                          >
-                                            Aprovado
-                                          </button>
-                                        </div>
-
-                                        {/* Edit */}
-                                        <button
-                                          type="button"
-                                          onClick={() => handleOpenMilestoneModal(original)}
-                                          className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-colors cursor-pointer"
-                                          title="Editar marco / progresso / peso"
-                                        >
-                                          <Edit2 size={13} />
-                                        </button>
-
-                                        {/* Delete */}
-                                        <button
-                                          type="button"
-                                          onClick={() => handleDeleteMilestone(m.id)}
-                                          className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer"
-                                          title="Excluir marco"
-                                        >
-                                          <Trash2 size={13} />
-                                        </button>
-                                      </div>
-                                    </div>
-
-                                    {/* Task Progress Bar and Date Metadata */}
-                                    <div className="pt-2 border-t border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[10px] text-gray-400">
-                                      {/* Individual Progress */}
-                                      <div className="flex items-center gap-2 flex-1 max-w-xs">
-                                        <span className="font-semibold text-gray-300">
-                                          Progresso: {isApproved ? 100 : m.progress}%
-                                        </span>
-                                        <div className="h-1.5 flex-1 bg-white/10 rounded-full overflow-hidden">
-                                          <div
-                                            className={`h-full rounded-full transition-all ${
-                                              isApproved
-                                                ? "bg-emerald-400"
-                                                : isInReview
-                                                ? "bg-blue-400"
-                                                : "bg-indigo-400"
-                                            }`}
-                                            style={{ width: `${isApproved ? 100 : m.progress}%` }}
-                                          />
-                                        </div>
-                                      </div>
-
-                                      {/* Dates: Due Date & Approval Date */}
-                                      <div className="flex flex-wrap items-center gap-3">
-                                        {m.due_date && (
-                                          <span className="flex items-center gap-1">
-                                            <Calendar size={11} className="text-gray-500" />
-                                            <span>
-                                              Previsto:{" "}
-                                              <strong className="text-gray-300">
-                                                {new Date(m.due_date).toLocaleDateString("pt-BR")}
-                                              </strong>
-                                            </span>
-                                          </span>
-                                        )}
-
-                                        {isApproved && m.completed_at && (
-                                          <span className="flex items-center gap-1 text-emerald-400">
-                                            <ShieldCheck size={11} />
-                                            <span>
-                                              Aprovado em:{" "}
-                                              <strong>
-                                                {new Date(m.completed_at).toLocaleDateString("pt-BR")}
-                                              </strong>
-                                            </span>
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          );
-                        })()}
+                        )}
                       </div>
 
                       {/* Gestão Manual de Pagamentos e Faturamento */}
@@ -7889,6 +7533,7 @@ export default function AdminDashboardPage() {
       </AnimatePresence>
 
       {/* Modal: Milestone & Stage Add/Edit */}
+      {/* Modal: Etapa Add/Edit (Simplified Checklist) */}
       <AnimatePresence>
         {milestoneModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
@@ -7896,12 +7541,12 @@ export default function AdminDashboardPage() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-lg p-6 rounded-3xl bg-slate-900 border border-white/10 shadow-2xl relative my-8"
+              className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-white/10 shadow-2xl relative my-8"
             >
               <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/10">
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <CheckCircle2 size={18} className="text-emerald-400" />
-                  <span>{editingMilestone ? "Editar Marco / Tarefa" : "Novo Marco de Entrega"}</span>
+                  <ListTodo size={18} className="text-emerald-400" />
+                  <span>{editingMilestone ? "Editar Etapa" : "Nova Etapa"}</span>
                 </h3>
                 <button
                   type="button"
@@ -7913,71 +7558,32 @@ export default function AdminDashboardPage() {
               </div>
 
               <form onSubmit={handleSaveMilestone} className="space-y-4">
-                {/* Título do Marco */}
+                {/* Título */}
                 <div>
                   <label className="block text-xs font-semibold text-gray-300 uppercase mb-1">
-                    Título da Tarefa / Marco *
+                    Título da Etapa *
                   </label>
                   <input
                     type="text"
                     required
                     value={mTitle}
                     onChange={(e) => setMTitle(e.target.value)}
-                    placeholder="Ex: Wireframes das Telas Principais & Fluxo do Usuário"
+                    placeholder="Ex: Design das Telas Principais"
                     className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-xs outline-none focus:border-indigo-500"
                   />
                 </div>
 
-                {/* Etapa / Sprint & Peso */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-300 uppercase mb-1">
-                      Etapa / Sprint *
-                    </label>
-                    <select
-                      value={mStage}
-                      onChange={(e) => setMStage(e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-xs outline-none focus:border-indigo-500"
-                    >
-                      {PROJECT_STAGES.map((stg) => (
-                        <option key={stg} value={stg} className="bg-slate-900 text-white">
-                          {stg}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-300 uppercase mb-1">
-                      Peso no Cálculo (1x a 5x)
-                    </label>
-                    <select
-                      value={mWeight}
-                      onChange={(e) => setMWeight(Number(e.target.value))}
-                      className="w-full px-3 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-xs outline-none focus:border-indigo-500"
-                    >
-                      <option value={1} className="bg-slate-900">Peso 1x (Padrão)</option>
-                      <option value={2} className="bg-slate-900">Peso 2x (Importante)</option>
-                      <option value={3} className="bg-slate-900">Peso 3x (Crítico / Núcleo)</option>
-                      <option value={4} className="bg-slate-900">Peso 4x (Alta Complexidade)</option>
-                      <option value={5} className="bg-slate-900">Peso 5x (Entrega Maior)</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Status do Marco */}
+                {/* Status */}
                 <div>
                   <label className="block text-xs font-semibold text-gray-300 uppercase mb-1.5">
-                    Status do Marco
+                    Status
                   </label>
                   <div className="grid grid-cols-3 gap-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        setMStatus("pending");
-                      }}
-                      className={`p-2 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                        mStatus === "pending"
+                      onClick={() => setMStatus("pendente")}
+                      className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        mStatus === "pendente"
                           ? "bg-amber-500/20 border-amber-500/40 text-amber-300 shadow-md"
                           : "bg-black/30 border-white/5 text-gray-400 hover:text-white"
                       }`}
@@ -7988,83 +7594,36 @@ export default function AdminDashboardPage() {
 
                     <button
                       type="button"
-                      onClick={() => {
-                        setMStatus("in_review");
-                        if (mProgress === 0) setMProgress(75);
-                      }}
-                      className={`p-2 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                        mStatus === "in_review"
+                      onClick={() => setMStatus("em_andamento")}
+                      className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        mStatus === "em_andamento"
                           ? "bg-blue-500/20 border-blue-500/40 text-blue-300 shadow-md"
                           : "bg-black/30 border-white/5 text-gray-400 hover:text-white"
                       }`}
                     >
-                      <Eye size={13} />
-                      <span>Homologação</span>
+                      <Zap size={13} />
+                      <span>Em Andamento</span>
                     </button>
 
                     <button
                       type="button"
-                      onClick={() => {
-                        setMStatus("approved");
-                        setMProgress(100);
-                      }}
-                      className={`p-2 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                        mStatus === "approved"
+                      onClick={() => setMStatus("concluido")}
+                      className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        mStatus === "concluido"
                           ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300 shadow-md"
                           : "bg-black/30 border-white/5 text-gray-400 hover:text-white"
                       }`}
                     >
                       <CheckCircle2 size={13} />
-                      <span>Aprovado</span>
+                      <span>Concluído</span>
                     </button>
                   </div>
-                </div>
-
-                {/* Progresso Individual (0 a 100%) */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-semibold text-gray-300 uppercase">
-                      Progresso Individual da Tarefa
-                    </label>
-                    <span className="text-xs font-bold text-indigo-400">
-                      {mStatus === "approved" ? 100 : mProgress}%
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    step={5}
-                    value={mStatus === "approved" ? 100 : mProgress}
-                    disabled={mStatus === "approved"}
-                    onChange={(e) => setMProgress(Number(e.target.value))}
-                    className="w-full accent-indigo-500 cursor-pointer disabled:opacity-50"
-                  />
-                  <div className="flex justify-between text-[10px] text-gray-500 mt-0.5">
-                    <span>0% (Não iniciado)</span>
-                    <span>50% (Em dev)</span>
-                    <span>100% (Concluído)</span>
-                  </div>
-                </div>
-
-                {/* Descrição & Entregáveis */}
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 uppercase mb-1">
-                    Descrição dos Entregáveis
-                  </label>
-                  <input
-                    type="text"
-                    value={mDescription}
-                    onChange={(e) => setMDescription(e.target.value)}
-                    placeholder="Ex: Telas de login, feed e perfil exportadas no Figma..."
-                    className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-xs outline-none focus:border-indigo-500"
-                  />
                 </div>
 
                 {/* Data Prevista */}
                 <div>
                   <label className="block text-xs font-semibold text-gray-300 uppercase mb-1">
-                    Data Prevista de Conclusão
+                    Prazo Previsto
                   </label>
                   <input
                     type="date"
@@ -8074,7 +7633,21 @@ export default function AdminDashboardPage() {
                   />
                 </div>
 
-                {/* Botoes */}
+                {/* Descrição */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 uppercase mb-1">
+                    Descrição (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={mDescription}
+                    onChange={(e) => setMDescription(e.target.value)}
+                    placeholder="Ex: Telas de login, feed e perfil..."
+                    className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-xs outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                {/* Botões */}
                 <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/10">
                   <button
                     type="button"
@@ -8087,7 +7660,7 @@ export default function AdminDashboardPage() {
                     type="submit"
                     className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-900/30 border border-emerald-400/30 cursor-pointer"
                   >
-                    {editingMilestone ? "Atualizar Marco" : "Salvar Marco"}
+                    {editingMilestone ? "Atualizar" : "Salvar"}
                   </button>
                 </div>
               </form>
@@ -9535,12 +9108,14 @@ export default function AdminDashboardPage() {
                             ) : (
                               <div className="space-y-2.5">
                                 {clientMilestones.map((m) => {
-                                  const pm = parseMilestone(m);
+                                  const status = getMilestoneStatus(m);
+                                  const cleanDesc = getMilestoneCleanDescription(m);
+                                  const isDone = status === "concluido";
                                   return (
                                     <div
                                       key={m.id}
                                       className={`p-3.5 rounded-2xl border transition-all flex items-start justify-between gap-3 ${
-                                        pm.completed
+                                        isDone
                                           ? "bg-emerald-500/[0.04] border-emerald-500/20"
                                           : "bg-white/[0.02] border-white/5"
                                       }`}
@@ -9548,34 +9123,45 @@ export default function AdminDashboardPage() {
                                       <div className="flex items-start gap-2.5">
                                         <div
                                           className={`w-5 h-5 rounded-md shrink-0 mt-0.5 flex items-center justify-center text-xs ${
-                                            pm.completed
+                                            isDone
                                               ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                                              : status === "em_andamento"
+                                              ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
                                               : "bg-white/5 text-gray-500 border border-white/10"
                                           }`}
                                         >
-                                          {pm.completed ? <Check size={12} /> : <Clock size={10} />}
+                                          {isDone ? <Check size={12} /> : status === "em_andamento" ? <Zap size={10} /> : <Clock size={10} />}
                                         </div>
                                         <div>
                                           <p
                                             className={`text-xs font-semibold ${
-                                              pm.completed ? "text-white line-through text-gray-300" : "text-gray-200"
+                                              isDone ? "text-gray-300 line-through" : "text-gray-200"
                                             }`}
                                           >
                                             {m.title}
                                           </p>
-                                          {pm.description && (
+                                          {cleanDesc && (
                                             <p className="text-[11px] text-gray-400 mt-0.5">
-                                              {pm.description}
+                                              {cleanDesc}
                                             </p>
                                           )}
                                         </div>
                                       </div>
 
-                                      {m.due_date && (
-                                        <span className="text-[10px] text-gray-400 shrink-0">
-                                          {new Date(m.due_date).toLocaleDateString("pt-BR")}
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border ${
+                                          isDone ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"
+                                          : status === "em_andamento" ? "bg-blue-500/10 text-blue-300 border-blue-500/20"
+                                          : "bg-white/5 text-gray-400 border-white/10"
+                                        }`}>
+                                          {isDone ? "Concluído" : status === "em_andamento" ? "Em Andamento" : "Pendente"}
                                         </span>
-                                      )}
+                                        {m.due_date && (
+                                          <span className="text-[10px] text-gray-400 shrink-0">
+                                            {new Date(m.due_date).toLocaleDateString("pt-BR")}
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
                                   );
                                 })}

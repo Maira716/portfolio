@@ -398,6 +398,21 @@ export const formatFileSize = (bytes: number): string => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
 };
 
+export const formatDateSafe = (dateStr?: string | null): string => {
+  if (!dateStr) return "";
+  if (dateStr.length === 10 && dateStr.includes("-")) {
+    const [y, m, d] = dateStr.split("-");
+    return `${d}/${m}/${y}`;
+  }
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString("pt-BR");
+  } catch {
+    return dateStr;
+  }
+};
+
 export const getDocumentCategoryInfo = (category: DocumentCategory) => {
   switch (category) {
     case "contrato":
@@ -2930,7 +2945,7 @@ function ClientPortalContent() {
                             <div className="pt-3 border-t border-white/5 flex items-center justify-between gap-2">
                               <span className="text-[10px] text-gray-500 flex items-center gap-1">
                                 <Calendar size={11} className="text-gray-600" />
-                                {new Date(doc.uploaded_at).toLocaleDateString("pt-BR")}
+                                {formatDateSafe(doc.uploaded_at)}
                               </span>
 
                               <div className="flex items-center gap-2">

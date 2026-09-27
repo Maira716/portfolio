@@ -82,7 +82,7 @@ export interface StoredProjectDocument {
   project_id: string;
   title: string;
   filename: string;
-  category: "contrato" | "briefing" | "nda" | "recibo" | "laudo" | "outro";
+  category: "contrato" | "proposta" | "termo_aceite" | "briefing" | "nda" | "recibo" | "laudo" | "outro";
   visibility: "client" | "internal";
   file_url: string;
   file_size_bytes: number;
