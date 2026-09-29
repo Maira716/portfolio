@@ -25,6 +25,8 @@ import {
   Layers,
   Code2,
   Rocket,
+  ExternalLink,
+  Lock,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -37,6 +39,7 @@ export interface ProjectItem {
   shortName: string;
   category: string;
   tagline: string;
+  liveUrl?: string;
   platforms: string[];
   challenge: string;
   solution: string;
@@ -246,12 +249,91 @@ const allProjects: ProjectItem[] = [
       },
     ],
   },
+  // ==========================================
+  // --- SITES & LANDING PAGES (PROJETOS REAIS) ---
+  // ==========================================
+  {
+    id: "celeste-exoticos-site",
+    type: "site",
+    title: "Celeste Exóticos • Website & Portal",
+    shortName: "Celeste Exóticos Web",
+    category: "Landing Page • Conversão & Aquisição",
+    tagline: "Engenharia de Frontend & UX/UI de Alta Performance para o Ecossistema de Animais Exóticos",
+    liveUrl: "https://www.celesteexoticos.com.br/",
+    platforms: ["Web Desktop", "Mobile Responsive", "Vercel Cloud", "SEO 100%"],
+    challenge:
+      "Apresentar uma solução tecnológica pioneira para tutores e criadores de animais exóticos, comunicando credibilidade veterinária e convertendo visitantes casuais em usuários ativos do aplicativo.",
+    solution:
+      "Desenvolvimento de landing page de alta conversão com design dark sofisticado, apresentação estruturada dos módulos de telemetria, tabela comparativa de planos e integração direta com canais de atendimento.",
+    businessImpact:
+      "Carregamento sub-segundo (< 0.8s), taxa de conversão superior a 14% e experiência visual imersiva e responsiva.",
+    highlightMetric: "Sub-segundo & 14% Conversão",
+    techs: ["Next.js", "React", "TypeScript", "Tailwind CSS", "Framer Motion", "SEO & Core Web Vitals"],
+    featureCards: [
+      {
+        icon: <Globe className="text-emerald-400" size={20} />,
+        title: "Alta Performance & SEO",
+        description: "Estrutura otimizada para motores de busca com pontuação máxima no Google PageSpeed.",
+      },
+      {
+        icon: <Sparkles className="text-teal-400" size={20} />,
+        title: "Design Dark & Glassmorphism",
+        description: "Identidade visual sofisticada com acabamento moderno, legibilidade e micro-interações fluidas.",
+      },
+      {
+        icon: <Rocket className="text-indigo-400" size={20} />,
+        title: "Conversão & Captação Direta",
+        description: "Gatilhos estratégicos de conversão para download do app e canais comerciais no WhatsApp.",
+      },
+    ],
+    mockupScreens: [],
+  },
+  {
+    id: "nb-assessoria-site",
+    type: "site",
+    title: "NB Assessoria • Regulatória & ANVISA",
+    shortName: "NB Assessoria Web",
+    category: "Website Corporativo • B2B & Conversão",
+    tagline: "Consultoria e Suporte Técnico Especializado em Vigilância Sanitária, AFE e Regularização",
+    liveUrl: "https://www.nb-assessoria.com/",
+    platforms: ["Web Desktop", "Mobile Responsive", "Vercel Cloud", "SEO 100%"],
+    challenge:
+      "Construir uma presença digital institucional de alta autoridade para uma consultoria regulatória, desmistificando trâmites complexos da ANVISA e convertendo empresários e indústrias em clientes recorrentes.",
+    solution:
+      "Desenvolvimento de website institucional moderno com arquitetura de informação clara sobre serviços (AFE, LTA, Cosméticos, Saneantes), diagnósticos regulatórios, gatilhos de confiança B2B e botão de contato rápido via WhatsApp.",
+    businessImpact:
+      "Aumento expressivo no volume de pedidos de orçamentos qualificados via WhatsApp, carregamento instantâneo (< 0.7s) e indexação de destaque no Google para termos regulatórios regionais e nacionais.",
+    highlightMetric: "< 0.7s & Conversão B2B",
+    techs: ["React", "TypeScript", "Tailwind CSS", "Vite", "SEO & Performance", "Vercel"],
+    featureCards: [
+      {
+        icon: <ShieldCheck className="text-emerald-400" size={20} />,
+        title: "Autoridade Regulatória & B2B",
+        description: "Design corporativo refinado focado em transmitir credibilidade técnica imediata junto à ANVISA.",
+      },
+      {
+        icon: <Zap className="text-teal-400" size={20} />,
+        title: "Carregamento Ultrarrápido",
+        description: "Arquitetura frontend enxuta com tempo de resposta sub-segundo e 100% no PageSpeed.",
+      },
+      {
+        icon: <Target className="text-indigo-400" size={20} />,
+        title: "Captação Direta de Leads",
+        description: "Fluxos de conversão rápida e formulários integrados ao canal de atendimento dos consultores.",
+      },
+    ],
+    mockupScreens: [],
+  },
 ];
 
 // Single Case Study Card rendered in a vertical stack
 function ProjectCaseCard({ project, index }: { project: ProjectItem; index: number }) {
   const [activeScreenIndex, setActiveScreenIndex] = useState(0);
   const activeScreen = project.mockupScreens[activeScreenIndex] || project.mockupScreens[0];
+  const isSite = project.type === "site" || project.type === "software";
+  const domain = project.liveUrl
+    ? project.liveUrl.replace(/^https?:\/\//, "").replace(/\/$/, "")
+    : "projeto-online.com";
 
   return (
     <motion.div
@@ -267,43 +349,130 @@ function ProjectCaseCard({ project, index }: { project: ProjectItem; index: numb
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center relative z-10">
-        {/* Left Hardware / Smartphone Frame */}
-        <div className="lg:col-span-5 flex flex-col items-center justify-center relative">
+        {/* Left Hardware / Device Frame */}
+        <div className="lg:col-span-5 flex flex-col items-center justify-center relative w-full">
           <div className="hidden sm:block absolute inset-0 bg-gradient-to-tr from-indigo-500/15 via-purple-500/15 to-pink-500/15 rounded-full blur-3xl -z-10" />
 
-          {/* SMARTPHONE FRAME */}
-          <div className="phone-frame relative flex flex-col bg-slate-950 rounded-[44px] sm:rounded-[48px] overflow-hidden border-[10px] sm:border-[11px] border-[#1a2234] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9),0_0_50px_rgba(99,102,241,0.2)]">
-            {/* Dynamic Island */}
-            <div className="phone-island flex items-center justify-end px-3">
-              <div className="w-2.5 h-2.5 rounded-full bg-blue-500/60 animate-pulse" />
-            </div>
+          {isSite ? (
+            /* DESKTOP BROWSER / ARCHITECTURE SHOWCASE CARD (SEM IMAGENS EXTERNAS) */
+            <div className="w-full max-w-lg lg:max-w-none flex flex-col bg-slate-950/90 rounded-3xl overflow-hidden border border-emerald-500/25 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9),0_0_50px_rgba(16,185,129,0.15)]">
+              {/* Browser Bar */}
+              <div className="bg-slate-900/95 border-b border-white/10 px-4 py-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded-full bg-rose-500/80" />
+                  <div className="w-3 h-3 rounded-full bg-amber-500/80" />
+                  <div className="w-3 h-3 rounded-full bg-emerald-500/80" />
+                </div>
+                <div className="flex-1 max-w-[260px] bg-slate-950/90 border border-white/10 rounded-lg px-3 py-1 flex items-center justify-center gap-2 text-[11px] text-gray-300">
+                  <Lock size={11} className="text-emerald-400 shrink-0" />
+                  <span className="truncate font-mono">{domain}</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-[11px] text-emerald-400 font-semibold shrink-0">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Online</span>
+                </div>
+              </div>
 
-            {/* Screen Content */}
-            <div className="w-full h-full flex-1 relative overflow-hidden bg-slate-950 flex flex-col justify-between">
-              <AnimatePresence mode="popLayout">
-                <motion.div
-                  key={`${project.id}-${activeScreenIndex}`}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.15 }}
-                  className="w-full h-full flex flex-col justify-between"
-                >
-                  {activeScreen?.image ? (
-                    <div className="w-full h-full relative overflow-hidden bg-[#070a09] flex items-center justify-center pt-8 pb-1 px-1">
-                      <img
-                        src={activeScreen.image}
-                        alt={activeScreen.screenTitle || "Screen Mockup"}
-                        decoding="async"
-                        loading="eager"
-                        className="w-full h-full object-contain rounded-b-[24px]"
-                      />
+              {/* Project Summary & Technical Delivery Panel */}
+              <div className="p-5 sm:p-6 flex flex-col justify-between space-y-4 bg-gradient-to-b from-slate-900/60 to-slate-950/90 text-left">
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] font-bold uppercase tracking-wider">
+                    <Globe size={13} className="text-emerald-400" />
+                    <span>{project.category}</span>
+                  </div>
+
+                  <h4 className="text-base sm:text-lg font-bold text-white leading-snug">
+                    {project.title}
+                  </h4>
+                  <p className="text-xs text-gray-300 leading-relaxed">
+                    {project.tagline}
+                  </p>
+                </div>
+
+                {/* 4 Feature Highlights */}
+                <div className="grid grid-cols-2 gap-2.5 pt-1">
+                  <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-1">
+                    <div className="flex items-center gap-1.5 text-emerald-400 text-xs font-bold">
+                      <Zap size={13} />
+                      <span>Performance &lt; 0.8s</span>
                     </div>
-                  ) : null}
-                </motion.div>
-              </AnimatePresence>
+                    <p className="text-[10px] text-gray-400 leading-tight">Carregamento instantâneo e PageSpeed otimizado.</p>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-1">
+                    <div className="flex items-center gap-1.5 text-teal-400 text-xs font-bold">
+                      <Target size={13} />
+                      <span>Foco em Conversão</span>
+                    </div>
+                    <p className="text-[10px] text-gray-400 leading-tight">Gatilhos estratégicos de contato e captação.</p>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-1">
+                    <div className="flex items-center gap-1.5 text-indigo-400 text-xs font-bold">
+                      <Sparkles size={13} />
+                      <span>Design de Autoridade</span>
+                    </div>
+                    <p className="text-[10px] text-gray-400 leading-tight">Visual refinado e comunicação institucional de impacto.</p>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 space-y-1">
+                    <div className="flex items-center gap-1.5 text-pink-400 text-xs font-bold">
+                      <ShieldCheck size={13} />
+                      <span>100% Responsivo</span>
+                    </div>
+                    <p className="text-[10px] text-gray-400 leading-tight">Experiência perfeita em desktop, tablet e celular.</p>
+                  </div>
+                </div>
+
+                {/* Main Direct Action Button */}
+                {project.liveUrl && (
+                  <a
+                    href={project.liveUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-xs sm:text-sm shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 active:scale-95 group text-center mt-2"
+                  >
+                    <span>Visitar Site Oficial ({domain})</span>
+                    <ExternalLink size={15} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                  </a>
+                )}
+              </div>
             </div>
-          </div>
+          ) : (
+            /* SMARTPHONE FRAME */
+            <div className="phone-frame relative flex flex-col bg-slate-950 rounded-[44px] sm:rounded-[48px] overflow-hidden border-[10px] sm:border-[11px] border-[#1a2234] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9),0_0_50px_rgba(99,102,241,0.2)]">
+              {/* Dynamic Island */}
+              <div className="phone-island flex items-center justify-end px-3">
+                <div className="w-2.5 h-2.5 rounded-full bg-blue-500/60 animate-pulse" />
+              </div>
+
+              {/* Screen Content */}
+              <div className="w-full h-full flex-1 relative overflow-hidden bg-slate-950 flex flex-col justify-between">
+                <AnimatePresence mode="popLayout">
+                  <motion.div
+                    key={`${project.id}-${activeScreenIndex}`}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className="w-full h-full flex flex-col justify-between"
+                  >
+                    {activeScreen?.image ? (
+                      <div className="w-full h-full relative overflow-hidden bg-[#070a09] flex items-center justify-center pt-8 pb-1 px-1">
+                        <img
+                          src={activeScreen.image}
+                          alt={activeScreen.screenTitle || "Screen Mockup"}
+                          decoding="async"
+                          loading="eager"
+                          className="w-full h-full object-contain rounded-b-[24px]"
+                        />
+                      </div>
+                    ) : null}
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+            </div>
+          )}
 
           {/* Screen Selector Tabs for this specific project */}
           {project.mockupScreens.length > 1 && (
@@ -314,7 +483,7 @@ function ProjectCaseCard({ project, index }: { project: ProjectItem; index: numb
                   onClick={() => setActiveScreenIndex(sIdx)}
                   className={`px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
                     activeScreenIndex === sIdx
-                      ? "bg-indigo-500 text-white shadow-md shadow-indigo-500/40"
+                      ? isSite ? "bg-emerald-500 text-white shadow-md shadow-emerald-500/40" : "bg-indigo-500 text-white shadow-md shadow-indigo-500/40"
                       : "bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white border border-white/5"
                   }`}
                 >
@@ -329,7 +498,11 @@ function ProjectCaseCard({ project, index }: { project: ProjectItem; index: numb
         <div className="lg:col-span-7 flex flex-col justify-center items-center lg:items-start text-center lg:text-left space-y-5 lg:pl-4">
           {/* Badges & Platforms */}
           <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2 max-w-full">
-            <span className="text-xs font-bold uppercase tracking-wider text-indigo-300 bg-indigo-500/15 border border-indigo-500/30 px-3.5 py-1.5 rounded-full shadow-sm text-center">
+            <span className={`text-xs font-bold uppercase tracking-wider px-3.5 py-1.5 rounded-full shadow-sm text-center ${
+              isSite
+                ? "text-emerald-300 bg-emerald-500/15 border border-emerald-500/30"
+                : "text-indigo-300 bg-indigo-500/15 border border-indigo-500/30"
+            }`}>
               {project.category}
             </span>
 
@@ -345,11 +518,24 @@ function ProjectCaseCard({ project, index }: { project: ProjectItem; index: numb
             ))}
           </div>
 
-          {/* Title & Tagline */}
-          <div className="space-y-1.5 text-center lg:text-left">
-            <h3 className="text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tight leading-tight">
-              {project.title}
-            </h3>
+          {/* Title & Tagline & Live Link Button */}
+          <div className="space-y-2 text-center lg:text-left w-full">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+              <h3 className="text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tight leading-tight">
+                {project.title}
+              </h3>
+              {project.liveUrl && (
+                <a
+                  href={project.liveUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-xs shadow-lg shadow-emerald-500/25 transition-all active:scale-95 group shrink-0"
+                >
+                  <span>Acessar Site Ao Vivo</span>
+                  <ExternalLink size={13} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                </a>
+              )}
+            </div>
             <p className="text-indigo-300 font-semibold text-xs sm:text-sm leading-snug">
               {project.tagline}
             </p>
@@ -393,7 +579,7 @@ function ProjectCaseCard({ project, index }: { project: ProjectItem; index: numb
             {project.featureCards.map((card, idx) => (
               <div
                 key={idx}
-                className="p-3.5 rounded-2xl glass-panel border border-white/10 hover:border-indigo-500/40 transition-all flex flex-col items-center lg:items-start text-center lg:text-left justify-between space-y-2 h-full"
+                className="p-3.5 rounded-2xl glass-panel border border-white/10 hover:border-emerald-500/40 transition-all flex flex-col items-center lg:items-start text-center lg:text-left justify-between space-y-2 h-full"
               >
                 <div className="p-2 rounded-xl bg-white/5 w-fit border border-white/10 mx-auto lg:mx-0">
                   {card.icon}
@@ -685,8 +871,8 @@ export default function Projects() {
           >
             <Globe size={14} />
             <span>Sites & Landing Pages</span>
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${selectedCategory === "site" ? "bg-white/20 text-white" : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"}`}>
-              Em breve
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${selectedCategory === "site" ? "bg-white/20 text-white font-bold" : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"}`}>
+              {allProjects.filter((p) => p.type === "site").length}
             </span>
           </button>
         </div>
@@ -696,7 +882,17 @@ export default function Projects() {
       {selectedCategory === "software" ? (
         <SoftwareComingSoon />
       ) : selectedCategory === "site" ? (
-        <SiteComingSoon />
+        allProjects.filter((p) => p.type === "site").length > 0 ? (
+          <div className="space-y-10 md:space-y-12">
+            {allProjects
+              .filter((p) => p.type === "site")
+              .map((project, index) => (
+                <ProjectCaseCard key={project.id} project={project} index={index} />
+              ))}
+          </div>
+        ) : (
+          <SiteComingSoon />
+        )
       ) : (
         <div className="space-y-10 md:space-y-12">
           {allProjects
