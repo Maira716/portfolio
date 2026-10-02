@@ -19,6 +19,26 @@
       font-size: 0.875rem;
     }
   }
+
+  /* Global Select & Option Dark Theme styling */
+  select {
+    color-scheme: dark !important;
+    background-color: #0f172a !important;
+    color: #f8fafc !important;
+  }
+
+  select option {
+    background-color: #0f172a !important;
+    color: #ffffff !important;
+    padding: 8px 12px;
+  }
+
+  select option:checked,
+  select option:hover,
+  select option:focus {
+    background-color: #1e293b !important;
+    color: #38bdf8 !important;
+  }
 }
 
 :root {

@@ -48,12 +48,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const ADMIN_EMAILS = [
+    "mairareis2017@gmail.com",
+    "admin@mairareis.com.br",
+  ];
+
   const getFallbackProfile = (userId: string, userEmail?: string): Profile => {
-    const emailLower = (userEmail || "").toLowerCase();
-    const isAdmin =
-      emailLower.includes("mairareis") ||
-      emailLower.includes("admin") ||
-      emailLower === "mairareis2017@gmail.com";
+    const emailLower = (userEmail || "").trim().toLowerCase();
+    const isAdmin = ADMIN_EMAILS.includes(emailLower);
     return {
       id: userId,
       email: userEmail || "",
@@ -217,44 +219,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.warn("Client login API fallback failed:", apiErr);
       }
 
-      // 3. Direct Profile Recovery Check
-      const { data: profileRecord } = await supabase
-        .from("profiles")
-        .select("*")
-        .ilike("email", trimmedEmail)
-        .maybeSingle();
-
-      if (profileRecord) {
-        if (profileRecord.status === "blocked") {
-          return {
-            user: null,
-            profile: null,
-            error: new Error("Acesso temporariamente suspenso. Entre em contato com o suporte."),
-          };
-        }
-
-        const userObj: any = {
-          id: profileRecord.id,
-          email: profileRecord.email,
-          user_metadata: {
-            full_name: profileRecord.full_name,
-            role: profileRecord.role || "client",
-          },
-        };
-
-        setUser(userObj);
-        setProfile(profileRecord as Profile);
-
-        if (typeof window !== "undefined") {
-          localStorage.setItem(
-            "portfolio_client_session_v1",
-            JSON.stringify({ user: userObj, profile: profileRecord })
-          );
-        }
-
-        return { user: userObj, profile: profileRecord as Profile, error: null };
-      }
-
+      // 3. Fallback: If both Supabase and Backend check returned error, reject login
       return {
         user: null,
         profile: null,

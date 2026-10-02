@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, Suspense } from "react";
+import React, { useEffect, useState, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -176,8 +176,9 @@ export const getInstallmentStatus = (inst: ProjectInstallment) => {
 };
 
 export const calculateFinancialSummary = (financialData?: ProjectFinancialData | null) => {
-  const contractValue = financialData?.total_contract_value || 0;
   const installments = financialData?.installments || [];
+  const installmentsSum = installments.reduce((acc, i) => acc + (Number(i.amount) || 0), 0);
+  const contractValue = installments.length > 0 ? installmentsSum : (financialData?.total_contract_value || 0);
 
   let totalPaid = 0;
   let totalPending = 0;
@@ -186,15 +187,16 @@ export const calculateFinancialSummary = (financialData?: ProjectFinancialData |
 
   for (const inst of installments) {
     const st = getInstallmentStatus(inst);
+    const amt = Number(inst.amount) || 0;
     if (st.status === "pago") {
-      totalPaid += inst.amount;
+      totalPaid += amt;
     } else if (st.status === "vencido") {
-      totalOverdue += inst.amount;
+      totalOverdue += amt;
     } else if (st.status === "em_dia") {
-      totalDueSoon += inst.amount;
-      totalPending += inst.amount;
+      totalDueSoon += amt;
+      totalPending += amt;
     } else {
-      totalPending += inst.amount;
+      totalPending += amt;
     }
   }
 
@@ -463,6 +465,12 @@ export const getDocumentCategoryInfo = (category: DocumentCategory) => {
 
 export const generateDefaultProjectDocuments = (project: Project): ProjectDocument[] => [];
 
+export interface MilestoneCheckItem {
+  id: string;
+  text: string;
+  completed: boolean;
+}
+
 export interface Milestone {
   id: string;
   project_id: string;
@@ -478,6 +486,257 @@ export interface Milestone {
   status?: "pending" | "in_progress" | "completed" | string;
   progress?: number;
 }
+
+export const parseMilestoneTasks = (m: Milestone | { description: string | null }): MilestoneCheckItem[] => {
+  if (!m.description) return [];
+
+  // 1. Modern [TASKS_JSON]...[/TASKS_JSON] tag
+  const modernMatch = m.description.match(/\[TASKS_JSON\]([\s\S]*?)\[\/TASKS_JSON\]/);
+  if (modernMatch && modernMatch[1]) {
+    try {
+      const parsed = JSON.parse(modernMatch[1].trim());
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((item, idx) => ({
+            id: item.id || `task-${idx}-${Date.now()}`,
+            text: typeof item === "string" ? item : (item.text || ""),
+            completed: Boolean(item.completed),
+          }))
+          .filter((t) => t.text.trim().length > 0);
+      }
+    } catch (e) {
+      console.error("Error parsing [TASKS_JSON] in portal:", e);
+    }
+  }
+
+  // 2. Fallback to legacy [TASKS: [...]] tag
+  const legacyMatch = m.description.match(/\[TASKS:\s*(\[[\s\S]*?\])\s*\]/);
+  if (legacyMatch && legacyMatch[1]) {
+    try {
+      const parsed = JSON.parse(legacyMatch[1].trim());
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((item, idx) => ({
+            id: item.id || `task-${idx}-${Date.now()}`,
+            text: typeof item === "string" ? item : (item.text || ""),
+            completed: Boolean(item.completed),
+          }))
+          .filter((t) => t.text.trim().length > 0);
+      }
+    } catch (e) {
+      console.error("Error parsing legacy [TASKS] in portal:", e);
+    }
+  }
+
+  return [];
+};
+
+export const getMilestoneCleanDescription = (m: Milestone | { description: string | null }): string => {
+  if (!m.description) return "";
+  let desc = m.description;
+  desc = desc.replace(/\[TASKS_JSON\][\s\S]*?\[\/TASKS_JSON\]/g, "");
+  desc = desc.replace(/\[TASKS:\s*\[[\s\S]*?\]\s*\]/g, "");
+  desc = desc.replace(/\[TASKS:[^\]]*\]/g, "");
+  desc = desc.replace(/\[STATUS:\s*[^\]]+\]/g, "");
+  desc = desc.replace(/\[ETAPA:[^\]]+\]\n?/g, "");
+  desc = desc.replace(/^[\]\s]+/, "");
+  return desc.trim();
+};
+
+export const getMilestoneStatus = (m: Milestone): string => {
+  if (m.completed || m.status === "completed") return "concluido";
+  if (m.description) {
+    const statusMatch = m.description.match(/\[STATUS:\s*([a-zA-Z_]+)\]/);
+    if (statusMatch && statusMatch[1]) {
+      const st = statusMatch[1].trim();
+      if (["pendente", "em_andamento", "concluido"].includes(st)) return st;
+    }
+  }
+  if (m.status === "in_progress") return "em_andamento";
+  return "pendente";
+};
+
+export const getMilestoneProgress = (m: Milestone): number => {
+  const tasks = parseMilestoneTasks(m);
+  if (tasks.length > 0) {
+    const completedCount = tasks.filter((t) => t.completed).length;
+    return Math.round((completedCount / tasks.length) * 100);
+  }
+  if (m.progress !== undefined && m.progress !== null) return m.progress;
+  if (m.completed || getMilestoneStatus(m) === "concluido") return 100;
+  return 0;
+};
+
+export const getMilestoneMonthKey = (dueDate?: string | null): string => {
+  if (!dueDate) return "sem_data";
+  try {
+    const d = new Date(dueDate.includes("T") ? dueDate : `${dueDate}T12:00:00`);
+    if (isNaN(d.getTime())) return "sem_data";
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    return `${year}-${month}`;
+  } catch {
+    return "sem_data";
+  }
+};
+
+export const formatMonthKeyLabel = (monthKey: string): string => {
+  if (monthKey === "sem_data") return "Sem prazo";
+  const parts = monthKey.split("-");
+  if (parts.length !== 2) return monthKey;
+  const [yearStr, monthStr] = parts;
+  const monthNames = [
+    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+  ];
+  const mIndex = parseInt(monthStr, 10) - 1;
+  if (mIndex >= 0 && mIndex < 12) {
+    return `${monthNames[mIndex]} ${yearStr}`;
+  }
+  return monthKey;
+};
+
+export interface TimelineProgressInfo {
+  percent: number;
+  label: string;
+  detail: string;
+  totalMonths: number;
+  currentMonth: number;
+}
+
+export const calculateTimelineProgress = (
+  startDate?: string | null,
+  deadline?: string | null
+): TimelineProgressInfo => {
+  if (!startDate || !deadline) {
+    return {
+      percent: 0,
+      label: "0% do Prazo",
+      detail: "Cronograma e previsão em definição",
+      totalMonths: 0,
+      currentMonth: 0,
+    };
+  }
+
+  const start = new Date(startDate);
+  const end = new Date(deadline);
+  const now = new Date();
+
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+    return {
+      percent: 0,
+      label: "0% do Prazo",
+      detail: "Datas do cronograma não preenchidas",
+      totalMonths: 0,
+      currentMonth: 0,
+    };
+  }
+
+  const totalTime = end.getTime() - start.getTime();
+  if (totalTime <= 0) {
+    return {
+      percent: 100,
+      label: "100% do Prazo",
+      detail: "Período estimado concluído",
+      totalMonths: 1,
+      currentMonth: 1,
+    };
+  }
+
+  const totalMonths = Math.max(
+    1,
+    (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1
+  );
+
+  const elapsed = now.getTime() - start.getTime();
+  if (elapsed <= 0) {
+    return {
+      percent: 0,
+      label: "0% Decorrido",
+      detail: `Mês 1 de ${totalMonths} • Início em ${start.toLocaleDateString("pt-BR")}`,
+      totalMonths,
+      currentMonth: 1,
+    };
+  }
+
+  if (now.getTime() >= end.getTime()) {
+    return {
+      percent: 100,
+      label: "100% Decorrido",
+      detail: `Mês ${totalMonths} de ${totalMonths} • Previsão atingida em ${end.toLocaleDateString("pt-BR")}`,
+      totalMonths,
+      currentMonth: totalMonths,
+    };
+  }
+
+  const percent = Math.min(100, Math.max(0, Math.round((elapsed / totalTime) * 100)));
+  const currentMonth = Math.min(
+    totalMonths,
+    Math.max(1, (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth()) + 1)
+  );
+
+  return {
+    percent,
+    label: `${percent}% Decorrido`,
+    detail: `Mês ${currentMonth} de ${totalMonths} (atualizado mensalmente)`,
+    totalMonths,
+    currentMonth,
+  };
+};
+
+export interface SprintProgressInfo {
+  percent: number;
+  completedTasks: number;
+  totalTasks: number;
+  completedMilestones: number;
+  totalMilestones: number;
+  label: string;
+  detail: string;
+}
+
+export const calculateSprintProgress = (milestonesList: Milestone[]): SprintProgressInfo => {
+  if (!milestonesList || milestonesList.length === 0) {
+    return {
+      percent: 0,
+      completedTasks: 0,
+      totalTasks: 0,
+      completedMilestones: 0,
+      totalMilestones: 0,
+      label: "0% Concluído",
+      detail: "Nenhum check cadastrado nesta sprint",
+    };
+  }
+
+  const allTasks = milestonesList.flatMap((m) => parseMilestoneTasks(m));
+  const completedMilestones = milestonesList.filter(
+    (m) => m.completed || getMilestoneStatus(m) === "concluido"
+  ).length;
+
+  if (allTasks.length > 0) {
+    const completedTasks = allTasks.filter((t) => t.completed).length;
+    const percent = Math.round((completedTasks / allTasks.length) * 100);
+    return {
+      percent,
+      completedTasks,
+      totalTasks: allTasks.length,
+      completedMilestones,
+      totalMilestones: milestonesList.length,
+      label: `${percent}% Concluído`,
+      detail: `${completedTasks} de ${allTasks.length} checks finalizados na sprint`,
+    };
+  }
+
+  const percent = Math.round((completedMilestones / milestonesList.length) * 100);
+  return {
+    percent,
+    completedTasks: 0,
+    totalTasks: 0,
+    completedMilestones,
+    totalMilestones: milestonesList.length,
+    label: `${percent}% Concluído`,
+    detail: `${completedMilestones} de ${milestonesList.length} entregas concluídas`,
+  };
+};
 
 export const generateDefaultMilestones = (project: Project): Milestone[] => [];
 
@@ -914,12 +1173,14 @@ function ClientPortalContent() {
 
   // Deliverables & Timeline State
   const [deliverableTab, setDeliverableTab] = useState<"all" | "upcoming" | "current" | "history">("all");
+  const [portalMilestoneMonthFilter, setPortalMilestoneMonthFilter] = useState<string>("all");
 
   // Quick Links State
   const [quickLinks, setQuickLinks] = useState<ProjectQuickLink[]>([]);
   const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
 
   const [loadingData, setLoadingData] = useState(true);
+  const hasInitialPortalFetched = useRef(false);
 
   // Message / Feedback modal
   const [feedbackOpen, setFeedbackOpen] = useState(false);
@@ -1059,9 +1320,11 @@ function ClientPortalContent() {
   };
 
   // Load client projects with Multi-Tenant isolation
-  const loadData = async () => {
+  const loadData = async (isSilent = false) => {
     if (!user) return;
-    setLoadingData(true);
+    if (!isSilent && projects.length === 0) {
+      setLoadingData(true);
+    }
     try {
       // Multi-tenant isolation:
       // If client, fetch ONLY projects where client_id === user.id or matching client_email
@@ -1176,10 +1439,18 @@ function ClientPortalContent() {
 
   const loadProjectDetails = async (projectId: string, projectTitle: string, currentProj?: Project) => {
     try {
-      // Load documents for this project
+      // Immediately reset previous project data so no old information lingers
+      setDocuments([]);
+      setFinancialData(null);
+      setMilestones([]);
+      setUpdates([]);
+      setQuickLinks([]);
+      setDeliveryFeedbacks([]);
+
+      // Load documents for this project strictly
       await loadProjectDocuments(projectId, projectTitle);
 
-      // Load financial data
+      // Load financial data strictly for this project
       let projFinances: ProjectFinancialData | null = null;
       try {
         const finRes = await fetch(`/api/portal/finances?projectId=${encodeURIComponent(projectId)}`);
@@ -1212,41 +1483,61 @@ function ClientPortalContent() {
 
       setFinancialData(projFinances);
 
-      // Load milestones
+      // Load milestones strictly for this project
       let milestonesList: Milestone[] = [];
-      const { data: mData } = await supabase
-        .from("project_milestones")
-        .select("*")
-        .eq("project_id", projectId)
-        .order("order_index", { ascending: true });
+      try {
+        const { data: mData } = await supabase
+          .from("project_milestones")
+          .select("*")
+          .eq("project_id", projectId)
+          .order("order_index", { ascending: true });
 
-      if (mData && mData.length > 0) {
-        milestonesList = mData as Milestone[];
+        if (mData && mData.length > 0) {
+          milestonesList = mData as Milestone[];
+        }
+      } catch (e) {}
+
+      // If no milestones found in Supabase, check localStorage for this specific project ID
+      if (milestonesList.length === 0) {
+        try {
+          const rawM = typeof window !== "undefined" ? localStorage.getItem("portfolio_admin_milestones_v1") : null;
+          if (rawM) {
+            const parsed = JSON.parse(rawM);
+            if (parsed && typeof parsed === "object" && Array.isArray(parsed[projectId])) {
+              milestonesList = parsed[projectId];
+            }
+          }
+        } catch (e) {}
       }
+
       setMilestones(milestonesList);
 
-      // Load updates from API + Supabase + localStorage fallback
+      // Load updates strictly for this project from API + Supabase + localStorage
       let projectUpdatesList: ProjectUpdate[] = [];
       try {
         const upRes = await fetch(`/api/portal/updates?projectId=${encodeURIComponent(projectId)}`);
         if (upRes.ok) {
           const upJson = await upRes.json();
-          if (upJson.updates && Array.isArray(upJson.updates) && upJson.updates.length > 0) {
-            projectUpdatesList = upJson.updates;
+          if (upJson.updates && Array.isArray(upJson.updates)) {
+            projectUpdatesList = upJson.updates.filter((u: ProjectUpdate) => u.project_id === projectId);
           }
         }
       } catch (e) {}
 
       if (projectUpdatesList.length === 0) {
-        const { data: uData } = await supabase
-          .from("project_updates")
-          .select("*")
-          .eq("project_id", projectId)
-          .order("created_at", { ascending: false });
+        try {
+          const { data: uData } = await supabase
+            .from("project_updates")
+            .select("*")
+            .eq("project_id", projectId)
+            .order("created_at", { ascending: false });
 
-        if (uData && uData.length > 0) {
-          projectUpdatesList = uData as ProjectUpdate[];
-        } else {
+          if (uData && uData.length > 0) {
+            projectUpdatesList = uData as ProjectUpdate[];
+          }
+        } catch (e) {}
+
+        if (projectUpdatesList.length === 0) {
           const rawUpdates =
             typeof window !== "undefined"
               ? localStorage.getItem("portfolio_admin_updates_v1")
@@ -1254,7 +1545,9 @@ function ClientPortalContent() {
           if (rawUpdates) {
             try {
               const parsed = JSON.parse(rawUpdates);
-              if (Array.isArray(parsed)) {
+              if (parsed && typeof parsed === "object" && Array.isArray(parsed[projectId])) {
+                projectUpdatesList = parsed[projectId];
+              } else if (Array.isArray(parsed)) {
                 projectUpdatesList = parsed.filter(
                   (u: ProjectUpdate) => u.project_id === projectId
                 );
@@ -1268,7 +1561,7 @@ function ClientPortalContent() {
 
       setUpdates(projectUpdatesList);
 
-      // Load Quick Links
+      // Load Quick Links strictly for this project
       let projectLinksList: ProjectQuickLink[] = [];
       try {
         const rawLinks =
@@ -1280,12 +1573,12 @@ function ClientPortalContent() {
           if (parsed && typeof parsed === "object") {
             if (Array.isArray(parsed[projectId])) {
               projectLinksList = parsed[projectId].filter(
-                (l: ProjectQuickLink) => l.is_active !== false
+                (l: ProjectQuickLink) => l.is_active !== false && l.url && l.url.trim() !== ""
               );
             } else if (Array.isArray(parsed)) {
               projectLinksList = parsed.filter(
                 (l: ProjectQuickLink) =>
-                  l.project_id === projectId && l.is_active !== false
+                  l.project_id === projectId && l.is_active !== false && l.url && l.url.trim() !== ""
               );
             }
           }
@@ -1294,17 +1587,19 @@ function ClientPortalContent() {
         console.error("Error reading quick links from localStorage:", e);
       }
 
+      const activeProj =
+        currentProj ||
+        ({ id: projectId, title: projectTitle } as Project);
+
       if (projectLinksList.length === 0) {
-        const targetProj =
-          currentProj ||
-          selectedProject ||
-          ({ id: projectId, title: projectTitle } as Project);
-        projectLinksList = generateDefaultProjectQuickLinks(targetProj);
+        projectLinksList = generateDefaultProjectQuickLinks(activeProj).filter(
+          (l) => l.url && l.url.trim() !== ""
+        );
       }
 
       setQuickLinks(projectLinksList);
 
-      // Load Formal Feedbacks & Approvals
+      // Load Formal Feedbacks & Approvals strictly for this project
       let feedbackList: DeliveryFeedbackItem[] = [];
       try {
         const rawFeedbacks =
@@ -1329,30 +1624,21 @@ function ClientPortalContent() {
   };
 
   useEffect(() => {
-    if (user && profile) {
+    if (user && profile && !hasInitialPortalFetched.current) {
+      hasInitialPortalFetched.current = true;
       loadData();
-
-      // Real-time instant synchronization polling (every 5 seconds)
-      const pollInterval = setInterval(() => {
-        loadData();
-      }, 5000);
-
-      // Instant refresh on tab focus
-      const handleFocus = () => {
-        loadData();
-      };
-      window.addEventListener("focus", handleFocus);
-
-      return () => {
-        clearInterval(pollInterval);
-        window.removeEventListener("focus", handleFocus);
-      };
     }
-  }, [user, profile]);
+  }, [user?.id, profile?.id]);
 
   const handleSelectProject = (proj: Project) => {
     setSelectedProject(proj);
-    loadProjectDetails(proj.id, proj.title);
+    setDocuments([]);
+    setFinancialData(null);
+    setMilestones([]);
+    setUpdates([]);
+    setQuickLinks([]);
+    setDeliveryFeedbacks([]);
+    loadProjectDetails(proj.id, proj.title, proj);
   };
 
   const handleOpenPdfViewer = (doc: ProjectDocument) => {
@@ -1384,6 +1670,35 @@ function ClientPortalContent() {
 
   const handleSendFeedback = () => {
     if (!feedbackMsg.trim()) return;
+
+    // Record formal support ticket for Admin inbox
+    try {
+      const newTicket = {
+        id: `ticket-${Date.now()}`,
+        project_id: selectedProject?.id || "geral",
+        project_title: selectedProject?.title || "Geral",
+        client_id: user?.id,
+        client_name: profile?.full_name || user?.email?.split("@")[0] || "Cliente",
+        client_email: user?.email || "",
+        subject: `Dúvida / Feedback (${selectedProject?.title || "Projeto"})`,
+        message: feedbackMsg.trim(),
+        priority: "media",
+        status: "aberto",
+        created_at: new Date().toISOString(),
+      };
+
+      if (typeof window !== "undefined") {
+        const raw = localStorage.getItem("portfolio_support_tickets_v1") || "[]";
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          parsed.unshift(newTicket);
+          localStorage.setItem("portfolio_support_tickets_v1", JSON.stringify(parsed));
+        }
+      }
+    } catch (e) {
+      console.error("Error saving support ticket:", e);
+    }
+
     const text = encodeURIComponent(
       `Olá Maira! Aqui é ${profile?.full_name || "Cliente"} do projeto "${selectedProject?.title || "Meu Projeto"}".\n\nMinha mensagem/feedback:\n${feedbackMsg}`
     );
@@ -1677,40 +1992,83 @@ function ClientPortalContent() {
                       </div>
                     </div>
 
-                    {/* Consolidated Progress Bar */}
-                    {selectedProject.progress > 0 && (
-                      <div className="space-y-2.5 relative z-10">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <span className="text-xs font-bold text-gray-300 uppercase tracking-wider block">
-                              Progresso Geral Consolidado
-                            </span>
-                            <span className="text-[11px] text-gray-400">
-                              {completedMilestonesCount} de {milestones.length || 5} entregas concluídas • Fase {currentPhaseIndex} de 5
-                            </span>
+                    {/* Dual Progress Bars: 1. Progresso Geral (Cronograma/Meses) + 2. Progresso da Sprint Mensal (Checks) */}
+                    {(() => {
+                      const timelineProg = calculateTimelineProgress(selectedProject.start_date, selectedProject.deadline);
+                      const sprintProg = calculateSprintProgress(milestones);
+
+                      return (
+                        <div className="space-y-3.5 relative z-10 my-1">
+                          {/* 1. Progresso Geral do Cronograma */}
+                          <div className="p-4 rounded-2xl bg-indigo-950/30 border border-indigo-500/25 space-y-2.5 backdrop-blur-md">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                                  <Calendar size={14} className="text-indigo-400" />
+                                  <span>1. Progresso Geral do Cronograma</span>
+                                </span>
+                                <span className="text-[11px] text-gray-400 block mt-0.5">
+                                  {timelineProg.detail}
+                                </span>
+                              </div>
+
+                              <div className="flex items-baseline gap-1">
+                                <span className="text-xl sm:text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-300 to-cyan-400 font-mono">
+                                  {timelineProg.percent}%
+                                </span>
+                                <span className="text-xs font-bold text-indigo-300">Decorrido</span>
+                              </div>
+                            </div>
+
+                            {/* Progress Bar 1 */}
+                            <div className="w-full h-3 bg-black/60 rounded-full overflow-hidden p-0.5 border border-white/10 shadow-inner">
+                              <motion.div
+                                initial={{ width: 0 }}
+                                animate={{ width: `${timelineProg.percent}%` }}
+                                transition={{ duration: 1.0, ease: "easeOut" }}
+                                className="h-full rounded-full bg-gradient-to-r from-blue-500 via-indigo-500 to-cyan-400 shadow-md shadow-indigo-500/40 relative"
+                              >
+                                <div className="absolute inset-0 bg-white/20 animate-pulse rounded-full" />
+                              </motion.div>
+                            </div>
                           </div>
 
-                          <div className="flex items-baseline gap-1">
-                            <span className="text-2xl sm:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 font-mono">
-                              {selectedProject.progress}%
-                            </span>
-                            <span className="text-xs font-bold text-purple-300">Concluído</span>
+                          {/* 2. Progresso da Sprint Mensal (Checks & Entregas) */}
+                          <div className="p-4 rounded-2xl bg-purple-950/30 border border-purple-500/25 space-y-2.5 backdrop-blur-md">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                                  <CheckSquare size={14} className="text-purple-400" />
+                                  <span>2. Progresso da Sprint Mensal (Checks & Entregas)</span>
+                                </span>
+                                <span className="text-[11px] text-gray-400 block mt-0.5">
+                                  {sprintProg.detail}
+                                </span>
+                              </div>
+
+                              <div className="flex items-baseline gap-1">
+                                <span className="text-xl sm:text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-emerald-400 font-mono">
+                                  {sprintProg.percent}%
+                                </span>
+                                <span className="text-xs font-bold text-purple-300">Concluído</span>
+                              </div>
+                            </div>
+
+                            {/* Progress Bar 2 */}
+                            <div className="w-full h-3 bg-black/60 rounded-full overflow-hidden p-0.5 border border-white/10 shadow-inner">
+                              <motion.div
+                                initial={{ width: 0 }}
+                                animate={{ width: `${sprintProg.percent}%` }}
+                                transition={{ duration: 1.2, ease: "easeOut" }}
+                                className="h-full rounded-full bg-gradient-to-r from-purple-500 via-pink-500 to-emerald-400 shadow-md shadow-purple-500/40 relative"
+                              >
+                                <div className="absolute inset-0 bg-white/20 animate-pulse rounded-full" />
+                              </motion.div>
+                            </div>
                           </div>
                         </div>
-
-                        {/* Animated Progress Bar */}
-                        <div className="w-full h-4 bg-black/60 rounded-full overflow-hidden p-1 border border-white/10 shadow-inner">
-                          <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${selectedProject.progress}%` }}
-                            transition={{ duration: 1.2, ease: "easeOut" }}
-                            className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 shadow-lg shadow-indigo-500/40 relative"
-                          >
-                            <div className="absolute inset-0 bg-white/20 animate-pulse rounded-full" />
-                          </motion.div>
-                        </div>
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     {/* Key Stats & Metadata Grid */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 border-t border-white/10 relative z-10">
@@ -1757,58 +2115,6 @@ function ClientPortalContent() {
                   </div>
                 );
               })()}
-
-                  {/* Card 2: Interactive Phase Stepper */}
-              <div className="p-6 sm:p-7 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl">
-                <h3 className="text-base font-bold text-white flex items-center gap-2 mb-6">
-                  <Layers size={18} className="text-indigo-400" />
-                  <span>Fases de Desenvolvimento</span>
-                </h3>
-
-                <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 relative">
-                  {PHASES.map((phase) => {
-                    const isCompleted = phase.step < currentPhaseIndex;
-                    const isCurrent = phase.step === currentPhaseIndex;
-
-                    return (
-                      <div
-                        key={phase.step}
-                        className={`p-3.5 rounded-2xl border transition-all flex flex-col justify-between gap-2 ${
-                          isCurrent
-                            ? "bg-indigo-600/20 border-indigo-500 shadow-lg shadow-indigo-600/20"
-                            : isCompleted
-                            ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
-                            : "bg-white/[0.02] border-white/5 text-gray-500"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span
-                            className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center ${
-                              isCompleted
-                                ? "bg-emerald-500 text-white"
-                                : isCurrent
-                                ? "bg-indigo-500 text-white animate-pulse"
-                                : "bg-white/10 text-gray-400"
-                            }`}
-                          >
-                            {isCompleted ? <Check size={12} /> : phase.step}
-                          </span>
-                          {isCurrent && (
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-indigo-300 bg-indigo-500/20 px-1.5 py-0.5 rounded">
-                              Atual
-                            </span>
-                          )}
-                        </div>
-                        <div>
-                          <p className={`text-xs font-bold leading-tight ${isCurrent ? "text-white" : isCompleted ? "text-emerald-300" : "text-gray-400"}`}>
-                            {phase.label}
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
 
                   {/* Hub de Acesso Rápido às Seções */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2197,6 +2503,9 @@ function ClientPortalContent() {
                               const dueDateObj = m.due_date ? new Date(m.due_date) : null;
                               const isImminent = idx === 0;
                               const fb = deliveryFeedbacks.find((item) => item.milestone_id === m.id);
+                              const cleanDesc = getMilestoneCleanDescription(m);
+                              const tasks = parseMilestoneTasks(m);
+                              const prog = getMilestoneProgress(m);
 
                               return (
                                 <div
@@ -2230,24 +2539,44 @@ function ClientPortalContent() {
                                       {m.title}
                                     </h5>
 
-                                    {m.description && (
+                                    {cleanDesc && (
                                       <p className="text-xs text-gray-300 mt-1.5 leading-relaxed">
-                                        {m.description}
+                                        {cleanDesc}
                                       </p>
                                     )}
 
-                                    {m.deliverables && m.deliverables.length > 0 && (
-                                      <div className="mt-3 pt-3 border-t border-white/5 space-y-1.5">
+                                    {/* Progress Bar in Deliverable Card */}
+                                    <div className="mt-3 p-2.5 rounded-xl bg-black/40 border border-white/5 space-y-1">
+                                      <div className="flex items-center justify-between text-[10px]">
+                                        <span className="text-gray-400">Conclusão do Marco</span>
+                                        <span className="text-emerald-400 font-mono font-bold">{prog}% Concluído</span>
+                                      </div>
+                                      <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                                        <div
+                                          className="h-full bg-gradient-to-r from-teal-400 to-emerald-400 rounded-full transition-all duration-500"
+                                          style={{ width: `${prog}%` }}
+                                        />
+                                      </div>
+                                    </div>
+
+                                    {/* Tasks Checklist */}
+                                    {tasks.length > 0 && (
+                                      <div className="mt-3 pt-2.5 border-t border-white/5 space-y-1">
                                         <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
-                                          Entregáveis inclusos neste marco:
+                                          Itens inclusos:
                                         </span>
                                         <div className="flex flex-wrap gap-1.5">
-                                          {m.deliverables.map((del, dIdx) => (
+                                          {tasks.map((task) => (
                                             <span
-                                              key={dIdx}
-                                              className="text-[10px] px-2 py-0.5 rounded-lg bg-black/40 text-gray-300 border border-white/10"
+                                              key={task.id}
+                                              className={`text-[10px] px-2 py-0.5 rounded-lg border flex items-center gap-1 ${
+                                                task.completed
+                                                  ? "bg-emerald-950/20 border-emerald-500/30 text-emerald-300"
+                                                  : "bg-black/40 border-white/10 text-gray-400"
+                                              }`}
                                             >
-                                              • {del}
+                                              {task.completed ? <Check size={10} className="text-emerald-400" /> : <Clock size={9} />}
+                                              <span>{task.text}</span>
                                             </span>
                                           ))}
                                         </div>
@@ -2368,8 +2697,96 @@ function ClientPortalContent() {
                           </div>
                         </div>
 
-                        {/* Sprint Tasks Checklist */}
+                        {/* Sprint Tasks Checklist with Month Filter */}
                         <div className="space-y-3">
+                          {/* Month Filter Bar */}
+                          {milestones.length > 0 && (() => {
+                            const monthMap = new Map<string, { key: string; label: string; count: number; completed: number }>();
+                            milestones.forEach((m) => {
+                              const key = getMilestoneMonthKey(m.due_date);
+                              const label = formatMonthKeyLabel(key);
+                              const isDone = m.completed || getMilestoneStatus(m) === "concluido";
+                              if (!monthMap.has(key)) {
+                                monthMap.set(key, { key, label, count: 0, completed: 0 });
+                              }
+                              const curr = monthMap.get(key)!;
+                              curr.count += 1;
+                              if (isDone) curr.completed += 1;
+                            });
+
+                            const monthList = Array.from(monthMap.values()).sort((a, b) => {
+                              if (a.key === "sem_data") return 1;
+                              if (b.key === "sem_data") return -1;
+                              return a.key.localeCompare(b.key);
+                            });
+
+                            if (monthList.length <= 1 && monthList[0]?.key === "sem_data") return null;
+
+                            return (
+                              <div className="p-3 rounded-2xl bg-black/40 border border-white/10 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+                                    <Calendar size={13} className="text-indigo-400" />
+                                    <span>Filtrar por Mês (Prazo):</span>
+                                  </span>
+                                  {portalMilestoneMonthFilter !== "all" && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setPortalMilestoneMonthFilter("all")}
+                                      className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer underline"
+                                    >
+                                      Ver todos
+                                    </button>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+                                  <button
+                                    type="button"
+                                    onClick={() => setPortalMilestoneMonthFilter("all")}
+                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                                      portalMilestoneMonthFilter === "all"
+                                        ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30 border border-indigo-400"
+                                        : "bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 border border-white/10"
+                                    }`}
+                                  >
+                                    <ListTodo size={12} />
+                                    <span>Todas</span>
+                                    <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-black/40 text-gray-300 font-mono">
+                                      {milestones.length}
+                                    </span>
+                                  </button>
+
+                                  {monthList.map((mMonth) => {
+                                    const isSelected = portalMilestoneMonthFilter === mMonth.key;
+                                    return (
+                                      <button
+                                        key={mMonth.key}
+                                        type="button"
+                                        onClick={() => setPortalMilestoneMonthFilter(mMonth.key)}
+                                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                                          isSelected
+                                            ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30 border border-emerald-400"
+                                            : "bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 border border-white/10"
+                                        }`}
+                                      >
+                                        <Calendar size={12} className={isSelected ? "text-white" : "text-emerald-400"} />
+                                        <span>{mMonth.label}</span>
+                                        <span
+                                          className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                                            isSelected ? "bg-black/30 text-white" : "bg-black/40 text-emerald-400"
+                                          }`}
+                                        >
+                                          {mMonth.completed}/{mMonth.count}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })()}
+
                           <div className="flex items-center justify-between text-xs font-semibold text-gray-400">
                             <span>Etapas Cadastradas no Cronograma</span>
                             <span>Status de Execução</span>
@@ -2384,96 +2801,191 @@ function ClientPortalContent() {
                                 As tarefas e entregáveis detalhados da sprint aparecerão aqui assim que forem adicionados no painel.
                               </p>
                             </div>
-                          ) : (
-                            <div className="space-y-2">
-                              {milestones.map((m) => {
-                                const isDone = m.completed || m.status === "completed";
-                                const isInProgress = m.status === "in_progress" || ((m.progress ?? 0) > 0 && !isDone);
-                                const prog = isDone ? 100 : (m.progress ?? 0);
+                          ) : (() => {
+                            const displayedMilestones = portalMilestoneMonthFilter === "all"
+                              ? milestones
+                              : milestones.filter((m) => getMilestoneMonthKey(m.due_date) === portalMilestoneMonthFilter);
 
-                                return (
-                                  <div
-                                    key={m.id}
-                                    className="p-3.5 rounded-xl bg-black/40 border border-white/5 hover:border-indigo-500/20 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
+                            if (displayedMilestones.length === 0) {
+                              return (
+                                <div className="p-6 rounded-2xl bg-black/40 border border-white/5 text-center space-y-1.5">
+                                  <Calendar size={24} className="mx-auto text-gray-500" />
+                                  <p className="text-xs text-gray-300 font-semibold">
+                                    Nenhuma etapa cadastrada com prazo para este mês.
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPortalMilestoneMonthFilter("all")}
+                                    className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold underline cursor-pointer"
                                   >
-                                    <div className="flex items-start sm:items-center gap-3">
-                                      <div
-                                        className={`w-5 h-5 rounded-md flex items-center justify-center text-xs shrink-0 mt-0.5 sm:mt-0 ${
-                                          isDone
-                                            ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                                            : isInProgress
-                                            ? "bg-indigo-500/20 text-indigo-400 border border-indigo-500/30"
-                                            : "bg-white/5 text-gray-400 border border-white/10"
-                                        }`}
-                                      >
-                                        {isDone ? (
-                                          <Check size={12} />
-                                        ) : (
-                                          <PlayCircle size={12} />
-                                        )}
-                                      </div>
+                                    Ver todas as etapas
+                                  </button>
+                                </div>
+                              );
+                            }
 
-                                      <div>
-                                        <div className="flex items-center gap-2">
-                                          <span
-                                            className={`text-xs font-semibold ${
-                                              isDone
-                                                ? "text-gray-300 line-through"
-                                                : "text-white"
-                                            }`}
-                                          >
-                                            {m.title}
-                                          </span>
-                                          {m.stage && (
-                                            <span className="text-[10px] text-gray-400">
-                                              ({m.stage})
-                                            </span>
+                            return (
+                              <div className="space-y-3">
+                                {displayedMilestones.map((m) => {
+                                  const status = getMilestoneStatus(m);
+                                  const cleanDesc = getMilestoneCleanDescription(m);
+                                  const tasks = parseMilestoneTasks(m);
+                                  const prog = getMilestoneProgress(m);
+                                  const isDone = status === "concluido" || prog === 100;
+                                  const isInProgress = status === "em_andamento" || (prog > 0 && !isDone);
+                                  const completedTasksCount = tasks.filter((t) => t.completed).length;
+
+                                  return (
+                                    <div
+                                      key={m.id}
+                                      className={`p-4 rounded-2xl border transition-all space-y-3 ${
+                                        isDone
+                                          ? "bg-emerald-950/15 border-emerald-500/25"
+                                          : isInProgress
+                                          ? "bg-[#0e142e]/90 border-indigo-500/30 shadow-md shadow-indigo-950/30"
+                                          : "bg-black/40 border-white/5"
+                                      }`}
+                                    >
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                                      <div className="flex items-start gap-3">
+                                        <div
+                                          className={`w-5 h-5 rounded-md flex items-center justify-center text-xs shrink-0 mt-0.5 ${
+                                            isDone
+                                              ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                                              : isInProgress
+                                              ? "bg-indigo-500/20 text-indigo-400 border border-indigo-500/30"
+                                              : "bg-white/5 text-gray-400 border border-white/10"
+                                          }`}
+                                        >
+                                          {isDone ? (
+                                            <Check size={12} />
+                                          ) : (
+                                            <PlayCircle size={12} />
                                           )}
                                         </div>
-                                        {m.description && (
-                                          <p className="text-[11px] text-gray-400 mt-0.5 line-clamp-1">
-                                            {m.description}
-                                          </p>
-                                        )}
+
+                                        <div>
+                                          <div className="flex items-center gap-2 flex-wrap">
+                                            <span
+                                              className={`text-xs sm:text-sm font-bold ${
+                                                isDone
+                                                  ? "text-gray-300 line-through"
+                                                  : "text-white"
+                                              }`}
+                                            >
+                                              {m.title}
+                                            </span>
+                                            {m.stage && (
+                                              <span className="text-[10px] text-gray-400">
+                                                ({m.stage})
+                                              </span>
+                                            )}
+                                          </div>
+                                          {cleanDesc && (
+                                            <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">
+                                              {cleanDesc}
+                                            </p>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                                        <span
+                                          className={`text-[10px] font-bold px-2.5 py-0.5 rounded-md border whitespace-nowrap ${
+                                            isDone
+                                              ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"
+                                              : isInProgress
+                                              ? "bg-indigo-500/10 text-indigo-300 border-indigo-500/20"
+                                              : "bg-white/5 text-gray-400 border-white/10"
+                                          }`}
+                                        >
+                                          {isDone
+                                            ? "Concluído"
+                                            : isInProgress
+                                            ? "Em Andamento"
+                                            : "Pendente"}
+                                        </span>
                                       </div>
                                     </div>
 
-                                    <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">
-                                      <div className="w-20 sm:w-24 h-2 bg-white/5 rounded-full overflow-hidden">
-                                        <div
-                                          className={`h-full rounded-full ${
+                                    {/* Milestone Progress Bar */}
+                                    <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5">
+                                      <div className="flex items-center justify-between text-[11px]">
+                                        <span className="text-gray-400 font-semibold">
+                                          Progresso da Etapa
+                                        </span>
+                                        <span
+                                          className={`font-mono font-bold ${
                                             isDone
-                                              ? "bg-emerald-500"
+                                              ? "text-emerald-400"
                                               : isInProgress
-                                              ? "bg-indigo-500"
-                                              : "bg-gray-600"
+                                              ? "text-indigo-300"
+                                              : "text-gray-400"
+                                          }`}
+                                        >
+                                          {prog}% Concluído {tasks.length > 0 && `(${completedTasksCount}/${tasks.length} checks)`}
+                                        </span>
+                                      </div>
+                                      <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
+                                        <div
+                                          className={`h-full rounded-full transition-all duration-500 ${
+                                            isDone
+                                              ? "bg-gradient-to-r from-teal-400 to-emerald-400 shadow-sm shadow-emerald-500/30"
+                                              : isInProgress
+                                              ? "bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
+                                              : "bg-gray-700"
                                           }`}
                                           style={{ width: `${prog}%` }}
                                         />
                                       </div>
-
-                                      <span
-                                        className={`text-[10px] font-bold px-2 py-0.5 rounded-md border whitespace-nowrap ${
-                                          isDone
-                                            ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"
-                                            : isInProgress
-                                            ? "bg-indigo-500/10 text-indigo-300 border-indigo-500/20"
-                                            : "bg-white/5 text-gray-400 border-white/10"
-                                        }`}
-                                      >
-                                        {isDone
-                                          ? "Concluído"
-                                          : isInProgress
-                                          ? `${prog}% Em Progresso`
-                                          : "Pendente"}
-                                      </span>
                                     </div>
+
+                                    {/* Checklist Items */}
+                                    {tasks.length > 0 && (
+                                      <div className="space-y-1.5 pt-0.5">
+                                        <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block">
+                                          Itens de Execução desta Etapa:
+                                        </span>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                          {tasks.map((task) => (
+                                            <div
+                                              key={task.id}
+                                              className={`px-2.5 py-1.5 rounded-xl border text-xs flex items-center gap-2 ${
+                                                task.completed
+                                                  ? "bg-emerald-950/20 border-emerald-500/20 text-emerald-300"
+                                                  : "bg-black/30 border-white/5 text-gray-300"
+                                              }`}
+                                            >
+                                              <div
+                                                className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[9px] shrink-0 ${
+                                                  task.completed
+                                                    ? "bg-emerald-500 text-white"
+                                                    : "bg-white/5 border border-white/20 text-transparent"
+                                                }`}
+                                              >
+                                                <Check size={9} />
+                                              </div>
+                                              <span
+                                                className={`text-[11px] leading-tight truncate ${
+                                                  task.completed
+                                                    ? "line-through text-gray-400"
+                                                    : "text-white"
+                                                }`}
+                                              >
+                                                {task.text}
+                                              </span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 );
                               })}
                             </div>
-                          )}
-                        </div>
+                          );
+                        })()}
+                      </div>
                       </div>
                     )}
 

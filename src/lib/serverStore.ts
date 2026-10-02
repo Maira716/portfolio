@@ -92,6 +92,46 @@ export interface StoredProjectDocument {
   notes?: string | null;
 }
 
+export interface StoredProposalOption {
+  id: string;
+  productId?: string;
+  name: string;
+  description?: string;
+  price: number;
+  billingFrequency: "one_time" | "monthly" | "quarterly" | "yearly" | "hourly";
+  timelineWeeks?: string;
+  paymentTerms?: string;
+  warrantyDays?: number;
+  badge?: string;
+  isRecommended?: boolean;
+  scopeItems: string[];
+}
+
+export interface StoredCommercialProposal {
+  id: string;
+  docNumber: string;
+  title: string;
+  templateType?: "software_dev" | "partnership_recurring";
+  clientName: string;
+  clientCompany?: string;
+  clientEmail?: string;
+  clientPhone?: string;
+  projectId?: string;
+  projectTitle: string;
+  category: string;
+  billingFrequency: "one_time" | "monthly" | "quarterly" | "yearly" | "hourly";
+  scopeItems: string[];
+  timelineWeeks: string;
+  totalValue: number;
+  paymentTerms: string;
+  validityDays: number;
+  warrantyDays: number;
+  notes?: string;
+  status: "draft" | "sent" | "in_negotiation" | "approved" | "rejected";
+  options?: StoredProposalOption[];
+  createdAt: string;
+}
+
 export interface PortalData {
   clients: StoredClient[];
   projects: StoredProject[];
@@ -99,37 +139,19 @@ export interface PortalData {
   notifications: StoredNotification[];
   finances?: Record<string, StoredProjectFinancialData>;
   documents?: Record<string, StoredProjectDocument[]>;
+  proposals?: StoredCommercialProposal[];
 }
 
 const DATA_FILE_PATH = path.join(process.cwd(), "src", "data", "portal-data.json");
 
 const DEFAULT_DATA: PortalData = {
-  clients: [
-    {
-      id: "client-danilo-buess",
-      email: "danilobuess@hotmail.com",
-      full_name: "Danilo Buess",
-      password: "Cliente@123",
-      phone: "553598030543",
-      company: "Buess Soluções",
-      status: "active",
-      role: "client",
-      created_at: new Date().toISOString(),
-    },
-    {
-      id: "admin-mairareis",
-      email: "mairareis2017@gmail.com",
-      full_name: "Maira Reis",
-      status: "active",
-      role: "admin",
-      created_at: new Date().toISOString(),
-    },
-  ],
+  clients: [],
   projects: [],
   updates: {},
   notifications: [],
   finances: {},
   documents: {},
+  proposals: [],
 };
 
 function ensureDirectoryExists(filePath: string) {
@@ -149,17 +171,13 @@ export function readPortalData(): PortalData {
     const raw = fs.readFileSync(DATA_FILE_PATH, "utf8");
     const parsed = JSON.parse(raw);
     
-    if (!parsed.clients || !Array.isArray(parsed.clients)) parsed.clients = DEFAULT_DATA.clients;
+    if (!parsed.clients || !Array.isArray(parsed.clients)) parsed.clients = [];
     if (!parsed.projects || !Array.isArray(parsed.projects)) parsed.projects = [];
     if (!parsed.updates || typeof parsed.updates !== "object") parsed.updates = {};
     if (!parsed.notifications || !Array.isArray(parsed.notifications)) parsed.notifications = [];
     if (!parsed.finances || typeof parsed.finances !== "object") parsed.finances = {};
     if (!parsed.documents || typeof parsed.documents !== "object") parsed.documents = {};
-
-    const hasDanilo = parsed.clients.some((c: StoredClient) => c.email?.toLowerCase() === "danilobuess@hotmail.com");
-    if (!hasDanilo) {
-      parsed.clients.unshift(DEFAULT_DATA.clients[0]);
-    }
+    if (!parsed.proposals || !Array.isArray(parsed.proposals)) parsed.proposals = [];
 
     return parsed;
   } catch (err) {
@@ -191,11 +209,12 @@ export function saveClient(client: Partial<StoredClient> & { email: string; full
   const fallbackName = cleanEmail.split("@")[0];
   const formattedFallback = fallbackName.charAt(0).toUpperCase() + fallbackName.slice(1);
 
+  const existingPassword = existingIdx >= 0 ? data.clients[existingIdx].password : undefined;
   const clientToSave: StoredClient = {
     id: client.id || (existingIdx >= 0 ? data.clients[existingIdx].id : `client-${Date.now()}`),
     email: cleanEmail,
     full_name: (client.full_name || (existingIdx >= 0 ? data.clients[existingIdx].full_name : formattedFallback) || formattedFallback).trim(),
-    password: client.password || (existingIdx >= 0 ? data.clients[existingIdx].password : "Cliente@123") || "Cliente@123",
+    password: client.password || existingPassword || undefined,
     phone: client.phone !== undefined ? client.phone : (existingIdx >= 0 ? data.clients[existingIdx].phone : null),
     company: client.company !== undefined ? client.company : (existingIdx >= 0 ? data.clients[existingIdx].company : null),
     status: client.status || (existingIdx >= 0 ? data.clients[existingIdx].status : "active") || "active",
@@ -436,6 +455,49 @@ export function saveAllDocuments(
   data.documents = { ...(data.documents || {}), ...docsMap };
   writePortalData(data);
   return data.documents;
+}
+
+// Commercial Proposals Store
+export function getStoredProposals(): StoredCommercialProposal[] {
+  const data = readPortalData();
+  return data.proposals || [];
+}
+
+export function getStoredProposalById(idOrDocNumber: string): StoredCommercialProposal | null {
+  const data = readPortalData();
+  const list = data.proposals || [];
+  const normalized = idOrDocNumber.trim().toLowerCase();
+  return (
+    list.find(
+      (p) =>
+        p.id.toLowerCase() === normalized ||
+        p.docNumber.toLowerCase() === normalized
+    ) || null
+  );
+}
+
+export function saveStoredProposal(proposal: StoredCommercialProposal): StoredCommercialProposal {
+  const data = readPortalData();
+  if (!data.proposals) {
+    data.proposals = [];
+  }
+  const existingIdx = data.proposals.findIndex((p) => p.id === proposal.id);
+  if (existingIdx >= 0) {
+    data.proposals[existingIdx] = proposal;
+  } else {
+    data.proposals.unshift(proposal);
+  }
+  writePortalData(data);
+  return proposal;
+}
+
+export function saveAllStoredProposals(
+  proposals: StoredCommercialProposal[]
+): StoredCommercialProposal[] {
+  const data = readPortalData();
+  data.proposals = proposals;
+  writePortalData(data);
+  return proposals;
 }
 
 

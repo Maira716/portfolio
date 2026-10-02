@@ -46,6 +46,23 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockoutSeconds, setLockoutSeconds] = useState(0);
+
+  // Countdown timer for brute-force lockout
+  useEffect(() => {
+    if (lockoutSeconds <= 0) return;
+    const interval = setInterval(() => {
+      setLockoutSeconds((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [lockoutSeconds]);
 
   // Check if recovery link opened
   useEffect(() => {
@@ -80,6 +97,13 @@ function LoginForm() {
     e.preventDefault();
     setErrorMsg("");
     setSuccessMsg("");
+
+    // Brute force lockout check
+    if (lockoutSeconds > 0) {
+      setErrorMsg(`Muitas tentativas consecutivas incorretas. Por segurança, aguarde ${lockoutSeconds}s para tentar novamente.`);
+      return;
+    }
+
     setLoading(true);
 
     const cleanEmail = email.trim().toLowerCase();
@@ -88,12 +112,19 @@ function LoginForm() {
     try {
       const { profile: signedInProfile, error } = await signIn(cleanEmail, cleanPassword);
       if (error) {
-        if (
+        const nextFailed = failedAttempts + 1;
+        setFailedAttempts(nextFailed);
+
+        if (nextFailed >= 5) {
+          setLockoutSeconds(120);
+          setErrorMsg("Limite de tentativas excedido. Acesso temporariamente bloqueado por 2 minutos por segurança.");
+        } else if (
           error.message.includes("Invalid login credentials") ||
           error.message.includes("invalid_credentials") ||
           error.message.includes("invalid_grant")
         ) {
-          setErrorMsg("E-mail ou senha incorretos. Verifique suas credenciais.");
+          const remaining = 5 - nextFailed;
+          setErrorMsg(`E-mail ou senha incorretos. (${remaining} tentativa${remaining === 1 ? "" : "s"} restante${remaining === 1 ? "" : "s"} antes do bloqueio temporário).`);
         } else if (error.message.includes("Email not confirmed")) {
           setErrorMsg("E-mail pendente de confirmação. Verifique sua caixa de entrada.");
         } else {
@@ -103,10 +134,14 @@ function LoginForm() {
         return;
       }
 
-      // Success: determine target route immediately and redirect
+      // Success: Reset failed attempts counter
+      setFailedAttempts(0);
+      setLockoutSeconds(0);
+
+      // Determine target route immediately and redirect
       const role =
         signedInProfile?.role ||
-        (email.toLowerCase().includes("maira") || email.toLowerCase().includes("admin") ? "admin" : "client");
+        (cleanEmail === "mairareis2017@gmail.com" || cleanEmail === "admin@mairareis.com.br" ? "admin" : "client");
       const redirectParam = searchParams.get("redirect");
 
       if (role === "admin") {
@@ -126,7 +161,6 @@ function LoginForm() {
       setErrorMsg(err.message || "Ocorreu um erro inesperado.");
       setLoading(false);
     } finally {
-      // Safety timeout to avoid getting stuck in loading state if navigation is slow
       setTimeout(() => {
         setLoading(false);
       }, 2500);
@@ -159,8 +193,15 @@ function LoginForm() {
     setErrorMsg("");
     setSuccessMsg("");
 
-    if (newPassword.length < 6) {
-      setErrorMsg("A nova senha deve ter no mínimo 6 caracteres.");
+    if (newPassword.length < 8) {
+      setErrorMsg("A nova senha deve ter no mínimo 8 caracteres.");
+      return;
+    }
+
+    const hasLetter = /[a-zA-Z]/.test(newPassword);
+    const hasNumber = /[0-9]/.test(newPassword);
+    if (!hasLetter || !hasNumber) {
+      setErrorMsg("A senha deve conter uma combinação de letras e números para maior segurança.");
       return;
     }
 

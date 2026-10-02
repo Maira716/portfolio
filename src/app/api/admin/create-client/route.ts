@@ -26,6 +26,14 @@ export async function POST(req: Request) {
       );
     }
 
+    // Validate password minimum length
+    if (cleanPassword.length < 6) {
+      return NextResponse.json(
+        { error: "A senha deve conter no mínimo 6 caracteres para garantir a segurança da conta." },
+        { status: 400 }
+      );
+    }
+
     // 1. Immediately persist in serverStore to guarantee login works instantly from any device
     const storedClient = saveClient({
       email: cleanEmail,

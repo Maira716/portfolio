@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -77,6 +77,22 @@ import {
   Receipt,
   Printer,
   Download,
+  ThumbsUp,
+  LifeBuoy,
+  HelpCircle,
+  Radio,
+  PieChart,
+  Award,
+  FileSpreadsheet,
+  SendHorizontal,
+  MessageSquarePlus,
+  Share2,
+  ClipboardList,
+  Inbox,
+  BadgeCheck,
+  FileCheck,
+  Package,
+  ChevronDown,
 } from "lucide-react";
 import { useAuth, Profile } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -87,10 +103,23 @@ import {
   downloadReceiptDocument,
 } from "@/lib/receiptGenerator";
 import {
+  GeneratedDocData,
+  GeneratedDocType,
+  openGeneratedDocument,
+  getDocTypeLabel,
+} from "@/lib/documentGenerator";
+import {
   sendTransactionalEmail,
   getDispatchedEmailLogs,
   DispatchedEmailLog,
 } from "@/lib/emailService";
+import { ApprovalsModule } from "@/components/admin/ApprovalsModule";
+import { DocumentsModule } from "@/components/admin/DocumentsModule";
+import { SupportModule } from "@/components/admin/SupportModule";
+import { BroadcastModule } from "@/components/admin/BroadcastModule";
+import { ReportsModule } from "@/components/admin/ReportsModule";
+import { ProposalsModule } from "@/components/admin/ProposalsModule";
+import { KanbanModule } from "@/components/admin/KanbanModule";
 
 export type ProjectStatus =
   | "planejamento"
@@ -293,6 +322,12 @@ export const getStatusConfig = (status: string) => {
 
 export type MilestoneStatus = "pendente" | "em_andamento" | "concluido";
 
+export interface MilestoneCheckItem {
+  id: string;
+  text: string;
+  completed: boolean;
+}
+
 export interface Milestone {
   id: string;
   project_id: string;
@@ -304,45 +339,248 @@ export interface Milestone {
   due_date: string | null;
 }
 
+export const parseMilestoneTasks = (m: Milestone | { description: string | null }): MilestoneCheckItem[] => {
+  if (!m.description) return [];
+
+  // 1. Modern [TASKS_JSON]...[/TASKS_JSON] tag
+  const modernMatch = m.description.match(/\[TASKS_JSON\]([\s\S]*?)\[\/TASKS_JSON\]/);
+  if (modernMatch && modernMatch[1]) {
+    try {
+      const parsed = JSON.parse(modernMatch[1].trim());
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((item, idx) => ({
+            id: item.id || `task-${idx}-${Date.now()}`,
+            text: typeof item === "string" ? item : (item.text || ""),
+            completed: Boolean(item.completed),
+          }))
+          .filter((t) => t.text.trim().length > 0);
+      }
+    } catch (e) {
+      console.error("Error parsing [TASKS_JSON]:", e);
+    }
+  }
+
+  // 2. Fallback to legacy [TASKS: [...]] tag
+  const legacyMatch = m.description.match(/\[TASKS:\s*(\[[\s\S]*?\])\s*\]/);
+  if (legacyMatch && legacyMatch[1]) {
+    try {
+      const parsed = JSON.parse(legacyMatch[1].trim());
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((item, idx) => ({
+            id: item.id || `task-${idx}-${Date.now()}`,
+            text: typeof item === "string" ? item : (item.text || ""),
+            completed: Boolean(item.completed),
+          }))
+          .filter((t) => t.text.trim().length > 0);
+      }
+    } catch (e) {
+      console.error("Error parsing legacy [TASKS]:", e);
+    }
+  }
+
+  return [];
+};
+
 export const getMilestoneStatus = (m: Milestone): MilestoneStatus => {
   if (m.completed) return "concluido";
-  // Check if description has status metadata
-  if (m.description && m.description.startsWith("[STATUS:")) {
-    const end = m.description.indexOf("]");
-    if (end !== -1) {
-      const status = m.description.slice(8, end).trim() as MilestoneStatus;
+  if (m.description) {
+    const statusMatch = m.description.match(/\[STATUS:\s*([a-zA-Z_]+)\]/);
+    if (statusMatch && statusMatch[1]) {
+      const status = statusMatch[1].trim() as MilestoneStatus;
       if (["pendente", "em_andamento", "concluido"].includes(status)) return status;
     }
   }
   return "pendente";
 };
 
-export const getMilestoneCleanDescription = (m: Milestone): string => {
+export const getMilestoneCleanDescription = (m: Milestone | { description: string | null }): string => {
   if (!m.description) return "";
-  if (m.description.startsWith("[STATUS:")) {
-    const end = m.description.indexOf("]");
-    if (end !== -1) return m.description.slice(end + 1).trim();
-  }
-  // Also handle legacy [ETAPA: ...] format
-  if (m.description.startsWith("[ETAPA:")) {
-    const end = m.description.indexOf("]\n");
-    if (end !== -1) return m.description.slice(end + 2).trim();
-  }
-  return m.description;
+  let desc = m.description;
+  desc = desc.replace(/\[TASKS_JSON\][\s\S]*?\[\/TASKS_JSON\]/g, "");
+  desc = desc.replace(/\[TASKS:\s*\[[\s\S]*?\]\s*\]/g, "");
+  desc = desc.replace(/\[TASKS:[^\]]*\]/g, "");
+  desc = desc.replace(/\[STATUS:\s*[^\]]+\]/g, "");
+  desc = desc.replace(/\[ETAPA:[^\]]+\]\n?/g, "");
+  desc = desc.replace(/^[\]\s]+/, "");
+  return desc.trim();
 };
 
 export const serializeMilestoneDescription = (
   cleanDesc: string,
-  status: MilestoneStatus
+  status: MilestoneStatus,
+  tasks: MilestoneCheckItem[] = []
 ) => {
-  return `[STATUS: ${status}]${cleanDesc ? "\n" + cleanDesc : ""}`;
+  let clean = cleanDesc || "";
+  clean = clean.replace(/\[TASKS_JSON\][\s\S]*?\[\/TASKS_JSON\]/g, "");
+  clean = clean.replace(/\[TASKS:\s*\[[\s\S]*?\]\s*\]/g, "");
+  clean = clean.replace(/\[TASKS:[^\]]*\]/g, "");
+  clean = clean.replace(/\[STATUS:\s*[^\]]+\]/g, "");
+  clean = clean.replace(/\[ETAPA:[^\]]+\]\n?/g, "");
+  clean = clean.replace(/^[\]\s]+/, "").trim();
+
+  const statusTag = `[STATUS: ${status}]`;
+  const tasksTag = tasks && tasks.length > 0 ? `[TASKS_JSON]${JSON.stringify(tasks)}[/TASKS_JSON]` : "";
+  const header = `${statusTag}${tasksTag}`;
+  return clean ? `${header}\n${clean}` : header;
+};
+
+export interface TimelineProgressInfo {
+  percent: number;
+  label: string;
+  detail: string;
+  totalMonths: number;
+  currentMonth: number;
+}
+
+export const calculateTimelineProgress = (
+  startDate?: string | null,
+  deadline?: string | null
+): TimelineProgressInfo => {
+  if (!startDate || !deadline) {
+    return {
+      percent: 0,
+      label: "0% do Prazo",
+      detail: "Cronograma e previsão em definição",
+      totalMonths: 0,
+      currentMonth: 0,
+    };
+  }
+
+  const start = new Date(startDate);
+  const end = new Date(deadline);
+  const now = new Date();
+
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+    return {
+      percent: 0,
+      label: "0% do Prazo",
+      detail: "Datas do cronograma não preenchidas",
+      totalMonths: 0,
+      currentMonth: 0,
+    };
+  }
+
+  const totalTime = end.getTime() - start.getTime();
+  if (totalTime <= 0) {
+    return {
+      percent: 100,
+      label: "100% do Prazo",
+      detail: "Período estimado concluído",
+      totalMonths: 1,
+      currentMonth: 1,
+    };
+  }
+
+  const totalMonths = Math.max(
+    1,
+    (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1
+  );
+
+  const elapsed = now.getTime() - start.getTime();
+  if (elapsed <= 0) {
+    return {
+      percent: 0,
+      label: "0% Decorrido",
+      detail: `Mês 1 de ${totalMonths} • Início em ${start.toLocaleDateString("pt-BR")}`,
+      totalMonths,
+      currentMonth: 1,
+    };
+  }
+
+  if (now.getTime() >= end.getTime()) {
+    return {
+      percent: 100,
+      label: "100% Decorrido",
+      detail: `Mês ${totalMonths} de ${totalMonths} • Previsão atingida em ${end.toLocaleDateString("pt-BR")}`,
+      totalMonths,
+      currentMonth: totalMonths,
+    };
+  }
+
+  const percent = Math.min(100, Math.max(0, Math.round((elapsed / totalTime) * 100)));
+  const currentMonth = Math.min(
+    totalMonths,
+    Math.max(1, (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth()) + 1)
+  );
+
+  return {
+    percent,
+    label: `${percent}% Decorrido`,
+    detail: `Mês ${currentMonth} de ${totalMonths} (atualizado mensalmente)`,
+    totalMonths,
+    currentMonth,
+  };
+};
+
+export interface SprintProgressInfo {
+  percent: number;
+  completedTasks: number;
+  totalTasks: number;
+  completedMilestones: number;
+  totalMilestones: number;
+  label: string;
+  detail: string;
+}
+
+export const calculateSprintProgress = (milestonesList: Milestone[]): SprintProgressInfo => {
+  if (!milestonesList || milestonesList.length === 0) {
+    return {
+      percent: 0,
+      completedTasks: 0,
+      totalTasks: 0,
+      completedMilestones: 0,
+      totalMilestones: 0,
+      label: "0% Concluído",
+      detail: "Nenhum check cadastrado nesta sprint",
+    };
+  }
+
+  const allTasks = milestonesList.flatMap((m) => parseMilestoneTasks(m));
+  const completedMilestones = milestonesList.filter(
+    (m) => m.completed || getMilestoneStatus(m) === "concluido"
+  ).length;
+
+  if (allTasks.length > 0) {
+    const completedTasks = allTasks.filter((t) => t.completed).length;
+    const percent = Math.round((completedTasks / allTasks.length) * 100);
+    return {
+      percent,
+      completedTasks,
+      totalTasks: allTasks.length,
+      completedMilestones,
+      totalMilestones: milestonesList.length,
+      label: `${percent}% Concluído`,
+      detail: `${completedTasks} de ${allTasks.length} checks finalizados na sprint`,
+    };
+  }
+
+  const percent = Math.round((completedMilestones / milestonesList.length) * 100);
+  return {
+    percent,
+    completedTasks: 0,
+    totalTasks: 0,
+    completedMilestones,
+    totalMilestones: milestonesList.length,
+    label: `${percent}% Concluído`,
+    detail: `${completedMilestones} de ${milestonesList.length} entregas concluídas`,
+  };
+};
+
+export const getMilestoneProgress = (m: Milestone): number => {
+  const tasks = parseMilestoneTasks(m);
+  if (tasks.length > 0) {
+    const completedCount = tasks.filter((t) => t.completed).length;
+    return Math.round((completedCount / tasks.length) * 100);
+  }
+  if (m.completed || getMilestoneStatus(m) === "concluido") return 100;
+  return 0;
 };
 
 export const calculateSimpleProgress = (milestoneList: Milestone[]) => {
   if (!milestoneList || milestoneList.length === 0) return 0;
-  const total = milestoneList.length;
-  const completed = milestoneList.filter((m) => m.completed || getMilestoneStatus(m) === "concluido").length;
-  return Math.round((completed / total) * 100);
+  return calculateSprintProgress(milestoneList).percent;
 };
 
 export const getMilestoneStatusConfig = (status: MilestoneStatus) => {
@@ -355,6 +593,35 @@ export const getMilestoneStatusConfig = (status: MilestoneStatus) => {
     default:
       return { label: "Pendente", color: "amber", icon: "clock" };
   }
+};
+
+export const getMilestoneMonthKey = (dueDate?: string | null): string => {
+  if (!dueDate) return "sem_data";
+  try {
+    const d = new Date(dueDate.includes("T") ? dueDate : `${dueDate}T12:00:00`);
+    if (isNaN(d.getTime())) return "sem_data";
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    return `${year}-${month}`;
+  } catch {
+    return "sem_data";
+  }
+};
+
+export const formatMonthKeyLabel = (monthKey: string): string => {
+  if (monthKey === "sem_data") return "Sem prazo";
+  const parts = monthKey.split("-");
+  if (parts.length !== 2) return monthKey;
+  const [yearStr, monthStr] = parts;
+  const monthNames = [
+    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+  ];
+  const mIndex = parseInt(monthStr, 10) - 1;
+  if (mIndex >= 0 && mIndex < 12) {
+    return `${monthNames[mIndex]} ${yearStr}`;
+  }
+  return monthKey;
 };
 
 // Timeline Updates & Notes Types & Helpers
@@ -625,8 +892,9 @@ export const getInstallmentStatus = (inst: ProjectInstallment) => {
 };
 
 export const calculateFinancialSummary = (financialData?: ProjectFinancialData) => {
-  const contractValue = financialData?.total_contract_value || 0;
   const installments = financialData?.installments || [];
+  const installmentsSum = installments.reduce((acc, i) => acc + (Number(i.amount) || 0), 0);
+  const contractValue = installments.length > 0 ? installmentsSum : (financialData?.total_contract_value || 0);
 
   let totalPaid = 0;
   let totalPending = 0;
@@ -635,15 +903,16 @@ export const calculateFinancialSummary = (financialData?: ProjectFinancialData) 
 
   for (const inst of installments) {
     const st = getInstallmentStatus(inst);
+    const amt = Number(inst.amount) || 0;
     if (st.status === "pago") {
-      totalPaid += inst.amount;
+      totalPaid += amt;
     } else if (st.status === "vencido") {
-      totalOverdue += inst.amount;
+      totalOverdue += amt;
     } else if (st.status === "em_dia") {
-      totalDueSoon += inst.amount;
-      totalPending += inst.amount;
+      totalDueSoon += amt;
+      totalPending += amt;
     } else {
-      totalPending += inst.amount;
+      totalPending += amt;
     }
   }
 
@@ -919,14 +1188,116 @@ export interface DeliveryFeedbackItem {
 
 export const generateDefaultDeliveryFeedbacks = (project: Project): DeliveryFeedbackItem[] => [];
 
-type TabKey = "overview" | "projects" | "clients" | "finance" | "updates" | "proposals" | "settings";
+// Support Ticket / Helpdesk Type
+export interface SupportTicket {
+  id: string;
+  project_id: string;
+  project_title?: string;
+  client_id?: string;
+  client_name: string;
+  client_email: string;
+  subject: string;
+  message: string;
+  priority: "baixa" | "media" | "alta" | "urgente";
+  status: "aberto" | "em_atendimento" | "resolvido";
+  created_at: string;
+  updated_at?: string;
+  response_notes?: string;
+}
+
+type TabKey =
+  | "overview"
+  | "projects"
+  | "kanban"
+  | "clients"
+  | "approvals"
+  | "documents"
+  | "support"
+  | "finance"
+  | "updates"
+  | "broadcast"
+  | "reports"
+  | "proposals"
+  | "products"
+  | "templates"
+  | "settings";
+
+const VALID_ADMIN_TABS: TabKey[] = [
+  "overview",
+  "projects",
+  "kanban",
+  "clients",
+  "approvals",
+  "documents",
+  "support",
+  "finance",
+  "updates",
+  "broadcast",
+  "reports",
+  "proposals",
+  "products",
+  "templates",
+  "settings",
+];
 
 export default function AdminDashboardPage() {
   const router = useRouter();
   const { user, profile, loading: authLoading, signOut } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  const [activeTab, setActiveTabState] = useState<TabKey>("overview");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  const setActiveTab = (tab: TabKey) => {
+    setActiveTabState(tab);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("portfolio_admin_active_tab_v1", tab);
+        const currentUrl = new URL(window.location.href);
+        if (currentUrl.searchParams.get("tab") !== tab) {
+          currentUrl.searchParams.set("tab", tab);
+          window.history.replaceState({}, "", currentUrl.toString());
+        }
+      } catch (e) {}
+    }
+  };
+
+  // Restore and maintain active tab across refreshes and history navigation
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const tabParam = urlParams.get("tab") as TabKey | null;
+      const savedTab = localStorage.getItem("portfolio_admin_active_tab_v1") as TabKey | null;
+
+      const targetTab =
+        tabParam && VALID_ADMIN_TABS.includes(tabParam)
+          ? tabParam
+          : savedTab && VALID_ADMIN_TABS.includes(savedTab)
+          ? savedTab
+          : "overview";
+
+      setActiveTabState(targetTab);
+
+      const currentUrl = new URL(window.location.href);
+      if (currentUrl.searchParams.get("tab") !== targetTab) {
+        currentUrl.searchParams.set("tab", targetTab);
+        window.history.replaceState({}, "", currentUrl.toString());
+      }
+    } catch (e) {}
+
+    const handlePopState = () => {
+      try {
+        const tabParam = new URLSearchParams(window.location.search).get("tab") as TabKey | null;
+        if (tabParam && VALID_ADMIN_TABS.includes(tabParam)) {
+          setActiveTabState(tabParam);
+          localStorage.setItem("portfolio_admin_active_tab_v1", tabParam);
+        }
+      } catch (e) {}
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [clients, setClients] = useState<Profile[]>([]);
@@ -934,6 +1305,8 @@ export default function AdminDashboardPage() {
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [updates, setUpdates] = useState<UpdateItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const hasInitialFetched = useRef(false);
 
   // Financial State Management
   const [projectFinances, setProjectFinances] = useState<Record<string, ProjectFinancialData>>({});
@@ -942,6 +1315,7 @@ export default function AdminDashboardPage() {
     "all" | "pago" | "pendente" | "vencido" | "em_dia"
   >("all");
   const [financeProjectFilter, setFinanceProjectFilter] = useState<string>("all");
+  const [financeMonthFilter, setFinanceMonthFilter] = useState<string>("current_and_overdue");
 
   // Modals for Finances
   const [installmentModalOpen, setInstallmentModalOpen] = useState(false);
@@ -1000,6 +1374,18 @@ export default function AdminDashboardPage() {
   const [docFileError, setDocFileError] = useState<string | null>(null);
   const [docCategoryFilter, setDocCategoryFilter] = useState<string>("all");
   const [docVisibilityFilter, setDocVisibilityFilter] = useState<string>("all");
+  const [docProjectFilter, setDocProjectFilter] = useState<string>("all");
+  const [docSearchQuery, setDocSearchQuery] = useState<string>("");
+
+  // Document Generator Modal State
+  const [docGeneratorModalOpen, setDocGeneratorModalOpen] = useState(false);
+  const [genProjectId, setGenProjectId] = useState<string>("");
+  const [genDocType, setGenDocType] = useState<GeneratedDocType>("termo_aceite");
+  const [genTitle, setGenTitle] = useState<string>("");
+  const [genScope, setGenScope] = useState<string>("");
+  const [genValue, setGenValue] = useState<string | number>("");
+  const [genDueDate, setGenDueDate] = useState<string>("");
+  const [genNotes, setGenNotes] = useState<string>("");
 
   // PDF Viewer Modal
   const [viewingDocument, setViewingDocument] = useState<ProjectDocument | null>(null);
@@ -1018,6 +1404,33 @@ export default function AdminDashboardPage() {
 
   // Delivery Feedbacks & Approvals State
   const [deliveryFeedbacks, setDeliveryFeedbacks] = useState<Record<string, DeliveryFeedbackItem[]>>({});
+  const [feedbackStatusFilter, setFeedbackStatusFilter] = useState<string>("all");
+  const [feedbackProjectFilter, setFeedbackProjectFilter] = useState<string>("all");
+  const [feedbackSearchQuery, setFeedbackSearchQuery] = useState<string>("");
+
+  // Support & Helpdesk Tickets State
+  const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
+  const [ticketSearchQuery, setTicketSearchQuery] = useState("");
+  const [ticketStatusFilter, setTicketStatusFilter] = useState<string>("all");
+  const [ticketPriorityFilter, setTicketPriorityFilter] = useState<string>("all");
+  const [ticketModalOpen, setTicketModalOpen] = useState(false);
+  const [editingTicket, setEditingTicket] = useState<SupportTicket | null>(null);
+  const [tClientName, setTClientName] = useState("");
+  const [tClientEmail, setTClientEmail] = useState("");
+  const [tProjectId, setTProjectId] = useState("");
+  const [tSubject, setTSubject] = useState("");
+  const [tMessage, setTMessage] = useState("");
+  const [tPriority, setTPriority] = useState<"baixa" | "media" | "alta" | "urgente">("media");
+  const [tStatus, setTStatus] = useState<"aberto" | "em_atendimento" | "resolvido">("aberto");
+  const [tResponseNotes, setTResponseNotes] = useState("");
+
+  // Broadcast & Ready Templates State
+  const [broadcastTemplateId, setBroadcastTemplateId] = useState<string>("staging");
+  const [broadcastProjectId, setBroadcastProjectId] = useState<string>("");
+  const [broadcastClientId, setBroadcastClientId] = useState<string>("");
+  const [customBroadcastText, setCustomBroadcastText] = useState<string>("");
+  const [copiedBroadcast, setCopiedBroadcast] = useState(false);
+  const [broadcastToast, setBroadcastToast] = useState<string | null>(null);
 
   // Search and Filter for Overview
   const [searchQuery, setSearchQuery] = useState("");
@@ -1038,11 +1451,16 @@ export default function AdminDashboardPage() {
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [milestoneModalOpen, setMilestoneModalOpen] = useState(false);
   const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(null);
+  const [milestoneMonthFilter, setMilestoneMonthFilter] = useState<string>("all");
+  const [previewMilestoneMonthFilter, setPreviewMilestoneMonthFilter] = useState<string>("all");
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [clientModalOpen, setClientModalOpen] = useState(false);
+  const [allProjectMilestones, setAllProjectMilestones] = useState<Record<string, Milestone[]>>({});
 
   const handleOpenProjectDetails = (proj: Project) => {
     setSelectedProject(proj);
+    setMilestones([]);
+    setUpdates([]);
     fetchProjectDetails(proj.id);
     setProjectDetailsModalOpen(true);
   };
@@ -1060,11 +1478,13 @@ export default function AdminDashboardPage() {
   const [pRepoUrl, setPRepoUrl] = useState("");
   const [pCategory, setPCategory] = useState("Mobile App (React Native)");
 
-  // Form states for milestone / etapa (simplified checklist)
+  // Form states for milestone / etapa (with checklist & progress percentage)
   const [mTitle, setMTitle] = useState("");
   const [mDescription, setMDescription] = useState("");
   const [mStatus, setMStatus] = useState<MilestoneStatus>("pendente");
   const [mDueDate, setMDueDate] = useState("");
+  const [mTasks, setMTasks] = useState<MilestoneCheckItem[]>([]);
+  const [mNewTaskText, setMNewTaskText] = useState("");
 
   // Timeline & Updates Management State
   const [projectUpdates, setProjectUpdates] = useState<Record<string, ProjectUpdate[]>>({});
@@ -1116,49 +1536,356 @@ export default function AdminDashboardPage() {
     setClientPreviewModalOpen(true);
   };
 
+  const allFeedbacksFlat = useMemo(() => Object.values(deliveryFeedbacks).flat(), [deliveryFeedbacks]);
+  const pendingApprovalsCount = useMemo(
+    () => allFeedbacksFlat.filter((f) => f.status === "pending_review").length,
+    [allFeedbacksFlat]
+  );
+  const allDocsCount = useMemo(
+    () => Object.values(projectDocuments).flat().length,
+    [projectDocuments]
+  );
+  const openTicketsCount = useMemo(
+    () => supportTickets.filter((t) => t.status === "aberto" || t.status === "em_atendimento").length,
+    [supportTickets]
+  );
+
+  // Global Search Omnibar State
+  const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
+  const [searchFilterCategory, setSearchFilterCategory] = useState<string>("all");
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        setSearchDropdownOpen(true);
+      }
+      if (e.key === "Escape") {
+        setSearchDropdownOpen(false);
+      }
+    };
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setSearchDropdownOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  // Global Search Across Everything Registered in the Platform
+  const allPlatformSearchResults = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
+    if (!query) return [];
+
+    interface SearchResultItem {
+      id: string;
+      category: "project" | "client" | "milestone" | "finance" | "document" | "support" | "update";
+      categoryLabel: string;
+      title: string;
+      subtitle: string;
+      badge?: string;
+      badgeColor?: string;
+      onSelect: () => void;
+    }
+
+    const list: SearchResultItem[] = [];
+
+    // 1. PROJETOS
+    for (const p of projects) {
+      const client = clients.find((c) => c.id === p.client_id);
+      const titleMatch = p.title.toLowerCase().includes(query);
+      const descMatch = (p.description || "").toLowerCase().includes(query);
+      const catMatch = (p.category || "").toLowerCase().includes(query);
+      const clientMatch = (client?.full_name || client?.company || "").toLowerCase().includes(query);
+
+      if (titleMatch || descMatch || catMatch || clientMatch) {
+        list.push({
+          id: `proj-${p.id}`,
+          category: "project",
+          categoryLabel: "Projeto",
+          title: p.title,
+          subtitle: `${p.category || "Software"} • Cliente: ${client?.full_name || client?.company || "Não vinculado"}`,
+          badge: p.status === "concluido" ? "Concluído" : p.status === "em_andamento" ? "Em Andamento" : "Planejamento",
+          badgeColor: p.status === "concluido" ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" : "bg-indigo-500/20 text-indigo-300 border-indigo-500/30",
+          onSelect: () => {
+            setSelectedProject(p);
+            handleOpenProjectDetails(p);
+            setSearchDropdownOpen(false);
+          },
+        });
+      }
+    }
+
+    // 2. CLIENTES
+    for (const c of clients) {
+      const nameMatch = (c.full_name || "").toLowerCase().includes(query);
+      const emailMatch = (c.email || "").toLowerCase().includes(query);
+      const compMatch = (c.company || "").toLowerCase().includes(query);
+      const phoneMatch = (c.phone || "").toLowerCase().includes(query);
+
+      if (nameMatch || emailMatch || compMatch || phoneMatch) {
+        const clientProjectsCount = projects.filter((p) => p.client_id === c.id).length;
+        list.push({
+          id: `client-${c.id}`,
+          category: "client",
+          categoryLabel: "Cliente",
+          title: c.full_name || c.email || "Cliente",
+          subtitle: `${c.email || ""} ${c.company ? `• ${c.company}` : ""} (${clientProjectsCount} projetos)`,
+          badge: c.status === "blocked" ? "Bloqueado" : "Ativo",
+          badgeColor: c.status === "blocked" ? "bg-rose-500/20 text-rose-300 border-rose-500/30" : "bg-purple-500/20 text-purple-300 border-purple-500/30",
+          onSelect: () => {
+            setSelectedClientDetails(c);
+            setClientDetailsModalOpen(true);
+            setActiveTab("clients");
+            setSearchDropdownOpen(false);
+          },
+        });
+      }
+    }
+
+    // 3. TAREFAS & ETAPAS
+    for (const [projId, mList] of Object.entries(allProjectMilestones)) {
+      const proj = projects.find((p) => p.id === projId);
+      if (!Array.isArray(mList)) continue;
+      for (const m of mList) {
+        const mTitleMatch = m.title.toLowerCase().includes(query);
+        const tasks = parseMilestoneTasks(m);
+        const taskMatch = tasks.some((t) => t.text.toLowerCase().includes(query));
+        const matchedTask = tasks.find((t) => t.text.toLowerCase().includes(query));
+
+        if (mTitleMatch || taskMatch) {
+          list.push({
+            id: `milestone-${m.id}`,
+            category: "milestone",
+            categoryLabel: "Tarefa / Etapa",
+            title: matchedTask ? matchedTask.text : m.title,
+            subtitle: `Projeto: ${proj?.title || "Projeto"} ${matchedTask ? `(Etapa: ${m.title})` : ""}`,
+            badge: m.completed ? "Concluída" : "Pendente",
+            badgeColor: m.completed ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" : "bg-amber-500/20 text-amber-300 border-amber-500/30",
+            onSelect: () => {
+              if (proj) {
+                setSelectedProject(proj);
+                handleOpenProjectDetails(proj);
+              }
+              setSearchDropdownOpen(false);
+            },
+          });
+        }
+      }
+    }
+
+    // 4. FINANÇAS & PARCELAS
+    for (const [projId, finData] of Object.entries(projectFinances)) {
+      const proj = projects.find((p) => p.id === projId);
+      const client = clients.find((c) => c.id === proj?.client_id);
+      if (finData?.installments && Array.isArray(finData.installments)) {
+        for (const inst of finData.installments) {
+          const numMatch = `parcela ${inst.installment_number}`.includes(query);
+          const valMatch = `${inst.amount}`.includes(query) || formatBRL(inst.amount).toLowerCase().includes(query);
+          const projMatch = (proj?.title || "").toLowerCase().includes(query);
+
+          if (numMatch || valMatch || (projMatch && query.length > 2)) {
+            list.push({
+              id: `fin-inst-${inst.id}`,
+              category: "finance",
+              categoryLabel: "Financeiro",
+              title: `Parcela ${inst.installment_number} — ${formatBRL(inst.amount)}`,
+              subtitle: `Projeto: ${proj?.title || "Projeto"} • Cliente: ${client?.full_name || "Não vinculado"}`,
+              badge: inst.paid_at ? "Pago" : "A Receber",
+              badgeColor: inst.paid_at ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" : "bg-indigo-500/20 text-indigo-300 border-indigo-500/30",
+              onSelect: () => {
+                if (proj) setSelectedProject(proj);
+                setActiveTab("finance");
+                setSearchDropdownOpen(false);
+              },
+            });
+          }
+        }
+      }
+    }
+
+    // 5. DOCUMENTOS & CONTRATOS
+    for (const [projId, docsList] of Object.entries(projectDocuments)) {
+      const proj = projects.find((p) => p.id === projId);
+      if (!Array.isArray(docsList)) continue;
+      for (const doc of docsList) {
+        const titleMatch = (doc.title || "").toLowerCase().includes(query);
+        const catMatch = (doc.category || "").toLowerCase().includes(query);
+        const fileMatch = (doc.filename || "").toLowerCase().includes(query);
+
+        if (titleMatch || catMatch || fileMatch) {
+          list.push({
+            id: `doc-${doc.id}`,
+            category: "document",
+            categoryLabel: "Documento",
+            title: doc.title,
+            subtitle: `Arquivo: ${doc.filename || "Documento"} • Projeto: ${proj?.title || "Projeto"}`,
+            badge: doc.category || "PDF",
+            badgeColor: "bg-blue-500/20 text-blue-300 border-blue-500/30",
+            onSelect: () => {
+              if (proj) setSelectedProject(proj);
+              setActiveTab("documents");
+              setSearchDropdownOpen(false);
+            },
+          });
+        }
+      }
+    }
+
+    // 6. CHAMADOS & SUPORTE
+    for (const t of supportTickets) {
+      const subMatch = (t.subject || "").toLowerCase().includes(query);
+      const msgMatch = (t.message || "").toLowerCase().includes(query);
+      const idMatch = (t.id || "").toLowerCase().includes(query);
+      const clientMatch = (t.client_name || "").toLowerCase().includes(query);
+
+      if (subMatch || msgMatch || idMatch || clientMatch) {
+        list.push({
+          id: `sup-${t.id}`,
+          category: "support",
+          categoryLabel: "Suporte",
+          title: `Chamado: ${t.subject}`,
+          subtitle: `Cliente: ${t.client_name || "Cliente"} • Status: ${t.status}`,
+          badge: t.priority,
+          badgeColor: t.priority === "urgente" || t.priority === "alta" ? "bg-rose-500/20 text-rose-300 border-rose-500/30" : "bg-amber-500/20 text-amber-300 border-amber-500/30",
+          onSelect: () => {
+            setActiveTab("support");
+            setSearchDropdownOpen(false);
+          },
+        });
+      }
+    }
+
+    // 7. TIMELINE & UPDATES
+    for (const [projId, updList] of Object.entries(projectUpdates)) {
+      const proj = projects.find((p) => p.id === projId);
+      if (!Array.isArray(updList)) continue;
+      for (const u of updList) {
+        const titleMatch = (u.title || "").toLowerCase().includes(query);
+        const contMatch = (u.content || "").toLowerCase().includes(query);
+        const tagMatch = (u.version_tag || "").toLowerCase().includes(query);
+
+        if (titleMatch || contMatch || tagMatch) {
+          list.push({
+            id: `upd-${u.id}`,
+            category: "update",
+            categoryLabel: "Update / Nota",
+            title: u.title,
+            subtitle: `Projeto: ${proj?.title || "Projeto"} ${u.version_tag ? `• ${u.version_tag}` : ""}`,
+            badge: u.category,
+            badgeColor: "bg-indigo-500/20 text-indigo-300 border-indigo-500/30",
+            onSelect: () => {
+              if (proj) setSelectedProject(proj);
+              setActiveTab("updates");
+              setSearchDropdownOpen(false);
+            },
+          });
+        }
+      }
+    }
+
+    return list;
+  }, [searchQuery, projects, clients, allProjectMilestones, projectFinances, projectDocuments, supportTickets, projectUpdates]);
+
+  const filteredSearchResults = useMemo(() => {
+    if (searchFilterCategory === "all") return allPlatformSearchResults;
+    return allPlatformSearchResults.filter((item) => item.category === searchFilterCategory);
+  }, [allPlatformSearchResults, searchFilterCategory]);
+
   // Navigation Items on Left Sidebar
   const navItems = [
     {
       id: "overview",
-      label: "Visão Geral",
+      label: "Geral",
       icon: <LayoutDashboard size={18} />,
       badge: null,
+      badgeColor: undefined,
     },
     {
       id: "projects",
-      label: "Projetos & Entregas",
+      label: "Projetos",
       icon: <FolderKanban size={18} />,
-      badge: projects.length.toString(),
+      badge: null,
+      badgeColor: undefined,
+    },
+    {
+      id: "kanban",
+      label: "Kanban",
+      icon: <Layers size={18} />,
+      badge: null,
+      badgeColor: undefined,
     },
     {
       id: "clients",
-      label: "Gestão de Clientes",
+      label: "Cliente",
       icon: <Users size={18} />,
-      badge: clients.length.toString(),
+      badge: null,
+      badgeColor: undefined,
+    },
+    {
+      id: "support",
+      label: "Suporte",
+      icon: <MessageSquare size={18} />,
+      badge: null,
+      badgeColor: undefined,
     },
     {
       id: "finance",
-      label: "Faturamento & Finanças",
+      label: "Faturamento",
       icon: <DollarSign size={18} />,
-      badge: "",
+      badge: null,
+      badgeColor: undefined,
     },
     {
-      id: "updates",
-      label: "Timeline de Updates",
-      icon: <Send size={18} />,
+      id: "broadcast",
+      label: "Disparos",
+      icon: <Megaphone size={18} />,
       badge: null,
+      badgeColor: undefined,
+    },
+    {
+      id: "reports",
+      label: "Relatórios",
+      icon: <BarChart3 size={18} />,
+      badge: null,
+      badgeColor: undefined,
+    },
+    {
+      id: "proposals",
+      label: "Propostas",
+      icon: <Receipt size={18} />,
+      badge: null,
+      badgeColor: undefined,
+      subItems: [
+        { id: "templates", label: "Modelos", icon: <Sliders size={14} /> },
+        { id: "products", label: "Produtos", icon: <Package size={14} /> },
+        { id: "proposals", label: "Propostas", icon: <FileText size={14} /> },
+      ],
     },
     {
       id: "settings",
       label: "Configurações",
       icon: <Settings size={18} />,
       badge: null,
+      badgeColor: undefined,
     },
   ];
 
   // Load Data
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (isSilent = false) => {
+    if (!isSilent && projects.length === 0) {
+      setLoading(true);
+    } else {
+      setIsRefreshing(true);
+    }
     try {
       // 1. Fetch all projects
       let pData: any[] = [];
@@ -1311,6 +2038,18 @@ export default function AdminDashboardPage() {
           if (rawFb && rawFb.includes("Briefing Técnico & Arquitetura de Requisitos")) {
             localStorage.removeItem("portfolio_delivery_feedbacks_v1");
           }
+
+          // Clean legacy gearhead installments if present in localStorage
+          const localFinRaw = localStorage.getItem("portfolio_admin_finances_v1");
+          if (localFinRaw && (localFinRaw.includes("inst-gen-1790546177000") || localFinRaw.includes("proj-prontuario-gearhead"))) {
+            try {
+              const parsedFin = JSON.parse(localFinRaw);
+              if (parsedFin["proj-prontuario-gearhead"]) {
+                delete parsedFin["proj-prontuario-gearhead"];
+                localStorage.setItem("portfolio_admin_finances_v1", JSON.stringify(parsedFin));
+              }
+            } catch (e) {}
+          }
         } catch (e) {}
       }
 
@@ -1332,11 +2071,13 @@ export default function AdminDashboardPage() {
         const local = localStorage.getItem("portfolio_admin_finances_v1");
         if (local) {
           const parsed = JSON.parse(local);
+          delete parsed["proj-prontuario-gearhead"];
           storedFinances = { ...storedFinances, ...parsed };
         }
       } catch (e) {
         console.error("Error reading finances from storage:", e);
       }
+      delete storedFinances["proj-prontuario-gearhead"];
       setProjectFinances(storedFinances);
 
       // 4. Load project documents
@@ -1419,6 +2160,53 @@ export default function AdminDashboardPage() {
       }
       setDeliveryFeedbacks(storedFeedbacks);
 
+      // 8. Load support & helpdesk tickets
+      let storedTickets: SupportTicket[] = [];
+      try {
+        const localTickets = localStorage.getItem("portfolio_support_tickets_v1");
+        if (localTickets) {
+          const parsed = JSON.parse(localTickets);
+          if (Array.isArray(parsed)) {
+            storedTickets = parsed;
+          }
+        }
+      } catch (e) {}
+      setSupportTickets(storedTickets);
+
+      // 9. Load all project milestones for all projects
+      let allMilestonesMap: Record<string, Milestone[]> = {};
+      try {
+        const { data: mData } = await supabase
+          .from("project_milestones")
+          .select("*")
+          .order("order_index", { ascending: true });
+        if (mData && Array.isArray(mData)) {
+          for (const m of mData as Milestone[]) {
+            if (!allMilestonesMap[m.project_id]) allMilestonesMap[m.project_id] = [];
+            allMilestonesMap[m.project_id].push(m);
+          }
+        }
+      } catch (e) {
+        console.warn("Could not fetch milestones from supabase:", e);
+      }
+
+      try {
+        const rawM = typeof window !== "undefined" ? localStorage.getItem("portfolio_admin_milestones_v1") : null;
+        if (rawM) {
+          const parsed = JSON.parse(rawM);
+          if (parsed && typeof parsed === "object") {
+            for (const [pId, mList] of Object.entries(parsed)) {
+              if (Array.isArray(mList)) {
+                if (!allMilestonesMap[pId] || allMilestonesMap[pId].length === 0) {
+                  allMilestonesMap[pId] = mList as Milestone[];
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {}
+      setAllProjectMilestones(allMilestonesMap);
+
       if (selectedProject) {
         const current = finalProjectsList.find((p) => p.id === selectedProject.id) || selectedProject;
         setSelectedProject(current);
@@ -1428,11 +2216,13 @@ export default function AdminDashboardPage() {
       console.error("Error fetching admin data:", err);
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
   };
 
   const fetchProjectDetails = async (projectId: string) => {
     try {
+      let mList: Milestone[] = [];
       if (isDbUuid(projectId)) {
         try {
           const { data: mData } = await supabase
@@ -1441,10 +2231,27 @@ export default function AdminDashboardPage() {
             .eq("project_id", projectId)
             .order("order_index", { ascending: true });
           if (mData && mData.length > 0) {
-            setMilestones((mData as Milestone[]) || []);
+            mList = (mData as Milestone[]) || [];
           }
         } catch (e) {}
+      }
 
+      if (mList.length === 0) {
+        try {
+          const rawM = typeof window !== "undefined" ? localStorage.getItem("portfolio_admin_milestones_v1") : null;
+          if (rawM) {
+            const parsed = JSON.parse(rawM);
+            if (parsed && typeof parsed === "object" && Array.isArray(parsed[projectId])) {
+              mList = parsed[projectId];
+            }
+          }
+        } catch (e) {}
+      }
+      setMilestones(mList);
+      setAllProjectMilestones((prev) => ({ ...prev, [projectId]: mList }));
+
+      let uList: ProjectUpdate[] = [];
+      if (isDbUuid(projectId)) {
         try {
           const { data: uData } = await supabase
             .from("project_updates")
@@ -1453,20 +2260,25 @@ export default function AdminDashboardPage() {
             .order("created_at", { ascending: false });
 
           if (uData && uData.length > 0) {
-            setUpdates(uData as ProjectUpdate[]);
+            uList = uData as ProjectUpdate[];
           }
         } catch (e) {}
       }
 
-      const localUpdates = typeof window !== "undefined" ? localStorage.getItem("portfolio_admin_updates_v1") : null;
-      if (localUpdates) {
-        try {
-          const parsed = JSON.parse(localUpdates);
-          if (parsed[projectId]) {
-            setUpdates(parsed[projectId]);
-          }
-        } catch (e) {}
+      if (uList.length === 0) {
+        const localUpdates = typeof window !== "undefined" ? localStorage.getItem("portfolio_admin_updates_v1") : null;
+        if (localUpdates) {
+          try {
+            const parsed = JSON.parse(localUpdates);
+            if (parsed && typeof parsed === "object" && Array.isArray(parsed[projectId])) {
+              uList = parsed[projectId];
+            } else if (Array.isArray(parsed)) {
+              uList = parsed.filter((u: ProjectUpdate) => u.project_id === projectId);
+            }
+          } catch (e) {}
+        }
       }
+      setUpdates(uList);
     } catch (err) {
       console.error("Error fetching project details:", err);
     }
@@ -1478,11 +2290,12 @@ export default function AdminDashboardPage() {
     } else if (user && profile) {
       if (profile.role !== "admin") {
         router.push("/portal");
-      } else {
+      } else if (!hasInitialFetched.current) {
+        hasInitialFetched.current = true;
         fetchData();
       }
     }
-  }, [user, profile, authLoading, router]);
+  }, [user?.id, profile?.role, authLoading, router]);
 
   // Handle Project Create / Update
   const handleOpenProjectModal = (proj?: Project) => {
@@ -1697,6 +2510,56 @@ export default function AdminDashboardPage() {
         localStorage.setItem("portfolio_local_projects_v1", JSON.stringify(updatedLocal));
       } catch (e) {}
 
+      // Clean all cascading related data for this project:
+      // 1. Finances
+      const updatedFinances = { ...projectFinances };
+      delete updatedFinances[id];
+      saveFinancesToStorage(updatedFinances);
+
+      // 2. Documents
+      const updatedDocs = { ...projectDocuments };
+      delete updatedDocs[id];
+      saveDocumentsToStorage(updatedDocs);
+
+      // 3. Milestones
+      const updatedMilestones = { ...allProjectMilestones };
+      delete updatedMilestones[id];
+      setAllProjectMilestones(updatedMilestones);
+      try {
+        localStorage.setItem("portfolio_admin_milestones_v1", JSON.stringify(updatedMilestones));
+      } catch (e) {}
+
+      // 4. Updates
+      const updatedUpdates = { ...projectUpdates };
+      delete updatedUpdates[id];
+      setProjectUpdates(updatedUpdates);
+      try {
+        localStorage.setItem("portfolio_admin_updates_v1", JSON.stringify(updatedUpdates));
+      } catch (e) {}
+
+      // 5. Feedbacks
+      const updatedFeedbacks = { ...deliveryFeedbacks };
+      delete updatedFeedbacks[id];
+      setDeliveryFeedbacks(updatedFeedbacks);
+      try {
+        localStorage.setItem("portfolio_delivery_feedbacks_v1", JSON.stringify(updatedFeedbacks));
+      } catch (e) {}
+
+      // 6. Quick links
+      const updatedLinks = { ...projectQuickLinks };
+      delete updatedLinks[id];
+      setProjectQuickLinks(updatedLinks);
+      try {
+        localStorage.setItem("portfolio_admin_quick_links_v1", JSON.stringify(updatedLinks));
+      } catch (e) {}
+
+      // 7. Support tickets
+      const updatedTickets = supportTickets.filter((t) => t.project_id !== id);
+      setSupportTickets(updatedTickets);
+      try {
+        localStorage.setItem("portfolio_support_tickets_v1", JSON.stringify(updatedTickets));
+      } catch (e) {}
+
       if (selectedProject?.id === id) {
         setSelectedProject(null);
         setProjectDetailsModalOpen(false);
@@ -1715,13 +2578,16 @@ export default function AdminDashboardPage() {
       setMDescription(getMilestoneCleanDescription(milestone));
       setMStatus(getMilestoneStatus(milestone));
       setMDueDate(milestone.due_date || "");
+      setMTasks(parseMilestoneTasks(milestone));
     } else {
       setEditingMilestone(null);
       setMTitle("");
       setMDescription("");
       setMStatus("pendente");
       setMDueDate("");
+      setMTasks([]);
     }
+    setMNewTaskText("");
     setMilestoneModalOpen(true);
   };
 
@@ -1749,8 +2615,16 @@ export default function AdminDashboardPage() {
     e.preventDefault();
     if (!selectedProject) return;
     try {
-      const isCompleted = mStatus === "concluido";
-      const serializedDesc = serializeMilestoneDescription(mDescription, mStatus);
+      let finalStatus = mStatus;
+      const allTasksDone = mTasks.length > 0 && mTasks.every((t) => t.completed);
+      const anyTasksDone = mTasks.some((t) => t.completed);
+      if (allTasksDone) {
+        finalStatus = "concluido";
+      } else if (anyTasksDone && finalStatus === "pendente") {
+        finalStatus = "em_andamento";
+      }
+      const isCompleted = finalStatus === "concluido";
+      const serializedDesc = serializeMilestoneDescription(mDescription, finalStatus, mTasks);
 
       if (isDbUuid(selectedProject.id)) {
         if (editingMilestone && isDbUuid(editingMilestone.id)) {
@@ -1782,6 +2656,48 @@ export default function AdminDashboardPage() {
           } catch (e) {}
         }
       }
+
+      let updatedMilestonesList: Milestone[] = [];
+      setMilestones((prev) => {
+        if (editingMilestone) {
+          updatedMilestonesList = prev.map((m) =>
+            m.id === editingMilestone.id
+              ? {
+                  ...m,
+                  title: mTitle,
+                  description: serializedDesc,
+                  due_date: mDueDate || null,
+                  completed: isCompleted,
+                  completed_at: isCompleted ? (editingMilestone.completed_at || new Date().toISOString()) : null,
+                }
+              : m
+          );
+        } else {
+          const newId = `milestone-${Date.now()}`;
+          updatedMilestonesList = [
+            ...prev,
+            {
+              id: newId,
+              project_id: selectedProject.id,
+              title: mTitle,
+              description: serializedDesc,
+              due_date: mDueDate || null,
+              order_index: prev.length + 1,
+              completed: isCompleted,
+              completed_at: isCompleted ? new Date().toISOString() : null,
+            },
+          ];
+        }
+        if (typeof window !== "undefined") {
+          try {
+            const raw = localStorage.getItem("portfolio_admin_milestones_v1") || "{}";
+            const parsed = JSON.parse(raw);
+            parsed[selectedProject.id] = updatedMilestonesList;
+            localStorage.setItem("portfolio_admin_milestones_v1", JSON.stringify(parsed));
+          } catch (e) {}
+        }
+        return updatedMilestonesList;
+      });
 
       if (isCompleted && selectedProject) {
         const matchedClient = clients.find((c) => matchProjectToClient(selectedProject, c));
@@ -1824,7 +2740,13 @@ export default function AdminDashboardPage() {
     try {
       const isCompleted = newStatus === "concluido";
       const cleanDesc = getMilestoneCleanDescription(milestone);
-      const serializedDesc = serializeMilestoneDescription(cleanDesc, newStatus);
+      let tasks = parseMilestoneTasks(milestone);
+      if (newStatus === "concluido" && tasks.length > 0) {
+        tasks = tasks.map((t) => ({ ...t, completed: true }));
+      } else if (newStatus === "pendente" && tasks.length > 0) {
+        tasks = tasks.map((t) => ({ ...t, completed: false }));
+      }
+      const serializedDesc = serializeMilestoneDescription(cleanDesc, newStatus, tasks);
 
       if (isDbUuid(milestone.id)) {
         try {
@@ -1838,6 +2760,28 @@ export default function AdminDashboardPage() {
             .eq("id", milestone.id);
         } catch (e) {}
       }
+
+      setMilestones((prev) => {
+        const updated = prev.map((m) =>
+          m.id === milestone.id
+            ? {
+                ...m,
+                description: serializedDesc,
+                completed: isCompleted,
+                completed_at: isCompleted ? (m.completed_at || new Date().toISOString()) : null,
+              }
+            : m
+        );
+        if (typeof window !== "undefined") {
+          try {
+            const raw = localStorage.getItem("portfolio_admin_milestones_v1") || "{}";
+            const parsed = JSON.parse(raw);
+            parsed[selectedProject.id] = updated;
+            localStorage.setItem("portfolio_admin_milestones_v1", JSON.stringify(parsed));
+          } catch (e) {}
+        }
+        return updated;
+      });
 
       if (isCompleted && selectedProject) {
         const matchedClient = clients.find((c) => matchProjectToClient(selectedProject, c));
@@ -1871,22 +2815,215 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const handleUpdateProjectStatus = async (projectId: string, newStatus: ProjectStatus) => {
+    try {
+      if (isDbUuid(projectId)) {
+        await supabase
+          .from("projects")
+          .update({ status: newStatus })
+          .eq("id", projectId);
+      }
+    } catch (e) {
+      console.warn("Could not update project status in supabase:", e);
+    }
+
+    setProjects((prev) => {
+      const updated = prev.map((p) => (p.id === projectId ? { ...p, status: newStatus } : p));
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("portfolio_local_projects_v1", JSON.stringify(updated));
+        } catch (err) {}
+      }
+      return updated;
+    });
+  };
+
+  const handleToggleMilestoneTask = async (
+    milestone: Milestone,
+    taskId: string
+  ) => {
+    if (!selectedProject) return;
+    try {
+      const tasks = parseMilestoneTasks(milestone);
+      const updatedTasks = tasks.map((t) =>
+        t.id === taskId ? { ...t, completed: !t.completed } : t
+      );
+      const allCompleted =
+        updatedTasks.length > 0 && updatedTasks.every((t) => t.completed);
+      const anyCompleted = updatedTasks.some((t) => t.completed);
+      let newStatus = getMilestoneStatus(milestone);
+      if (allCompleted) {
+        newStatus = "concluido";
+      } else if (anyCompleted && newStatus === "pendente") {
+        newStatus = "em_andamento";
+      } else if (!anyCompleted && newStatus === "concluido") {
+        newStatus = "em_andamento";
+      }
+      const isCompleted = newStatus === "concluido";
+      const cleanDesc = getMilestoneCleanDescription(milestone);
+      const serializedDesc = serializeMilestoneDescription(
+        cleanDesc,
+        newStatus,
+        updatedTasks
+      );
+
+      if (isDbUuid(milestone.id)) {
+        try {
+          await supabase
+            .from("project_milestones")
+            .update({
+              description: serializedDesc,
+              completed: isCompleted,
+              completed_at: isCompleted ? (milestone.completed_at || new Date().toISOString()) : null,
+            })
+            .eq("id", milestone.id);
+        } catch (e) {}
+      }
+
+      setMilestones((prev) => {
+        const updated = prev.map((m) =>
+          m.id === milestone.id
+            ? {
+                ...m,
+                description: serializedDesc,
+                completed: isCompleted,
+                completed_at: isCompleted ? (m.completed_at || new Date().toISOString()) : null,
+              }
+            : m
+        );
+        if (typeof window !== "undefined") {
+          try {
+            const raw = localStorage.getItem("portfolio_admin_milestones_v1") || "{}";
+            const parsed = JSON.parse(raw);
+            parsed[selectedProject.id] = updated;
+            localStorage.setItem("portfolio_admin_milestones_v1", JSON.stringify(parsed));
+          } catch (e) {}
+        }
+        return updated;
+      });
+
+      await fetchProjectDetails(selectedProject.id);
+      await syncProjectProgress(selectedProject.id);
+    } catch (err: any) {
+      console.error("Erro ao alternar item da etapa:", err);
+    }
+  };
+
   const handleDeleteMilestone = async (id: string) => {
     if (!selectedProject) return;
-    if (!confirm("Deseja remover esta etapa?")) return;
+    if (!confirm("Tem certeza que deseja excluir esta etapa de entrega?")) return;
     try {
       if (isDbUuid(id)) {
         try {
           await supabase.from("project_milestones").delete().eq("id", id);
         } catch (e) {}
       }
+      setMilestones((prev) => {
+        const updated = prev.filter((m) => m.id !== id);
+        if (typeof window !== "undefined") {
+          try {
+            const raw = localStorage.getItem("portfolio_admin_milestones_v1") || "{}";
+            const parsed = JSON.parse(raw);
+            parsed[selectedProject.id] = updated;
+            localStorage.setItem("portfolio_admin_milestones_v1", JSON.stringify(parsed));
+          } catch (e) {}
+        }
+        return updated;
+      });
       await fetchProjectDetails(selectedProject.id);
       await syncProjectProgress(selectedProject.id);
     } catch (err: any) {
-      console.error(err);
+      alert("Erro ao excluir etapa: " + err.message);
     }
   };
 
+  const handleToggleWeeklyTask = async (
+    project: Project,
+    milestoneId: string,
+    taskId?: string
+  ) => {
+    try {
+      const currentMilestones = allProjectMilestones[project.id] || [];
+      const targetMilestone = currentMilestones.find((m) => m.id === milestoneId);
+      if (!targetMilestone) return;
+
+      const tasks = parseMilestoneTasks(targetMilestone);
+      let updatedTasks = tasks;
+      let isCompleted = targetMilestone.completed;
+      let newStatus = getMilestoneStatus(targetMilestone);
+
+      if (taskId) {
+        updatedTasks = tasks.map((t) => (t.id === taskId ? { ...t, completed: !t.completed } : t));
+        const allDone = updatedTasks.length > 0 && updatedTasks.every((t) => t.completed);
+        const anyDone = updatedTasks.some((t) => t.completed);
+        if (allDone) {
+          newStatus = "concluido";
+          isCompleted = true;
+        } else if (anyDone) {
+          newStatus = "em_andamento";
+          isCompleted = false;
+        } else {
+          newStatus = "pendente";
+          isCompleted = false;
+        }
+      } else {
+        isCompleted = !targetMilestone.completed;
+        newStatus = isCompleted ? "concluido" : "pendente";
+        if (tasks.length > 0) {
+          updatedTasks = tasks.map((t) => ({ ...t, completed: isCompleted }));
+        }
+      }
+
+      const cleanDesc = getMilestoneCleanDescription(targetMilestone);
+      const serializedDesc = serializeMilestoneDescription(cleanDesc, newStatus, updatedTasks);
+
+      if (isDbUuid(targetMilestone.id)) {
+        try {
+          await supabase
+            .from("project_milestones")
+            .update({
+              description: serializedDesc,
+              completed: isCompleted,
+              completed_at: isCompleted ? (targetMilestone.completed_at || new Date().toISOString()) : null,
+            })
+            .eq("id", targetMilestone.id);
+        } catch (e) {}
+      }
+
+      const updatedMilestonesList = currentMilestones.map((m) =>
+        m.id === targetMilestone.id
+          ? {
+              ...m,
+              description: serializedDesc,
+              completed: isCompleted,
+              completed_at: isCompleted ? (m.completed_at || new Date().toISOString()) : null,
+            }
+          : m
+      );
+
+      setAllProjectMilestones((prev) => ({
+        ...prev,
+        [project.id]: updatedMilestonesList,
+      }));
+
+      if (typeof window !== "undefined") {
+        try {
+          const raw = localStorage.getItem("portfolio_admin_milestones_v1") || "{}";
+          const parsed = JSON.parse(raw);
+          parsed[project.id] = updatedMilestonesList;
+          localStorage.setItem("portfolio_admin_milestones_v1", JSON.stringify(parsed));
+        } catch (e) {}
+      }
+
+      if (selectedProject && selectedProject.id === project.id) {
+        setMilestones(updatedMilestonesList);
+      }
+
+      await syncProjectProgress(project.id);
+    } catch (err: any) {
+      console.error("Erro ao alternar tarefa semanal:", err);
+    }
+  };
 
   // Timeline Updates & Notes Actions
   const saveUpdatesToStorage = (updated: Record<string, ProjectUpdate[]>) => {
@@ -2553,8 +3690,11 @@ export default function AdminDashboardPage() {
       updatedInstallments = [...(currentFin.installments || []), newInst];
     }
 
+    const newTotalContract = updatedInstallments.reduce((acc, i) => acc + (Number(i.amount) || 0), 0);
+
     const updatedProjectFinance: ProjectFinancialData = {
       ...currentFin,
+      total_contract_value: newTotalContract > 0 ? newTotalContract : (currentFin.total_contract_value || 0),
       installments: updatedInstallments,
     };
 
@@ -2667,10 +3807,12 @@ export default function AdminDashboardPage() {
     if (!currentFin) return;
 
     const filtered = currentFin.installments.filter((inst) => inst.id !== installmentId);
+    const newTotal = filtered.reduce((acc, i) => acc + (Number(i.amount) || 0), 0);
     saveFinancesToStorage({
       ...projectFinances,
       [projectId]: {
         ...currentFin,
+        total_contract_value: newTotal,
         installments: filtered,
       },
     });
@@ -3114,7 +4256,330 @@ export default function AdminDashboardPage() {
     } catch (e) {}
   };
 
-  if (authLoading || loading) {
+  // Action to reply to a feedback / approval on WhatsApp
+  const handleAcknowledgeFeedbackWhatsApp = (item: DeliveryFeedbackItem) => {
+    const project = projects.find((p) => p.id === item.project_id);
+    const client = clients.find((c) => matchProjectToClient(project || ({ id: item.project_id } as any), c));
+    const isApproval = item.type === "approval";
+    const text = encodeURIComponent(
+      `Olá ${item.author_name || "Cliente"}!\n\n` +
+      `Recebi sua validação sobre o marco *"${item.milestone_title}"* do projeto *${project?.title || "Projeto"}*.\n\n` +
+      (isApproval
+        ? `✅ *Aprovação Confirmada:* Muito obrigada pelo feedback positivo e aceite formal! Já estamos avançando com os próximos passos da sprint.`
+        : `⚠️ *Solicitação de Ajuste:* Li atentamente as considerações enviadas ("${item.notes}"). Já estou priorizando a revisão técnica para que fique 100% perfeito!`) +
+      `\n\nQualquer dúvida adicional estou à disposição por aqui.`
+    );
+    let phoneDigits = formatPhoneForWhatsApp(client?.phone);
+    if (phoneDigits && phoneDigits.length >= 10) {
+      window.open(`https://wa.me/${phoneDigits}?text=${text}`, "_blank");
+    } else {
+      window.open(`https://api.whatsapp.com/send?text=${text}`, "_blank");
+    }
+  };
+
+  // Support Tickets Actions
+  const saveSupportTicketsToStorage = (updated: SupportTicket[]) => {
+    setSupportTickets(updated);
+    try {
+      localStorage.setItem("portfolio_support_tickets_v1", JSON.stringify(updated));
+    } catch (e) {
+      console.error("Error saving support tickets:", e);
+    }
+  };
+
+  const handleOpenTicketModal = (ticket?: SupportTicket) => {
+    if (ticket) {
+      setEditingTicket(ticket);
+      setTClientName(ticket.client_name);
+      setTClientEmail(ticket.client_email);
+      setTProjectId(ticket.project_id);
+      setTSubject(ticket.subject);
+      setTMessage(ticket.message);
+      setTPriority(ticket.priority);
+      setTStatus(ticket.status);
+      setTResponseNotes(ticket.response_notes || "");
+    } else {
+      setEditingTicket(null);
+      setTClientName(clients[0]?.full_name || "");
+      setTClientEmail(clients[0]?.email || "");
+      setTProjectId(projects[0]?.id || "");
+      setTSubject("");
+      setTMessage("");
+      setTPriority("media");
+      setTStatus("aberto");
+      setTResponseNotes("");
+    }
+    setTicketModalOpen(true);
+  };
+
+  const handleSaveTicket = (e: React.FormEvent) => {
+    e.preventDefault();
+    const proj = projects.find((p) => p.id === tProjectId);
+    if (editingTicket) {
+      const updated = supportTickets.map((t) =>
+        t.id === editingTicket.id
+          ? {
+              ...t,
+              client_name: tClientName.trim(),
+              client_email: tClientEmail.trim(),
+              project_id: tProjectId,
+              project_title: proj?.title || t.project_title || "Projeto",
+              subject: tSubject.trim(),
+              message: tMessage.trim(),
+              priority: tPriority,
+              status: tStatus,
+              response_notes: tResponseNotes.trim() || undefined,
+              updated_at: new Date().toISOString(),
+            }
+          : t
+      );
+      saveSupportTicketsToStorage(updated);
+    } else {
+      const newTicket: SupportTicket = {
+        id: `ticket-${Date.now()}`,
+        client_name: tClientName.trim() || "Cliente",
+        client_email: tClientEmail.trim(),
+        project_id: tProjectId || "geral",
+        project_title: proj?.title || "Geral",
+        subject: tSubject.trim() || "Solicitação de Atendimento",
+        message: tMessage.trim(),
+        priority: tPriority,
+        status: tStatus,
+        response_notes: tResponseNotes.trim() || undefined,
+        created_at: new Date().toISOString(),
+      };
+      saveSupportTicketsToStorage([newTicket, ...supportTickets]);
+    }
+    setTicketModalOpen(false);
+  };
+
+  const handleToggleTicketStatus = (ticketId: string, newStatus: "aberto" | "em_atendimento" | "resolvido") => {
+    const updated = supportTickets.map((t) =>
+      t.id === ticketId ? { ...t, status: newStatus, updated_at: new Date().toISOString() } : t
+    );
+    saveSupportTicketsToStorage(updated);
+  };
+
+  const handleDeleteTicket = (ticketId: string) => {
+    if (!confirm("Deseja realmente remover este chamado de suporte?")) return;
+    const updated = supportTickets.filter((t) => t.id !== ticketId);
+    saveSupportTicketsToStorage(updated);
+  };
+
+  const handleReplyTicketWhatsApp = (ticket: SupportTicket) => {
+    const client = clients.find((c) => c.email.toLowerCase() === ticket.client_email.toLowerCase());
+    const text = encodeURIComponent(
+      `Olá ${ticket.client_name || "Cliente"}!\n\n` +
+      `Aqui é a Maira Reis sobre o seu chamado *"${ticket.subject}"* (Projeto: ${ticket.project_title || "Projeto"}):\n\n` +
+      `📝 *Mensagem recebida:* "${ticket.message}"\n\n` +
+      (ticket.response_notes ? `💡 *Resposta / Solução:* ${ticket.response_notes}\n\n` : "") +
+      `Estou à disposição para continuarmos por aqui!`
+    );
+    let phoneDigits = formatPhoneForWhatsApp(client?.phone);
+    if (phoneDigits && phoneDigits.length >= 10) {
+      window.open(`https://wa.me/${phoneDigits}?text=${text}`, "_blank");
+    } else {
+      window.open(`https://api.whatsapp.com/send?text=${text}`, "_blank");
+    }
+  };
+
+  // Document Generator Actions
+  const handleOpenDocGenerator = (projectId?: string) => {
+    const targetProjId = projectId || (selectedProject ? selectedProject.id : (projects[0]?.id || ""));
+    const proj = projects.find((p) => p.id === targetProjId);
+    setGenProjectId(targetProjId);
+    setGenDocType("termo_aceite");
+    setGenTitle(proj ? `Termo de Aceite & Homologação - ${proj.title}` : "Termo de Aceite & Homologação");
+    setGenScope(
+      "1. Desenvolvimento da interface Mobile e Web\n2. Integração com Banco de Dados e APIs\n3. Homologação das funcionalidades e testes"
+    );
+    const fin = projectFinances[targetProjId];
+    setGenValue(fin?.total_contract_value || 0);
+    setGenDueDate(proj?.deadline || "");
+    setGenNotes(
+      "Este documento certifica a entrega e conformidade técnica dos itens homologados conforme especificado no escopo."
+    );
+    setDocGeneratorModalOpen(true);
+  };
+
+  const handleGenerateAndSaveDoc = (e: React.FormEvent) => {
+    e.preventDefault();
+    const proj = projects.find((p) => p.id === genProjectId) || ({ id: "geral", title: "Projeto Oficial" } as Project);
+    const client = clients.find((c) => matchProjectToClient(proj, c)) || ({ full_name: "Cliente Contratante", email: "cliente@empresa.com" } as Profile);
+
+    const scopeList = genScope
+      .split("\n")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    const docNumber = `DOC-${proj.id.slice(0, 4).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
+
+    const docData: GeneratedDocData = {
+      type: genDocType,
+      docNumber: docNumber,
+      title: genTitle.trim() || getDocTypeLabel(genDocType),
+      projectId: proj.id,
+      projectTitle: proj.title,
+      client: {
+        name: client.full_name || "Cliente Contratante",
+        email: client.email,
+        company: client.company || undefined,
+        phone: client.phone || undefined,
+      },
+      agency: DEFAULT_AGENCY_DATA,
+      scopeItems: scopeList,
+      totalValue: Number(genValue) || undefined,
+      deliveryDate: genDueDate || undefined,
+      notes: genNotes.trim() || undefined,
+      createdAt: new Date().toISOString(),
+    };
+
+    // Open in print / save window
+    openGeneratedDocument(docData);
+
+    // Save into Project Documents
+    const newDoc: ProjectDocument = {
+      id: `${proj.id}-doc-${Date.now()}`,
+      project_id: proj.id,
+      title: genTitle.trim() || getDocTypeLabel(genDocType),
+      filename: `${genTitle.trim().replace(/\s+/g, "_")}.pdf`,
+      category: (genDocType === "proposta" ? "proposta" : genDocType === "termo_aceite" ? "termo_aceite" : genDocType === "nda" ? "nda" : "contrato") as DocumentCategory,
+      visibility: "client",
+      file_url: "data:application/pdf;base64,JVBERi0xLjQKJc...",
+      file_size_bytes: 42000,
+      file_size_formatted: "42 KB",
+      mime_type: "application/pdf",
+      uploaded_at: new Date().toISOString(),
+      notes: `Documento gerado eletronicamente: ${docNumber}`,
+    };
+
+    const currentDocs = projectDocuments[proj.id] || [];
+    saveDocumentsToStorage({
+      ...projectDocuments,
+      [proj.id]: [newDoc, ...currentDocs],
+    });
+
+    setDocGeneratorModalOpen(false);
+    setEmailToast({
+      message: `Documento "${newDoc.title}" gerado e salvo na Central com sucesso!`,
+      type: "delivery",
+    });
+    setTimeout(() => setEmailToast(null), 5000);
+  };
+
+  // Broadcast & Quick Templates Helper
+  const getBroadcastMessageText = (templateId: string, targetClient?: Profile, targetProject?: Project) => {
+    const name = targetClient?.full_name || "Cliente";
+    const projTitle = targetProject?.title || "Seu Projeto";
+    const portalUrl = "https://www.mairareis.com.br/portal";
+    const loginUrl = "https://www.mairareis.com.br/login";
+    const previewUrl = targetProject?.preview_url || "(Ambiente de Testes)";
+    const deadline = targetProject?.deadline ? new Date(targetProject.deadline).toLocaleDateString("pt-BR") : "em breve";
+    const fin = targetProject ? projectFinances[targetProject.id] : null;
+    const nextInst = fin?.installments?.find((i) => !i.paid_at);
+    const amountStr = nextInst ? formatBRL(nextInst.amount) : "R$ 0,00";
+    const dueDateStr = nextInst?.due_date ? new Date(nextInst.due_date).toLocaleDateString("pt-BR") : "no vencimento";
+    const meta = targetClient ? getClientMetaLocal(targetClient.id, targetClient.email) : null;
+    const initialPass = meta?.initial_password || DEFAULT_CLIENT_PASSWORD;
+
+    switch (templateId) {
+      case "staging":
+        return `🚀 *Nova Versão Disponível em Homologação*\n\n` +
+          `Olá ${name}!\n\n` +
+          `Uma nova versão do projeto *${projTitle}* acabou de ser disponibilizada para você testar e validar em tempo real no nosso ambiente de testes:\n\n` +
+          `🔗 *Link de Testes:* ${previewUrl}\n` +
+          `📌 *Painel do Cliente:* ${portalUrl}\n\n` +
+          `Fique à vontade para navegar e me enviar suas impressões e feedbacks!`;
+
+      case "validation":
+        return `📌 *Solicitação de Aceite & Validação de Entrega*\n\n` +
+          `Olá ${name}!\n\n` +
+          `Concluímos com sucesso uma etapa fundamental do projeto *${projTitle}*!\n\n` +
+          `Para registrar formalmente o avanço da sprint, acesse a aba *Etapas & Entregas* no seu Portal do Cliente e clique em *Validar / Aprovar Entrega*:\n\n` +
+          `👉 *Acessar Portal:* ${portalUrl}\n\n` +
+          `Qualquer ajuste ou consideração, você também pode solicitar diretamente pelo portal.`;
+
+      case "payment":
+        return `💳 *Lembrete de Pagamento / Parcela do Projeto*\n\n` +
+          `Olá ${name}!\n\n` +
+          `Segue o lembrete referente à parcela do projeto *${projTitle}*:\n\n` +
+          `💰 *Valor:* ${amountStr}\n` +
+          `📅 *Vencimento:* ${dueDateStr}\n` +
+          `🔑 *Chave Pix:* contato@mairareis.dev (Maira Reis da Silva)\n\n` +
+          `Assim que realizar a transferência, basta enviar o comprovante por aqui. Muito obrigada!`;
+
+      case "credentials":
+        return `🔑 *Seus Dados de Acesso ao Portal do Cliente*\n\n` +
+          `Olá ${name}!\n\n` +
+          `Seu acesso exclusivo para acompanhar o desenvolvimento do projeto *${projTitle}* já está liberado:\n\n` +
+          `🌐 *Link do Portal:* ${loginUrl}\n` +
+          `👤 *E-mail de Login:* ${targetClient?.email || "seu-email"}\n` +
+          `🔒 *Senha Inicial:* ${initialPass}\n\n` +
+          `No portal você acompanha o cronograma em tempo real, visualiza telas, documentos e extrato financeiro.`;
+
+      case "weekly_status":
+        return `📊 *Status Semanal de Desenvolvimento*\n\n` +
+          `Olá ${name}!\n\n` +
+          `Resumo semanal do andamento do projeto *${projTitle}*:\n\n` +
+          `✅ *Progresso Geral:* ${targetProject?.progress || 0}% concluído\n` +
+          `📅 *Previsão de Entrega:* ${deadline}\n` +
+          `🔗 *Acompanhe os detalhes no Portal:* ${portalUrl}\n\n` +
+          `Seguimos no ritmo planejado! Qualquer dúvida estou sempre à disposição.`;
+
+      default:
+        return `Olá ${name}! Passando para compartilhar uma atualização sobre o projeto *${projTitle}*. Acesse seu Portal: ${portalUrl}`;
+    }
+  };
+
+  const handleSendBroadcastWhatsApp = () => {
+    const client = clients.find((c) => c.id === broadcastClientId) || clients[0];
+    const project = projects.find((p) => p.id === broadcastProjectId) || projects[0];
+    const msg = customBroadcastText || getBroadcastMessageText(broadcastTemplateId, client, project);
+    const encoded = encodeURIComponent(msg);
+    let phoneDigits = formatPhoneForWhatsApp(client?.phone);
+    if (phoneDigits && phoneDigits.length >= 10) {
+      window.open(`https://wa.me/${phoneDigits}?text=${encoded}`, "_blank");
+    } else {
+      window.open(`https://api.whatsapp.com/send?text=${encoded}`, "_blank");
+    }
+  };
+
+  const handleSendBroadcastEmail = () => {
+    const client = clients.find((c) => c.id === broadcastClientId) || clients[0];
+    const project = projects.find((p) => p.id === broadcastProjectId) || projects[0];
+    const msg = customBroadcastText || getBroadcastMessageText(broadcastTemplateId, client, project);
+
+    if (!client?.email) {
+      alert("Selecione um cliente com e-mail válido para disparar.");
+      return;
+    }
+
+    sendTransactionalEmail({
+      type: "update_posted",
+      recipientEmail: client.email,
+      recipientName: client.full_name || "Cliente",
+      projectName: project?.title || "Projeto Contratado",
+      projectId: project?.id || "geral",
+      updateTitle: "Comunicado Oficial de Projeto",
+      updateCategory: "Atualização",
+      updateSummary: msg.slice(0, 300),
+      actionUrl: "https://www.mairareis.com.br/portal",
+    });
+
+    setBroadcastToast(`E-mail transacional disparado com sucesso para ${client.email}!`);
+    setTimeout(() => setBroadcastToast(null), 5000);
+  };
+
+  const handleCopyBroadcast = () => {
+    const client = clients.find((c) => c.id === broadcastClientId) || clients[0];
+    const project = projects.find((p) => p.id === broadcastProjectId) || projects[0];
+    const msg = customBroadcastText || getBroadcastMessageText(broadcastTemplateId, client, project);
+    navigator.clipboard.writeText(msg);
+    setCopiedBroadcast(true);
+    setTimeout(() => setCopiedBroadcast(false), 3000);
+  };
+
+  if (authLoading || (loading && projects.length === 0 && clients.length === 0)) {
     return (
       <div className="min-h-screen bg-[#070913] flex items-center justify-center text-white">
         <div className="flex flex-col items-center gap-3">
@@ -3214,43 +4679,88 @@ export default function AdminDashboardPage() {
           </div>
 
           {navItems.map((item) => {
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => {
-                  setActiveTab(item.id as TabKey);
-                  setMobileSidebarOpen(false);
-                }}
-                className={`w-full px-3.5 py-3 rounded-2xl text-xs sm:text-sm font-semibold flex items-center justify-between transition-all cursor-pointer group ${
-                  isActive
-                    ? "bg-gradient-to-r from-indigo-600/90 to-purple-600/90 text-white shadow-lg shadow-indigo-600/20 border border-indigo-500/30"
-                    : "text-gray-400 hover:text-white hover:bg-white/[0.04]"
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`transition-colors ${
-                      isActive ? "text-white" : "text-gray-400 group-hover:text-indigo-400"
-                    }`}
-                  >
-                    {item.icon}
-                  </div>
-                  <span>{item.label}</span>
-                </div>
+            const hasSubItems = Boolean(item.subItems && item.subItems.length > 0);
+            const isChildActive = hasSubItems && item.subItems?.some((sub) => sub.id === activeTab);
+            const isActive = activeTab === item.id || isChildActive;
 
-                {item.badge && (
-                  <span
-                    className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                      isActive
-                        ? "bg-white/20 text-white"
-                        : "bg-white/5 text-gray-400 border border-white/10"
-                    }`}
-                  >
-                    {item.badge}
-                  </span>
+            return (
+              <div key={item.id} className="space-y-1">
+                <button
+                  onClick={() => {
+                    setActiveTab(item.id as TabKey);
+                    setMobileSidebarOpen(false);
+                  }}
+                  className={`w-full px-3.5 py-3 rounded-2xl text-xs sm:text-sm font-semibold flex items-center justify-between transition-all cursor-pointer group ${
+                    isActive && !hasSubItems
+                      ? "bg-gradient-to-r from-indigo-600/90 to-purple-600/90 text-white shadow-lg shadow-indigo-600/20 border border-indigo-500/30"
+                      : isActive && hasSubItems
+                      ? "bg-white/[0.08] text-white border border-white/10"
+                      : "text-gray-400 hover:text-white hover:bg-white/[0.04]"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`transition-colors ${
+                        isActive ? "text-white" : "text-gray-400 group-hover:text-indigo-400"
+                      }`}
+                    >
+                      {item.icon}
+                    </div>
+                    <span>{item.label}</span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {item.badge && (
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                          isActive
+                            ? "bg-white/20 text-white"
+                            : "bg-white/5 text-gray-400 border border-white/10"
+                        }`}
+                      >
+                        {item.badge}
+                      </span>
+                    )}
+                    {hasSubItems && (
+                      <ChevronDown
+                        size={14}
+                        className={`text-gray-400 transition-transform duration-200 ${
+                          isActive ? "rotate-0 text-white" : "-rotate-90"
+                        }`}
+                      />
+                    )}
+                  </div>
+                </button>
+
+                {/* Submenu Items (Produto e Propostas) */}
+                {hasSubItems && isActive && (
+                  <div className="pl-6 pr-1 py-1 space-y-1">
+                    {item.subItems?.map((sub) => {
+                      const isSubActive = activeTab === sub.id;
+                      return (
+                        <button
+                          key={sub.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveTab(sub.id as TabKey);
+                            setMobileSidebarOpen(false);
+                          }}
+                          className={`w-full px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer ${
+                            isSubActive
+                              ? "bg-gradient-to-r from-indigo-600/90 to-purple-600/90 text-white shadow-md shadow-indigo-600/20 font-bold border border-indigo-500/30"
+                              : "text-gray-400 hover:text-white hover:bg-white/5"
+                          }`}
+                        >
+                          <div className={isSubActive ? "text-white" : "text-gray-500"}>
+                            {sub.icon}
+                          </div>
+                          <span>{sub.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 )}
-              </button>
+              </div>
             );
           })}
         </div>
@@ -3308,31 +4818,145 @@ export default function AdminDashboardPage() {
               <Menu size={20} />
             </button>
 
-            <div className="relative hidden sm:block w-72">
-              <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Buscar projetos..."
-                className="w-full pl-9 pr-4 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-xs text-white placeholder-gray-500 outline-none focus:border-indigo-500"
-              />
+            <div ref={searchContainerRef} className="relative w-64 sm:w-80 md:w-96">
+              <div className="relative">
+                <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onFocus={() => setSearchDropdownOpen(true)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setSearchDropdownOpen(true);
+                  }}
+                  placeholder="Buscar em toda a plataforma... (Ctrl+K)"
+                  className="w-full pl-9 pr-8 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-xs text-white placeholder-gray-500 outline-none focus:border-indigo-500 focus:bg-slate-900/90 transition-all"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => {
+                      setSearchQuery("");
+                      setSearchDropdownOpen(false);
+                    }}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white p-0.5 cursor-pointer"
+                    title="Limpar busca"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              {/* Global Search Results Dropdown */}
+              {searchDropdownOpen && searchQuery.trim().length > 0 && (
+                <div className="absolute top-full left-0 mt-2 w-[340px] sm:w-[480px] md:w-[560px] bg-slate-900/95 border border-white/15 rounded-2xl shadow-2xl backdrop-blur-2xl z-50 overflow-hidden max-h-[480px] flex flex-col animate-in fade-in slide-in-from-top-2 duration-200">
+                  {/* Category Filter Pills */}
+                  <div className="p-2.5 border-b border-white/10 flex items-center gap-1.5 overflow-x-auto no-scrollbar text-[11px] bg-black/20">
+                    {[
+                      { id: "all", label: "Tudo", count: allPlatformSearchResults.length },
+                      { id: "project", label: "Projetos", count: allPlatformSearchResults.filter((i) => i.category === "project").length },
+                      { id: "client", label: "Clientes", count: allPlatformSearchResults.filter((i) => i.category === "client").length },
+                      { id: "milestone", label: "Tarefas", count: allPlatformSearchResults.filter((i) => i.category === "milestone").length },
+                      { id: "finance", label: "Finanças", count: allPlatformSearchResults.filter((i) => i.category === "finance").length },
+                      { id: "document", label: "Docs", count: allPlatformSearchResults.filter((i) => i.category === "document").length },
+                      { id: "support", label: "Suporte", count: allPlatformSearchResults.filter((i) => i.category === "support").length },
+                      { id: "update", label: "Updates", count: allPlatformSearchResults.filter((i) => i.category === "update").length },
+                    ]
+                      .filter((c) => c.id === "all" || c.count > 0)
+                      .map((cat) => (
+                        <button
+                          key={cat.id}
+                          onClick={() => setSearchFilterCategory(cat.id)}
+                          className={`px-2.5 py-1 rounded-lg font-bold shrink-0 transition-colors cursor-pointer ${
+                            searchFilterCategory === cat.id
+                              ? "bg-indigo-600 text-white shadow-sm shadow-indigo-500/30"
+                              : "text-gray-400 hover:text-white hover:bg-white/5"
+                          }`}
+                        >
+                          {cat.label} ({cat.count})
+                        </button>
+                      ))}
+                  </div>
+
+                  {/* Results List */}
+                  <div className="overflow-y-auto max-h-[380px] p-2 space-y-1">
+                    {filteredSearchResults.length === 0 ? (
+                      <div className="p-8 text-center space-y-2">
+                        <Search size={28} className="text-gray-600 mx-auto" />
+                        <p className="text-xs text-gray-300 font-medium">Nenhum resultado encontrado para &quot;{searchQuery}&quot;</p>
+                        <p className="text-[11px] text-gray-500">Tente buscar por nome de cliente, projeto, documento, chamado ou tarefa.</p>
+                      </div>
+                    ) : (
+                      filteredSearchResults.map((res) => {
+                        const getCategoryIcon = () => {
+                          switch (res.category) {
+                            case "project":
+                              return <FolderKanban size={15} className="text-indigo-400" />;
+                            case "client":
+                              return <Users size={15} className="text-purple-400" />;
+                            case "milestone":
+                              return <CheckSquare size={15} className="text-emerald-400" />;
+                            case "finance":
+                              return <DollarSign size={15} className="text-emerald-400" />;
+                            case "document":
+                              return <FileText size={15} className="text-blue-400" />;
+                            case "support":
+                              return <MessageSquare size={15} className="text-rose-400" />;
+                            case "update":
+                              return <Send size={15} className="text-amber-400" />;
+                            default:
+                              return <FolderKanban size={15} className="text-indigo-400" />;
+                          }
+                        };
+
+                        return (
+                          <div
+                            key={res.id}
+                            onClick={res.onSelect}
+                            className="p-3 rounded-xl hover:bg-white/5 border border-transparent hover:border-white/10 transition-colors flex items-center justify-between gap-3 cursor-pointer group"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                                {getCategoryIcon()}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-xs font-bold text-white group-hover:text-indigo-300 transition-colors truncate">
+                                    {res.title}
+                                  </span>
+                                  <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-white/5 text-gray-400 border border-white/5">
+                                    {res.categoryLabel}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-gray-400 truncate mt-0.5">{res.subtitle}</p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              {res.badge && (
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${res.badgeColor || "bg-white/5 text-gray-400 border-white/10"}`}>
+                                  {res.badge}
+                                </span>
+                              )}
+                              <ArrowUpRight size={14} className="text-gray-500 group-hover:text-white group-hover:translate-x-0.5 transition-transform" />
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {/* Dropdown Footer */}
+                  <div className="p-2 border-t border-white/10 bg-black/30 flex items-center justify-between text-[10px] text-gray-400 px-3">
+                    <span>{filteredSearchResults.length} {filteredSearchResults.length === 1 ? "resultado" : "resultados"}</span>
+                    <span className="flex items-center gap-1">Pressione <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-white font-mono text-[9px]">ESC</kbd> para fechar</span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => {
-                setEmailLogs(getDispatchedEmailLogs());
-                setEmailLogsModalOpen(true);
-              }}
-              className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-              title="Histórico de E-mails Transacionais"
-            >
-              <Mail size={14} className="text-purple-400" />
-              <span className="hidden md:inline">E-mails Enviados</span>
-            </button>
-
             <button
               onClick={() => handleOpenProjectModal()}
               className="px-3.5 sm:px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/20 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
@@ -3473,175 +5097,806 @@ export default function AdminDashboardPage() {
                   </div>
                   <div className="flex items-baseline gap-2">
                     <p className="text-3xl sm:text-4xl font-black text-purple-400 tracking-tight">{totalClients}</p>
-                    <span className="text-xs text-purple-300/80 font-semibold">contas</span>
+                    <span className="text-xs text-purple-300/80 font-semibold">cadastrados</span>
                   </div>
                   <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[11px] text-gray-400">
-                    <span>Com acesso ao portal</span>
+                    <span>Base de Contas</span>
                     <span className="text-purple-400 font-bold group-hover:translate-x-0.5 transition-transform flex items-center gap-1">
-                      Clientes →
+                      Gerenciar →
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Quick Action Shortcuts Banner */}
-              <div className="p-6 sm:p-7 rounded-3xl bg-gradient-to-br from-[#0d1224] to-[#080b18] border border-indigo-500/25 shadow-xl">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 pb-4 border-b border-white/10">
-                  <div>
-                    <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-                      <Sparkles size={18} className="text-indigo-400" />
-                      <span>Atalhos de Ação Rápida</span>
-                    </h3>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      Crie novos registros ou publique sprints e atualizações com apenas um clique.
-                    </p>
-                  </div>
-                </div>
+              {/* ========================================================================= */}
+              {/* 1. TAREFAS & ENTREGAS DA SEMANA                                            */}
+              {/* ========================================================================= */}
+              {(() => {
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-                  <button
-                    onClick={() => handleOpenProjectModal()}
-                    className="p-4 rounded-2xl bg-gradient-to-r from-indigo-600/90 via-purple-600/90 to-pink-600/90 hover:from-indigo-500 hover:to-pink-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-indigo-600/20 border border-indigo-400/40 flex items-center gap-3 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
-                  >
-                    <div className="p-2 rounded-xl bg-white/15">
-                      <Plus size={18} />
-                    </div>
-                    <div className="text-left">
-                      <p className="leading-tight font-bold">Novo Projeto</p>
-                      <p className="text-[10px] text-indigo-100 font-normal mt-0.5">Cadastrar app ou site</p>
-                    </div>
-                  </button>
+                // Compute start and end of current 7-day window
+                const endOfWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+                const startOfWeekFormatted = today.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+                const endOfWeekFormatted = endOfWeek.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 
-                  <button
-                    onClick={() => {
-                      setCreatedClientInfo(null);
-                      setClientModalOpen(true);
-                    }}
-                    className="p-4 rounded-2xl bg-slate-800/90 hover:bg-slate-700/90 text-purple-300 hover:text-white font-bold text-xs sm:text-sm border border-purple-500/40 flex items-center gap-3 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
-                  >
-                    <div className="p-2 rounded-xl bg-purple-500/20 text-purple-300">
-                      <Users size={18} />
-                    </div>
-                    <div className="text-left">
-                      <p className="leading-tight font-bold">Novo Cliente</p>
-                      <p className="text-[10px] text-gray-400 font-normal mt-0.5">Gerar credenciais de acesso</p>
-                    </div>
-                  </button>
+                interface PriorityAlertItem {
+                  id: string;
+                  type: "finance" | "approval" | "support";
+                  severity: "critical" | "warning";
+                  title: string;
+                  meta: string;
+                  actionLabel: string;
+                  onAction: () => void;
+                }
 
-                  <button
-                    onClick={() => {
-                      if (projects.length > 0) {
-                        setSelectedProject(projects[0]);
-                        setUpdateModalOpen(true);
-                      } else {
-                        handleOpenProjectModal();
+                const operationalAlerts: PriorityAlertItem[] = [];
+
+                // 1. Cobranças / Parcelas Vencidas
+                for (const p of projects) {
+                  const pFin = projectFinances[p.id] || generateDefaultProjectFinances(p);
+                  const client = clients.find((c) => c.id === p.client_id);
+                  if (pFin?.installments && Array.isArray(pFin.installments)) {
+                    for (const inst of pFin.installments) {
+                      if (!inst.paid_at && inst.due_date) {
+                        const d = new Date(inst.due_date);
+                        if (!isNaN(d.getTime())) {
+                          d.setHours(0, 0, 0, 0);
+                          const diff = Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                          if (diff < 0) {
+                            operationalAlerts.push({
+                              id: `ov-fin-${inst.id}`,
+                              type: "finance",
+                              severity: "critical",
+                              title: `Parcela Vencida (${formatBRL(inst.amount)}) — ${p.title} (${client?.full_name || "Cliente"})`,
+                              meta: `Vencida há ${Math.abs(diff)}d`,
+                              actionLabel: "Cobrar",
+                              onAction: () => {
+                                setSelectedProject(p);
+                                setActiveTab("finance");
+                              },
+                            });
+                          }
+                        }
                       }
-                    }}
-                    className="p-4 rounded-2xl bg-slate-800/90 hover:bg-slate-700/90 text-emerald-300 hover:text-white font-bold text-xs sm:text-sm border border-emerald-500/40 flex items-center gap-3 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
-                  >
-                    <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-300">
-                      <Send size={18} />
-                    </div>
-                    <div className="text-left">
-                      <p className="leading-tight font-bold">Postar Update</p>
-                      <p className="text-[10px] text-gray-400 font-normal mt-0.5">Notificar avanço ao cliente</p>
-                    </div>
-                  </button>
+                    }
+                  }
+                }
 
-                  <Link
-                    href="/portal"
-                    target="_blank"
-                    className="p-4 rounded-2xl bg-slate-800/90 hover:bg-slate-700/90 text-cyan-300 hover:text-white font-bold text-xs sm:text-sm border border-cyan-500/40 flex items-center gap-3 transition-all hover:scale-[1.02] active:scale-[0.98]"
-                  >
-                    <div className="p-2 rounded-xl bg-cyan-500/20 text-cyan-300">
-                      <Smartphone size={18} />
-                    </div>
-                    <div className="text-left">
-                      <p className="leading-tight font-bold">Visão do Portal</p>
-                      <p className="text-[10px] text-gray-400 font-normal mt-0.5">Abrir como cliente</p>
-                    </div>
-                  </Link>
-                </div>
-              </div>
+                // 2. Aprovações & Feedbacks Pendentes de Clientes
+                for (const fb of allFeedbacksFlat) {
+                  if (fb.status === "pending_review") {
+                    const p = projects.find((proj) => proj.id === fb.project_id);
+                    operationalAlerts.push({
+                      id: `ov-appr-${fb.id}`,
+                      type: "approval",
+                      severity: "warning",
+                      title: `Validação Pendente: ${p?.title || "Projeto"} — etapa "${fb.milestone_title || fb.stage_name || "Entrega"}"`,
+                      meta: "Aguardando Revisão",
+                      actionLabel: "Ver",
+                      onAction: () => setActiveTab("approvals"),
+                    });
+                  }
+                }
 
-              {/* Recent Projects Highlights */}
-              <div className="p-6 sm:p-7 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl">
-                <div className="flex items-center justify-between mb-5 pb-3 border-b border-white/10">
-                  <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    <FolderKanban size={18} className="text-indigo-400" />
-                    <span>Projetos em Destaque</span>
-                  </h3>
-                  <button
-                    onClick={() => setActiveTab("projects")}
-                    className="text-xs text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1 cursor-pointer"
-                  >
-                    <span>Ver Todos ({projects.length})</span>
-                    <ChevronRight size={14} />
-                  </button>
-                </div>
+                // 3. Chamados de Suporte Abertos
+                for (const ticket of supportTickets) {
+                  if (ticket.status === "aberto" || ticket.status === "em_atendimento") {
+                    operationalAlerts.push({
+                      id: `ov-sup-${ticket.id}`,
+                      type: "support",
+                      severity: ticket.priority === "urgente" || ticket.priority === "alta" ? "critical" : "warning",
+                      title: `Chamado #${ticket.id.slice(-4)}: ${ticket.subject} (${ticket.client_name || "Cliente"})`,
+                      meta: `Prioridade: ${ticket.priority}`,
+                      actionLabel: "Responder",
+                      onAction: () => setActiveTab("support"),
+                    });
+                  }
+                }
 
-                {projects.length === 0 ? (
-                  <div className="p-8 text-center rounded-2xl bg-black/20 border border-white/5 space-y-3">
-                    <FolderKanban size={36} className="text-gray-600 mx-auto" />
-                    <p className="text-xs text-gray-400">Nenhum projeto cadastrado no momento.</p>
-                    <button
-                      onClick={() => handleOpenProjectModal()}
-                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition-colors"
-                    >
-                      + Cadastrar Primeiro Projeto
-                    </button>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {projects.slice(0, 6).map((proj) => {
-                      const client = clients.find((c) => c.id === proj.client_id);
-                      return (
-                        <div
-                          key={proj.id}
-                          onClick={() => {
-                            setSelectedProject(proj);
-                            fetchProjectDetails(proj.id);
-                            setActiveTab("projects");
-                          }}
-                          className="p-5 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-indigo-500/40 transition-all cursor-pointer group flex flex-col justify-between space-y-3 hover:bg-white/[0.05]"
+                // Gather general tasks / milestone deliverables across all projects (Tarefa Geral)
+                interface WeeklyTaskItem {
+                  id: string;
+                  milestoneId: string;
+                  title: string;
+                  completed: boolean;
+                  totalSubtasks: number;
+                  completedSubtasks: number;
+                  progressPercent: number;
+                  project: Project;
+                  client: Profile | undefined;
+                  dueDate: string | null;
+                  formattedDueDate: string;
+                  diffDays: number | null;
+                  isThisWeek: boolean;
+                  isOverdue: boolean;
+                  urgency: "overdue" | "today" | "this_week" | "upcoming" | "done";
+                  sortScore: number;
+                }
+
+                const weeklyTasksList: WeeklyTaskItem[] = [];
+
+                for (const proj of projects) {
+                  const client = clients.find((c) => c.id === proj.client_id);
+                  const pMilestones = allProjectMilestones[proj.id] || [];
+
+                  for (const m of pMilestones) {
+                    const parsedTasks = parseMilestoneTasks(m);
+                    const effectiveDueDate = m.due_date || proj.deadline || null;
+                    let diffDays: number | null = null;
+                    let isThisWeek = false;
+                    let isOverdue = false;
+
+                    if (effectiveDueDate) {
+                      const d = new Date(effectiveDueDate);
+                      if (!isNaN(d.getTime())) {
+                        d.setHours(0, 0, 0, 0);
+                        diffDays = Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                        isThisWeek = diffDays >= 0 && diffDays <= 7;
+                        isOverdue = diffDays < 0;
+                      }
+                    }
+
+                    const totalSubtasks = parsedTasks.length;
+                    const completedSubtasks = parsedTasks.filter((t) => t.completed).length;
+                    const isMilestoneDone =
+                      m.completed ||
+                      getMilestoneStatus(m) === "concluido" ||
+                      (totalSubtasks > 0 && completedSubtasks === totalSubtasks);
+                    const milestoneOverdue = isOverdue && !isMilestoneDone;
+
+                    const progressPercent =
+                      totalSubtasks > 0
+                        ? Math.round((completedSubtasks / totalSubtasks) * 100)
+                        : isMilestoneDone
+                        ? 100
+                        : 0;
+
+                    let urgency: "overdue" | "today" | "this_week" | "upcoming" | "done" = "upcoming";
+                    let sortScore = 50;
+
+                    if (isMilestoneDone) {
+                      urgency = "done";
+                      sortScore = 1000;
+                    } else if (milestoneOverdue) {
+                      urgency = "overdue";
+                      sortScore = -100 + (diffDays || 0);
+                    } else if (diffDays === 0) {
+                      urgency = "today";
+                      sortScore = 0;
+                    } else if (isThisWeek) {
+                      urgency = "this_week";
+                      sortScore = 10 + (diffDays || 0);
+                    } else {
+                      sortScore = 100 + (diffDays || 0);
+                    }
+
+                    weeklyTasksList.push({
+                      id: `m-${m.id}`,
+                      milestoneId: m.id,
+                      title: m.title,
+                      completed: isMilestoneDone,
+                      totalSubtasks,
+                      completedSubtasks,
+                      progressPercent,
+                      project: proj,
+                      client,
+                      dueDate: effectiveDueDate,
+                      formattedDueDate: effectiveDueDate
+                        ? new Date(effectiveDueDate).toLocaleDateString("pt-BR")
+                        : "Sem prazo",
+                      diffDays,
+                      isThisWeek,
+                      isOverdue: milestoneOverdue,
+                      urgency,
+                      sortScore,
+                    });
+                  }
+                }
+
+                // If no milestones exist at all, add active projects as high-level deliverables
+                if (weeklyTasksList.length === 0) {
+                  for (const proj of projects.filter((p) => p.status !== "concluido")) {
+                    const client = clients.find((c) => c.id === proj.client_id);
+                    let diffDays: number | null = null;
+                    let isThisWeek = false;
+                    let isOverdue = false;
+                    if (proj.deadline) {
+                      const d = new Date(proj.deadline);
+                      if (!isNaN(d.getTime())) {
+                        d.setHours(0, 0, 0, 0);
+                        diffDays = Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                        isThisWeek = diffDays >= 0 && diffDays <= 7;
+                        isOverdue = diffDays < 0;
+                      }
+                    }
+                    weeklyTasksList.push({
+                      id: `proj-main-${proj.id}`,
+                      milestoneId: "",
+                      title: proj.title,
+                      completed: false,
+                      totalSubtasks: 0,
+                      completedSubtasks: 0,
+                      progressPercent: proj.progress || 0,
+                      project: proj,
+                      client,
+                      dueDate: proj.deadline,
+                      formattedDueDate: proj.deadline
+                        ? new Date(proj.deadline).toLocaleDateString("pt-BR")
+                        : "Sem prazo",
+                      diffDays,
+                      isThisWeek,
+                      isOverdue,
+                      urgency: isOverdue
+                        ? "overdue"
+                        : diffDays === 0
+                        ? "today"
+                        : isThisWeek
+                        ? "this_week"
+                        : "upcoming",
+                      sortScore: isOverdue ? -50 : diffDays !== null ? diffDays : 200,
+                    });
+                  }
+                }
+
+                weeklyTasksList.sort((a, b) => a.sortScore - b.sortScore);
+                const pendingWeeklyTasksCount = weeklyTasksList.filter((t) => !t.completed).length;
+
+                return (
+                  <div className="p-6 sm:p-7 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-6">
+                    {/* Header */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
+                      <div>
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                            <CheckSquare size={20} className="text-indigo-400" />
+                            <span>Tarefas & Etapas da Semana 🚀</span>
+                          </h3>
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
+                            <Calendar size={11} /> {startOfWeekFormatted} a {endOfWeekFormatted}
+                          </span>
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                            {pendingWeeklyTasksCount} {pendingWeeklyTasksCount === 1 ? "tarefa pendente" : "tarefas pendentes"}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          Visão geral das etapas e tarefas macro programadas para entrega na semana.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => setActiveTab("projects")}
+                          className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-indigo-300 border border-white/10 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
                         >
-                          <div>
-                            <div className="flex items-start justify-between gap-2">
-                              <span className="text-[10px] uppercase font-extrabold px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
-                                {proj.category || "App Mobile"}
-                              </span>
-                              <span className="text-xs font-bold text-indigo-400">{proj.progress}%</span>
-                            </div>
+                          <span>Ver Projetos ({projects.length})</span>
+                          <ChevronRight size={14} />
+                        </button>
+                      </div>
+                    </div>
 
-                            <h4 className="text-sm font-bold text-white mt-2 group-hover:text-indigo-300 transition-colors">
-                              {proj.title}
-                            </h4>
-
-                            <p className="text-[11px] text-gray-400 mt-0.5">
-                              Cliente: <strong className="text-gray-300">{client?.full_name || "Não vinculado"}</strong>
-                            </p>
-                          </div>
-
-                          <div>
-                            <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden mb-2">
-                              <div
-                                className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full transition-all"
-                                style={{ width: `${proj.progress}%` }}
-                              />
+                    {/* Operational Alerts Ribbon if any exist */}
+                    {operationalAlerts.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                          <AlertCircle size={13} className="text-amber-400" />
+                          <span>Avisos Operacionais com Atenção Requerida ({operationalAlerts.length})</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                          {operationalAlerts.slice(0, 2).map((alt) => (
+                            <div
+                              key={alt.id}
+                              className={`p-3 rounded-xl border flex items-center justify-between gap-3 ${
+                                alt.severity === "critical"
+                                  ? "bg-rose-950/30 border-rose-500/40 text-rose-300"
+                                  : "bg-amber-950/30 border-amber-500/40 text-amber-300"
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <span
+                                  className={`w-2 h-2 rounded-full shrink-0 ${
+                                    alt.severity === "critical" ? "bg-rose-400 animate-pulse" : "bg-amber-400"
+                                  }`}
+                                />
+                                <span className="text-xs font-medium text-white truncate">{alt.title}</span>
+                              </div>
+                              <button
+                                onClick={alt.onAction}
+                                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold shrink-0 transition-colors cursor-pointer ${
+                                  alt.severity === "critical"
+                                    ? "bg-rose-600 hover:bg-rose-500 text-white"
+                                    : "bg-amber-600 hover:bg-amber-500 text-white"
+                                }`}
+                              >
+                                {alt.actionLabel} →
+                              </button>
                             </div>
-                            <div className="flex items-center justify-between text-[10px] text-gray-400">
-                              <span className="capitalize font-medium text-amber-300/90">{proj.status}</span>
-                              <span className="text-indigo-400 font-semibold flex items-center gap-0.5">
-                                Acessar <ArrowUpRight size={11} />
-                              </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Weekly Tasks List / Grid */}
+                    {weeklyTasksList.length === 0 ? (
+                      <div className="p-8 text-center rounded-2xl bg-black/20 border border-white/5 space-y-3">
+                        <CheckCircle2 size={36} className="text-emerald-400 mx-auto" />
+                        <p className="text-xs text-gray-300 font-medium">Nenhuma tarefa com prazo para esta semana! 🎉</p>
+                        <p className="text-[11px] text-gray-500">Todas as etapas e entregas estão em dia no momento.</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {weeklyTasksList.map((taskItem) => {
+                          const { project, client, milestoneId, urgency, diffDays, completed } = taskItem;
+
+                          return (
+                            <div
+                              key={taskItem.id}
+                              className={`p-4 sm:p-5 rounded-2xl border transition-all flex flex-col justify-between space-y-3 group ${
+                                completed
+                                  ? "bg-white/[0.015] border-white/5 opacity-75"
+                                  : urgency === "overdue"
+                                  ? "bg-rose-950/20 border-rose-500/35 hover:border-rose-500/55"
+                                  : urgency === "today"
+                                  ? "bg-amber-950/20 border-amber-500/35 hover:border-amber-500/55"
+                                  : "bg-white/[0.03] border-white/10 hover:border-indigo-500/40 hover:bg-white/[0.05]"
+                              }`}
+                            >
+                              <div>
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    {/* Interactive Checkbox for general task */}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (milestoneId) {
+                                          handleToggleWeeklyTask(project, milestoneId);
+                                        } else {
+                                          handleOpenProjectDetails(project);
+                                        }
+                                      }}
+                                      className={`w-6 h-6 rounded-lg border flex items-center justify-center shrink-0 transition-all cursor-pointer ${
+                                        completed
+                                          ? "bg-emerald-500 border-emerald-400 text-white shadow-sm shadow-emerald-500/20"
+                                          : "border-white/20 bg-white/5 hover:border-indigo-400 hover:bg-indigo-500/20 text-transparent hover:text-indigo-300"
+                                      }`}
+                                      title={completed ? "Marcar etapa como pendente" : "Marcar etapa como concluída"}
+                                    >
+                                      <Check
+                                        size={14}
+                                        strokeWidth={3}
+                                        className={completed ? "opacity-100" : "opacity-0 hover:opacity-100"}
+                                      />
+                                    </button>
+
+                                    <div className="min-w-0">
+                                      <h4
+                                        className={`text-sm font-bold leading-snug line-clamp-1 transition-colors ${
+                                          completed
+                                            ? "line-through text-gray-500"
+                                            : "text-white group-hover:text-indigo-200"
+                                        }`}
+                                      >
+                                        {taskItem.title}
+                                      </h4>
+                                      <p className="text-[11px] text-gray-400 mt-0.5 truncate">
+                                        Projeto: <strong className="text-gray-300">{project.title}</strong>
+                                        {client && (
+                                          <span className="text-gray-500"> • {client.full_name || client.company}</span>
+                                        )}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  {/* Urgency Badge */}
+                                  {completed ? (
+                                    <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0 flex items-center gap-1">
+                                      <CheckCircle2 size={10} /> Concluída
+                                    </span>
+                                  ) : urgency === "overdue" ? (
+                                    <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 shrink-0 flex items-center gap-1">
+                                      <AlertCircle size={10} className="text-rose-400" /> Atrasada ({Math.abs(diffDays || 0)}d)
+                                    </span>
+                                  ) : urgency === "today" ? (
+                                    <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0 flex items-center gap-1">
+                                      <Clock size={10} className="text-amber-400" /> Entrega Hoje!
+                                    </span>
+                                  ) : urgency === "this_week" ? (
+                                    <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 shrink-0 flex items-center gap-1">
+                                      <Calendar size={10} /> Em {diffDays}d
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-white/5 text-gray-400 border border-white/10 shrink-0">
+                                      {taskItem.formattedDueDate}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Progress bar and metadata footer */}
+                              <div className="space-y-2 pt-2 border-t border-white/5">
+                                {taskItem.totalSubtasks > 0 && (
+                                  <div>
+                                    <div className="flex justify-between text-[10px] text-gray-400 mb-1">
+                                      <span>
+                                        {taskItem.completedSubtasks} de {taskItem.totalSubtasks} sub-tarefas concluídas
+                                      </span>
+                                      <span className="font-bold text-white">{taskItem.progressPercent}%</span>
+                                    </div>
+                                    <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden">
+                                      <div
+                                        className={`h-full rounded-full transition-all ${
+                                          completed
+                                            ? "bg-emerald-400"
+                                            : "bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
+                                        }`}
+                                        style={{ width: `${taskItem.progressPercent}%` }}
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+
+                                <div className="flex items-center justify-between text-[11px] text-gray-400 pt-1">
+                                  <span className="flex items-center gap-1 text-gray-300 text-[11px]">
+                                    <Calendar size={12} className="text-indigo-400" />
+                                    {taskItem.formattedDueDate}
+                                  </span>
+
+                                  <button
+                                    onClick={() => handleOpenProjectDetails(project)}
+                                    className="text-indigo-400 hover:text-indigo-300 text-xs font-semibold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform cursor-pointer"
+                                  >
+                                    Ver Etapa <ArrowUpRight size={12} />
+                                  </button>
+                                </div>
+                              </div>
                             </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* ========================================================================= */}
+              {/* 3. RESUMO FINANCEIRO & FLUXO DE RECEBIMENTO DO MÊS ATUAL                  */}
+              {/* ========================================================================= */}
+              {(() => {
+                const now = new Date();
+                const currYear = now.getFullYear();
+                const currMonth = now.getMonth();
+                const monthNameRaw = now.toLocaleDateString("pt-BR", { month: "long" });
+                const capitalizedMonth = monthNameRaw.charAt(0).toUpperCase() + monthNameRaw.slice(1);
+                const formattedMonthYear = `${capitalizedMonth} / ${currYear}`;
+
+                let monthExpectedTotal = 0;
+                let monthTotalPaid = 0;
+                let monthRemaining = 0;
+                let totalOverdue = 0;
+                let monthInstallmentsCount = 0;
+                let monthPaidCount = 0;
+                let monthPendingCount = 0;
+                let overdueCount = 0;
+
+                let globalContractTotal = 0;
+                let globalTotalPaid = 0;
+
+                const allPendingInstallments: Array<{
+                  project: Project;
+                  client: Profile | undefined;
+                  installment: ProjectInstallment;
+                  diffDays: number | null;
+                  isOverdue: boolean;
+                  isCurrentMonth: boolean;
+                }> = [];
+
+                const todayDate = new Date();
+                todayDate.setHours(0, 0, 0, 0);
+
+                for (const p of projects) {
+                  const pFin = projectFinances[p.id] || generateDefaultProjectFinances(p);
+                  const summary = calculateFinancialSummary(pFin);
+                  globalContractTotal += summary.contractValue;
+                  globalTotalPaid += summary.totalPaid;
+                  totalOverdue += summary.totalOverdue;
+
+                  const client = clients.find((c) => c.id === p.client_id);
+                  if (pFin?.installments && Array.isArray(pFin.installments)) {
+                    for (const inst of pFin.installments) {
+                      let diffDays: number | null = null;
+                      let isOverdue = false;
+                      let isCurrentMonth = false;
+
+                      if (inst.due_date) {
+                        const d = new Date(inst.due_date);
+                        if (!isNaN(d.getTime())) {
+                          const iYear = d.getFullYear();
+                          const iMonth = d.getMonth();
+                          isCurrentMonth = iYear === currYear && iMonth === currMonth;
+
+                          d.setHours(0, 0, 0, 0);
+                          diffDays = Math.ceil((d.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24));
+                          isOverdue = diffDays < 0 && !inst.paid_at;
+                        }
+                      }
+
+                      if (isOverdue) {
+                        overdueCount++;
+                      }
+
+                      if (isCurrentMonth) {
+                        monthExpectedTotal += inst.amount;
+                        monthInstallmentsCount++;
+                        if (inst.paid_at) {
+                          monthTotalPaid += inst.amount;
+                          monthPaidCount++;
+                        } else {
+                          monthRemaining += inst.amount;
+                          monthPendingCount++;
+                        }
+                      } else if (inst.paid_at) {
+                        const pDate = new Date(inst.paid_at);
+                        if (!isNaN(pDate.getTime()) && pDate.getFullYear() === currYear && pDate.getMonth() === currMonth) {
+                          monthTotalPaid += inst.amount;
+                          monthPaidCount++;
+                        }
+                      }
+
+                      if (!inst.paid_at) {
+                        allPendingInstallments.push({
+                          project: p,
+                          client,
+                          installment: inst,
+                          diffDays,
+                          isOverdue,
+                          isCurrentMonth,
+                        });
+                      }
+                    }
+                  }
+                }
+
+                allPendingInstallments.sort((a, b) => {
+                  if (a.isOverdue && !b.isOverdue) return -1;
+                  if (!a.isOverdue && b.isOverdue) return 1;
+                  if (a.isCurrentMonth && !b.isCurrentMonth) return -1;
+                  if (!a.isCurrentMonth && b.isCurrentMonth) return 1;
+                  if (a.diffDays !== null && b.diffDays !== null) return a.diffDays - b.diffDays;
+                  return 0;
+                });
+
+                const monthPercent =
+                  monthExpectedTotal > 0
+                    ? Math.round((monthTotalPaid / monthExpectedTotal) * 100)
+                    : monthTotalPaid > 0
+                    ? 100
+                    : 0;
+
+                return (
+                  <div className="p-6 sm:p-7 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-6">
+                    {/* Header */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                            <DollarSign size={20} className="text-emerald-400" />
+                            <span>Resumo Financeiro — Mês Atual ({capitalizedMonth})</span>
+                          </h3>
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
+                            <Calendar size={11} /> {formattedMonthYear}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          Acompanhamento em tempo real de previsões, receita realizada e contas a receber no mês vigente.
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() => setActiveTab("finance")}
+                        className="px-3.5 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Receipt size={14} />
+                        <span>Abrir Módulo Financeiro →</span>
+                      </button>
+                    </div>
+
+                    {/* KPI Metrics Row - CURRENT MONTH */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      {/* 1. Previsto no Mês Atual */}
+                      <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.03] border border-white/10 flex flex-col justify-between hover:border-indigo-500/30 transition-all">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                            Previsto no Mês ({capitalizedMonth})
+                          </span>
+                          <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400">
+                            <DollarSign size={16} />
                           </div>
                         </div>
+                        <p className="text-xl sm:text-2xl font-black text-white font-mono">
+                          {formatBRL(monthExpectedTotal)}
+                        </p>
+                        <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-gray-400">
+                          <span>{monthInstallmentsCount} parcelas neste mês</span>
+                          <span className="text-indigo-400 font-semibold">{formatBRL(globalContractTotal)} total</span>
+                        </div>
+                      </div>
+
+                      {/* 2. Recebido no Mês Atual */}
+                      <div className="p-4 sm:p-5 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 flex flex-col justify-between hover:border-emerald-500/40 transition-all">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
+                            Recebido no Mês
+                          </span>
+                          <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
+                            <CheckCircle2 size={16} />
+                          </div>
+                        </div>
+                        <p className="text-xl sm:text-2xl font-black text-emerald-400 font-mono">
+                          {formatBRL(monthTotalPaid)}
+                        </p>
+                        <div className="mt-2 pt-2 border-t border-emerald-500/10 space-y-1">
+                          <div className="flex items-center justify-between text-[11px] text-emerald-300">
+                            <span>{monthPercent}% do mês liquidado</span>
+                            <span className="font-bold">{monthPaidCount} pagas</span>
+                          </div>
+                          <div className="w-full h-1 bg-black/40 rounded-full overflow-hidden">
+                            <div className="h-full bg-emerald-400 rounded-full transition-all" style={{ width: `${monthPercent}%` }} />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 3. A Receber no Mês Atual */}
+                      <div className="p-4 sm:p-5 rounded-2xl bg-purple-500/5 border border-purple-500/20 flex flex-col justify-between hover:border-purple-500/40 transition-all">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-bold text-purple-300 uppercase tracking-wider">
+                            A Receber no Mês
+                          </span>
+                          <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400">
+                            <Clock size={16} />
+                          </div>
+                        </div>
+                        <p className="text-xl sm:text-2xl font-black text-purple-300 font-mono">
+                          {formatBRL(monthRemaining)}
+                        </p>
+                        <div className="mt-2 pt-2 border-t border-purple-500/10 flex items-center justify-between text-[11px] text-purple-300/80">
+                          <span>{monthPendingCount} {monthPendingCount === 1 ? "parcela em aberto" : "parcelas em aberto"}</span>
+                          <span className="font-semibold">Vencimento este mês</span>
+                        </div>
+                      </div>
+
+                      {/* 4. INADIMPLÊNCIA / ATRASO - ALWAYS RED STYLED */}
+                      <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-red-950/40 via-rose-950/30 to-red-950/20 border border-rose-500/40 shadow-lg shadow-rose-950/30 flex flex-col justify-between hover:border-rose-500/60 transition-all">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                            Inadimplência
+                          </span>
+                          <div className="p-2 rounded-xl bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                            <AlertCircle size={16} />
+                          </div>
+                        </div>
+                        <p className="text-xl sm:text-2xl font-black font-mono text-rose-400">
+                          {formatBRL(totalOverdue)}
+                        </p>
+                        <div className="mt-2 pt-2 border-t border-rose-500/20 flex items-center justify-between text-[11px]">
+                          <span className="text-rose-300/90 font-medium">
+                            {totalOverdue > 0 ? `⚠️ ${overdueCount} em atraso` : "Zero pendências"}
+                          </span>
+                          <span className="text-rose-400 font-bold">
+                            {totalOverdue > 0 ? "Cobrança necessária" : "Em dia"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Upcoming Installments Mini-Table - ONLY CURRENT MONTH & OVERDUE */}
+                    {(() => {
+                      const monthOrOverdueInstallments = allPendingInstallments.filter(
+                        (inst) => inst.isCurrentMonth || inst.isOverdue
                       );
-                    })}
+
+                      return (
+                        <div className="space-y-3 pt-2">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
+                              <Clock size={14} className="text-indigo-400" />
+                              <span>Parcelas a Receber — Mês Atual ({capitalizedMonth}) & Atrasos</span>
+                            </h4>
+                            <span className="text-[11px] text-gray-400">
+                              {monthOrOverdueInstallments.length} {monthOrOverdueInstallments.length === 1 ? "parcela a receber" : "parcelas a receber"}
+                            </span>
+                          </div>
+
+                          {monthOrOverdueInstallments.length === 0 ? (
+                            <div className="p-6 text-center rounded-2xl bg-black/20 border border-white/5">
+                              <CheckCircle2 size={28} className="text-emerald-400 mx-auto mb-2" />
+                              <p className="text-xs text-gray-300 font-medium">Nenhuma parcela pendente para este mês ou em atraso! ✨</p>
+                              <p className="text-[11px] text-gray-500 mt-0.5">Todas as parcelas de {capitalizedMonth} estão regularizadas.</p>
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              {monthOrOverdueInstallments.map(({ project, client, installment, diffDays, isOverdue, isCurrentMonth }) => {
+                                const formattedDueDate = installment.due_date
+                                  ? new Date(installment.due_date).toLocaleDateString("pt-BR")
+                                  : "Sem vencimento";
+
+                                return (
+                                  <div
+                                    key={installment.id}
+                                    className={`p-3.5 rounded-xl border transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                                      isOverdue
+                                        ? "bg-rose-950/20 border-rose-500/30 hover:border-rose-500/50"
+                                        : "bg-indigo-950/15 border-indigo-500/20 hover:border-indigo-500/40"
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-3">
+                                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
+                                        isOverdue
+                                          ? "bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                                          : "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
+                                      }`}>
+                                        {isOverdue ? "!" : installment.installment_number || "•"}
+                                      </div>
+                                      <div>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <span className="text-xs font-bold text-white">
+                                            Parcela {installment.installment_number} — {project.title}
+                                          </span>
+                                          {isCurrentMonth && (
+                                            <span className="text-[9px] font-extrabold px-2 py-0.2 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 uppercase">
+                                              Mês Atual
+                                            </span>
+                                          )}
+                                        </div>
+                                        <p className="text-[11px] text-gray-400">
+                                          Cliente: <strong className="text-gray-300">{client?.full_name || client?.company || "Não vinculado"}</strong>
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0">
+                                      <div className="text-left sm:text-right">
+                                        <span className={`text-sm font-black font-mono block ${isOverdue ? "text-rose-400" : "text-white"}`}>
+                                          {formatBRL(installment.amount)}
+                                        </span>
+                                        <span className="text-[10px] text-gray-400 flex items-center gap-1">
+                                          <Calendar size={10} />
+                                          {formattedDueDate}
+                                        </span>
+                                      </div>
+
+                                      {isOverdue ? (
+                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                                          Vencida há {Math.abs(diffDays || 0)}d
+                                        </span>
+                                      ) : (
+                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                                          {diffDays === 0 ? "Vence hoje" : diffDays !== null && diffDays <= 7 ? `Vence em ${diffDays}d` : "Vence este mês"}
+                                        </span>
+                                      )}
+
+                                      <button
+                                        onClick={() => {
+                                          setSelectedProject(project);
+                                          setActiveTab("finance");
+                                        }}
+                                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer"
+                                        title="Ver no Módulo Financeiro"
+                                      >
+                                        <ArrowUpRight size={14} />
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
-                )}
-              </div>
+                );
+              })()}
             </div>
           )}
 
@@ -3910,23 +6165,53 @@ export default function AdminDashboardPage() {
                               </div>
                             </div>
 
-                            {/* Progress Bar Section (only if progress > 0) */}
-                            {proj.progress > 0 && (
-                              <div className="space-y-1.5">
-                                <div className="flex justify-between items-center text-xs font-semibold">
-                                  <span className="text-gray-400">Progresso Geral</span>
-                                  <span className="font-bold text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-lg border border-indigo-500/20 text-[11px] font-mono">
-                                    {proj.progress}%
-                                  </span>
+                            {/* Dual Progress Bars */}
+                            {(() => {
+                              const cardTimelineProg = calculateTimelineProgress(proj.start_date, proj.deadline);
+                              const cardSprintProg = calculateSprintProgress(projMilestones);
+
+                              return (
+                                <div className="space-y-2.5 pt-1">
+                                  {/* Cronograma / Meses */}
+                                  <div className="space-y-1">
+                                    <div className="flex justify-between items-center text-[11px]">
+                                      <span className="text-gray-400 font-medium flex items-center gap-1">
+                                        <Calendar size={11} className="text-indigo-400" />
+                                        <span>1. Cronograma ({cardTimelineProg.totalMonths > 0 ? `Mês ${cardTimelineProg.currentMonth}/${cardTimelineProg.totalMonths}` : "Prazo"})</span>
+                                      </span>
+                                      <span className="font-bold text-indigo-300 font-mono text-[10px]">
+                                        {cardTimelineProg.percent}%
+                                      </span>
+                                    </div>
+                                    <div className="w-full h-1.5 bg-black/60 rounded-full overflow-hidden border border-white/5">
+                                      <div
+                                        className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-300"
+                                        style={{ width: `${cardTimelineProg.percent}%` }}
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {/* Sprint / Checks */}
+                                  <div className="space-y-1">
+                                    <div className="flex justify-between items-center text-[11px]">
+                                      <span className="text-gray-400 font-medium flex items-center gap-1">
+                                        <CheckSquare size={11} className="text-purple-400" />
+                                        <span>2. Sprint Mensal (Checks)</span>
+                                      </span>
+                                      <span className="font-bold text-purple-300 font-mono text-[10px]">
+                                        {cardSprintProg.percent}%
+                                      </span>
+                                    </div>
+                                    <div className="w-full h-1.5 bg-black/60 rounded-full overflow-hidden border border-white/5">
+                                      <div
+                                        className="h-full bg-gradient-to-r from-purple-500 to-emerald-400 rounded-full transition-all duration-300"
+                                        style={{ width: `${cardSprintProg.percent}%` }}
+                                      />
+                                    </div>
+                                  </div>
                                 </div>
-                                <div className="w-full h-2 bg-black/60 rounded-full overflow-hidden p-0.5 border border-white/5">
-                                  <div
-                                    className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full transition-all duration-500 shadow-sm shadow-indigo-500/50"
-                                    style={{ width: `${proj.progress}%` }}
-                                  />
-                                </div>
-                              </div>
-                            )}
+                              );
+                            })()}
                           </div>
 
                           {/* Action Footer */}
@@ -3967,6 +6252,18 @@ export default function AdminDashboardPage() {
                             >
                               <Edit2 size={13} className="text-gray-400" />
                               <span>Editar</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteProject(proj.id);
+                              }}
+                              className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/25 text-rose-400 hover:text-rose-300 border border-rose-500/20 text-xs font-semibold flex items-center justify-center transition-all cursor-pointer"
+                              title="Excluir Projeto Permanentemente"
+                            >
+                              <Trash2 size={13} />
                             </button>
                           </div>
                         </div>
@@ -4256,55 +6553,130 @@ export default function AdminDashboardPage() {
 
 
 
-          {/* TAB: PROPOSALS & PLANS */}
-          {activeTab === "proposals" && (
-            <div className="p-6 sm:p-7 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    <DollarSign size={18} className="text-emerald-400" />
-                    <span>Orçamentos & Planos Cadastrados</span>
-                  </h3>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    Modelos de pacotes de serviços disponíveis no seu portfólio.
-                  </p>
-                </div>
-                <Link
-                  href="/valores"
-                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-semibold border border-white/10 flex items-center gap-1.5"
-                >
-                  <span>Ver Página Pública de Valores</span>
-                  <ArrowUpRight size={13} />
-                </Link>
-              </div>
+          {/* TAB: APPROVALS & CLIENT FEEDBACKS */}
+          {activeTab === "approvals" && (
+            <ApprovalsModule
+              feedbacks={deliveryFeedbacks}
+              projects={projects}
+              clients={clients}
+              onToggleStatus={(projId, feedbackId) => handleToggleFeedbackStatus(projId, feedbackId)}
+              onDeleteFeedback={(projId, feedbackId) => handleDeleteFeedback(projId, feedbackId)}
+              onAcknowledgeWhatsApp={(item) => handleAcknowledgeFeedbackWhatsApp(item)}
+              onOpenProjectDetails={(proj) => handleOpenProjectDetails(proj)}
+            />
+          )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
-                <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/5">
-                  <span className="text-xs font-bold text-blue-400 uppercase">Landing Page Express</span>
-                  <p className="text-xl font-extrabold text-white mt-1">R$ 1.500</p>
-                  <p className="text-[11px] text-emerald-400 font-semibold mt-1">3x sem juros ou 50% / 50%</p>
-                  <p className="text-xs text-gray-400 mt-2">Design sob medida no Figma, Next.js, SEO e WhatsApp integrado.</p>
-                </div>
-                <div className="p-5 rounded-2xl bg-white/[0.02] border border-indigo-500/30 bg-indigo-950/20">
-                  <span className="text-xs font-bold text-indigo-400 uppercase">Software/App (Contrato 12m)</span>
-                  <p className="text-xl font-extrabold text-white mt-1">12x de R$ 350 <span className="text-xs text-gray-400 font-normal">/mês</span></p>
-                  <p className="text-[11px] text-purple-300 font-semibold mt-1">1 update mensal + suporte</p>
-                  <p className="text-xs text-gray-400 mt-2">+ R$ 1.500 opcional para entrega definitiva do código-fonte.</p>
-                </div>
-                <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/5">
-                  <span className="text-xs font-bold text-teal-400 uppercase">Redesign & Consultoria UX/UI</span>
-                  <p className="text-xl font-extrabold text-white mt-1">R$ 3.500</p>
-                  <p className="text-[11px] text-emerald-400 font-semibold mt-1">3x sem juros ou 50% / 50%</p>
-                  <p className="text-xs text-gray-400 mt-2">Prazo 30 a 60 dias • Auditoria, novos fluxos e protótipo Figma.</p>
-                </div>
-                <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/5">
-                  <span className="text-xs font-bold text-cyan-400 uppercase">Pós-Contrato (12 meses)</span>
-                  <p className="text-xl font-extrabold text-white mt-1">R$ 250 ou R$ 350</p>
-                  <p className="text-[11px] text-cyan-300 font-semibold mt-1">Hospedagem vs Manutenção</p>
-                  <p className="text-xs text-gray-400 mt-2">R$ 250 apenas servidores no ar, ou R$ 350 com suporte e updates.</p>
-                </div>
-              </div>
-            </div>
+          {/* TAB: DOCUMENTS & CONTRACTS */}
+          {activeTab === "documents" && (
+            <DocumentsModule
+              documents={projectDocuments}
+              projects={projects}
+              onOpenDocModal={(projId, doc) => handleOpenDocumentModal(projId, doc)}
+              onOpenDocGenerator={(projId) => handleOpenDocGenerator(projId)}
+              onOpenPdfViewer={(doc) => handleOpenPdfViewer(doc)}
+              onDeleteDocument={(projId, docId) => handleDeleteDocument(projId, docId)}
+            />
+          )}
+
+          {/* TAB: SUPPORT & HELPDESK INBOX */}
+          {activeTab === "support" && (
+            <SupportModule
+              tickets={supportTickets}
+              projects={projects}
+              clients={clients}
+              onOpenTicketModal={(ticket) => handleOpenTicketModal(ticket)}
+              onToggleStatus={(ticketId, newStatus) =>
+                handleToggleTicketStatus(ticketId, newStatus)
+              }
+              onDeleteTicket={(ticketId) => handleDeleteTicket(ticketId)}
+              onReplyWhatsApp={(ticket) => handleReplyTicketWhatsApp(ticket)}
+            />
+          )}
+
+          {/* TAB: BROADCAST & READY TEMPLATES */}
+          {activeTab === "broadcast" && (
+            <BroadcastModule
+              projects={projects}
+              clients={clients}
+              selectedTemplateId={broadcastTemplateId}
+              onSelectTemplate={(id) => setBroadcastTemplateId(id)}
+              selectedProjectId={broadcastProjectId}
+              onSelectProject={(id) => setBroadcastProjectId(id)}
+              selectedClientId={broadcastClientId}
+              onSelectClient={(id) => setBroadcastClientId(id)}
+              customText={customBroadcastText}
+              onChangeCustomText={(text) => setCustomBroadcastText(text)}
+              copied={copiedBroadcast}
+              onCopy={() => {
+                const targetProj = projects.find((p) => p.id === broadcastProjectId);
+                const targetClient = clients.find((c) => c.id === broadcastClientId);
+                const text = customBroadcastText || getBroadcastMessageText(broadcastTemplateId, targetClient, targetProj);
+                navigator.clipboard.writeText(text);
+                setCopiedBroadcast(true);
+                setTimeout(() => setCopiedBroadcast(false), 2000);
+              }}
+              onSendWhatsApp={() => {
+                const targetProj = projects.find((p) => p.id === broadcastProjectId);
+                const targetClient = clients.find((c) => c.id === broadcastClientId);
+                const text = customBroadcastText || getBroadcastMessageText(broadcastTemplateId, targetClient, targetProj);
+                const phoneDigits = formatPhoneForWhatsApp(targetClient?.phone);
+                const encoded = encodeURIComponent(text);
+                if (phoneDigits && phoneDigits.length >= 10) {
+                  window.open(`https://wa.me/${phoneDigits}?text=${encoded}`, "_blank");
+                } else {
+                  window.open(`https://api.whatsapp.com/send?text=${encoded}`, "_blank");
+                }
+              }}
+              onSendEmail={() => {
+                const targetProj = projects.find((p) => p.id === broadcastProjectId);
+                const targetClient = clients.find((c) => c.id === broadcastClientId);
+                const text = customBroadcastText || getBroadcastMessageText(broadcastTemplateId, targetClient, targetProj);
+                const email = targetClient?.email || "";
+                const subject = `Comunicado do Projeto: ${targetProj?.title || "Atualização Oficial"}`;
+                window.open(`mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`, "_blank");
+              }}
+              getMessagePreview={(tmplId, client, project) =>
+                getBroadcastMessageText(tmplId, client, project)
+              }
+            />
+          )}
+
+          {/* TAB: KANBAN PROSPECTION & SALES FUNNEL */}
+          {activeTab === "kanban" && (
+            <KanbanModule
+              clients={clients}
+              onOpenProposalModal={() => setActiveTab("proposals")}
+              onNavigateTab={(tab) => setActiveTab(tab as TabKey)}
+            />
+          )}
+
+          {/* TAB: EXECUTIVE REPORTS & ANALYTICS */}
+          {activeTab === "reports" && (
+            <ReportsModule
+              projects={projects}
+              clients={clients}
+              projectFinances={projectFinances}
+              milestones={milestones}
+              onNavigateTab={(tab) => setActiveTab(tab as TabKey)}
+              onOpenDocGenerator={(projId) => handleOpenDocGenerator(projId)}
+            />
+          )}
+
+          {/* TAB: PROPOSALS & BUDGET GENERATOR / PRODUCTS / TEMPLATES */}
+          {(activeTab === "proposals" || activeTab === "products" || activeTab === "templates") && (
+            <ProposalsModule
+              projects={projects}
+              clients={clients}
+              initialSubTab={activeTab === "products" ? "products" : activeTab === "templates" ? "templates" : "proposals"}
+              onSubTabChange={(sub) => setActiveTab(sub as TabKey)}
+              onSaveToProjectDocuments={(doc, projId) => {
+                const currentDocs = projectDocuments[projId] || [];
+                saveDocumentsToStorage({
+                  ...projectDocuments,
+                  [projId]: [doc, ...currentDocs],
+                });
+              }}
+            />
           )}
 
           {/* TAB: FINANCE & BILLING */}
@@ -4424,43 +6796,23 @@ export default function AdminDashboardPage() {
                     </div>
 
                     {/* 4. Total em Atraso */}
-                    <div
-                      className={`p-5 sm:p-6 rounded-3xl border backdrop-blur-xl shadow-lg ${
-                        globalOverdue > 0
-                          ? "bg-rose-950/20 border-rose-500/40"
-                          : "bg-slate-900/80 border-white/10"
-                      }`}
-                    >
+                    <div className="p-5 sm:p-6 rounded-3xl bg-slate-900/80 border border-rose-500/40 backdrop-blur-xl shadow-lg shadow-rose-950/20">
                       <div className="flex items-center justify-between mb-3">
-                        <span
-                          className={`text-xs font-bold uppercase tracking-wider ${
-                            globalOverdue > 0 ? "text-rose-400" : "text-gray-400"
-                          }`}
-                        >
+                        <span className="text-xs font-bold text-rose-400 uppercase tracking-wider">
                           Inadimplência / Atraso
                         </span>
-                        <div
-                          className={`p-2.5 rounded-2xl border ${
-                            globalOverdue > 0
-                              ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
-                              : "bg-white/5 text-gray-400 border-white/10"
-                          }`}
-                        >
+                        <div className="p-2.5 rounded-2xl bg-rose-500/10 text-rose-400 border border-rose-500/20">
                           <AlertCircle size={18} />
                         </div>
                       </div>
-                      <p
-                        className={`text-2xl sm:text-3xl font-black tracking-tight ${
-                          globalOverdue > 0 ? "text-rose-400" : "text-gray-300"
-                        }`}
-                      >
+                      <p className="text-2xl sm:text-3xl font-black text-rose-400 tracking-tight">
                         {formatBRL(globalOverdue)}
                       </p>
-                      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[11px] text-gray-400">
+                      <div className="mt-3 pt-3 border-t border-rose-500/20 flex items-center justify-between text-[11px] text-rose-300/80">
                         <span>
                           {globalOverdue > 0 ? "⚠️ Requer contato" : "Em dia"}
                         </span>
-                        <span className={globalOverdue > 0 ? "text-rose-400 font-bold" : "text-emerald-400 font-bold"}>
+                        <span className="text-rose-400 font-bold">
                           {globalOverdue > 0 ? "Parcelas vencidas" : "Zero pendências"}
                         </span>
                       </div>
@@ -4472,19 +6824,64 @@ export default function AdminDashboardPage() {
               {/* Search, Filter & Project Selector Bar */}
               <div className="p-5 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl flex flex-col md:flex-row items-center justify-between gap-4">
                 {/* Search */}
-                <div className="relative w-full md:w-80">
+                <div className="relative w-full md:w-72">
                   <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                   <input
                     type="text"
                     value={financeSearchQuery}
                     onChange={(e) => setFinanceSearchQuery(e.target.value)}
-                    placeholder="Buscar por parcela, cliente ou comprovante..."
+                    placeholder="Buscar por parcela, cliente..."
                     className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-gray-500 outline-none focus:border-emerald-500"
                   />
                 </div>
 
                 {/* Filters */}
                 <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+                  {/* Filter by Month */}
+                  {(() => {
+                    const monthsSet = new Set<string>();
+                    const now = new Date();
+                    const curKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+                    monthsSet.add(curKey);
+
+                    for (const p of projects) {
+                      const pFin = projectFinances[p.id] || generateDefaultProjectFinances(p);
+                      for (const inst of pFin.installments) {
+                        if (inst.due_date) {
+                          const mKey = inst.due_date.slice(0, 7);
+                          if (/^\d{4}-\d{2}$/.test(mKey)) {
+                            monthsSet.add(mKey);
+                          }
+                        }
+                      }
+                    }
+                    const sortedMonths = Array.from(monthsSet).sort();
+
+                    return (
+                      <select
+                        value={financeMonthFilter}
+                        onChange={(e) => setFinanceMonthFilter(e.target.value)}
+                        className={`px-3 py-2 rounded-xl bg-black/40 border text-xs outline-none focus:border-emerald-500 cursor-pointer font-medium transition-all ${
+                          financeMonthFilter === "current_and_overdue"
+                            ? "border-emerald-500/40 text-emerald-300 bg-emerald-950/20"
+                            : "border-white/10 text-white"
+                        }`}
+                      >
+                        <option value="current_and_overdue" className="bg-slate-900 text-emerald-300 font-semibold">
+                          📅 Mês Atual + Atrasadas (Padrão)
+                        </option>
+                        <option value="all" className="bg-slate-900 text-white">
+                          🗓️ Todos os Meses
+                        </option>
+                        {sortedMonths.map((m) => (
+                          <option key={m} value={m} className="bg-slate-900 text-gray-200">
+                            {formatMonthKeyLabel(m)} {m === curKey ? "• (Mês Atual)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    );
+                  })()}
+
                   {/* Filter by Project */}
                   <select
                     value={financeProjectFilter}
@@ -4527,6 +6924,9 @@ export default function AdminDashboardPage() {
 
               {/* Master Installments Table Across Projects */}
               {(() => {
+                const now = new Date();
+                const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
                 // Collect all installments from projects matching filters
                 const allList: { project: Project; installment: ProjectInstallment }[] = [];
 
@@ -4536,6 +6936,17 @@ export default function AdminDashboardPage() {
                   for (const inst of pFin.installments) {
                     const st = getInstallmentStatus(inst);
                     if (financeStatusFilter !== "all" && st.status !== financeStatusFilter) continue;
+
+                    // Month filter logic: default to current month and overdue
+                    const instMonth = inst.due_date ? inst.due_date.slice(0, 7) : "";
+                    const isOverdue = st.status === "vencido";
+                    const isCurrentMonth = instMonth === currentMonthKey;
+
+                    if (financeMonthFilter === "current_and_overdue") {
+                      if (!isCurrentMonth && !isOverdue) continue;
+                    } else if (financeMonthFilter !== "all") {
+                      if (instMonth !== financeMonthFilter) continue;
+                    }
 
                     const client = clients.find((c) => c.id === p.client_id);
                     const searchTarget = financeSearchQuery.toLowerCase().trim();
@@ -4568,19 +6979,40 @@ export default function AdminDashboardPage() {
                       <DollarSign size={36} className="mx-auto text-gray-600" />
                       <h4 className="text-base font-bold text-white">Nenhuma parcela encontrada</h4>
                       <p className="text-xs text-gray-400 max-w-md mx-auto">
-                        Não há parcelas que correspondam aos filtros de busca selecionados.
+                        Não há parcelas que correspondam aos filtros de busca e mês selecionados.
                       </p>
+                      {financeMonthFilter !== "all" && (
+                        <button
+                          type="button"
+                          onClick={() => setFinanceMonthFilter("all")}
+                          className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-semibold cursor-pointer transition-colors inline-block"
+                        >
+                          Ver parcelas de todos os meses
+                        </button>
+                      )}
                     </div>
                   );
                 }
 
                 return (
                   <div className="p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                        <FileText size={16} className="text-emerald-400" />
-                        <span>Listagem Geral de Parcelas ({allList.length})</span>
-                      </h3>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                          <FileText size={16} className="text-emerald-400" />
+                          <span>Listagem de Parcelas ({allList.length})</span>
+                        </h3>
+                        {financeMonthFilter === "current_and_overdue" && (
+                          <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
+                            📅 Mês Atual + Atrasadas
+                          </span>
+                        )}
+                        {financeMonthFilter !== "current_and_overdue" && financeMonthFilter !== "all" && (
+                          <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300">
+                            🗓️ {formatMonthKeyLabel(financeMonthFilter)}
+                          </span>
+                        )}
+                      </div>
                       <span className="text-xs text-gray-400">
                         Total listado:{" "}
                         <strong className="text-emerald-400">
@@ -5291,43 +7723,81 @@ export default function AdminDashboardPage() {
                         </div>
                       </div>
 
-                      {/* Dates and Progress Stats */}
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                        <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5">
-                          <span className="text-[10px] text-gray-400 uppercase font-bold block mb-0.5">
-                            Data de Início
-                          </span>
-                          <p className="text-xs font-semibold text-white">
-                            {selectedProject.start_date
-                              ? new Date(selectedProject.start_date).toLocaleDateString("pt-BR")
-                              : "Não definida"}
-                          </p>
-                        </div>
-
-                        <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5">
-                          <span className="text-[10px] text-gray-400 uppercase font-bold block mb-0.5">
-                            Prazo Estimado
-                          </span>
-                          <p className="text-xs font-semibold text-white">
-                            {selectedProject.deadline
-                              ? new Date(selectedProject.deadline).toLocaleDateString("pt-BR")
-                              : "Não definido"}
-                          </p>
-                        </div>
-
-                        {selectedProject.progress > 0 && (
-                          <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5 col-span-2 sm:col-span-1">
+                      {/* Dates and Dual Progress Stats */}
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5">
                             <span className="text-[10px] text-gray-400 uppercase font-bold block mb-0.5">
-                              Progresso ({selectedProject.progress}%)
+                              Data de Início
                             </span>
-                            <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden mt-1.5">
-                              <div
-                                className="h-full bg-gradient-to-r from-indigo-500 to-pink-500 rounded-full"
-                                style={{ width: `${selectedProject.progress}%` }}
-                              />
-                            </div>
+                            <p className="text-xs font-semibold text-white">
+                              {selectedProject.start_date
+                                ? new Date(selectedProject.start_date).toLocaleDateString("pt-BR")
+                                : "Não definida"}
+                            </p>
                           </div>
-                        )}
+
+                          <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5">
+                            <span className="text-[10px] text-gray-400 uppercase font-bold block mb-0.5">
+                              Prazo Estimado de Conclusão
+                            </span>
+                            <p className="text-xs font-semibold text-white">
+                              {selectedProject.deadline
+                                ? new Date(selectedProject.deadline).toLocaleDateString("pt-BR")
+                                : "Não definido"}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Dual Progress Bars */}
+                        {(() => {
+                          const modalTimelineProg = calculateTimelineProgress(selectedProject.start_date, selectedProject.deadline);
+                          const modalSprintProg = calculateSprintProgress(milestones);
+
+                          return (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              {/* 1. Cronograma / Meses */}
+                              <div className="p-3.5 rounded-2xl bg-indigo-950/20 border border-indigo-500/20 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                                    <Calendar size={13} className="text-indigo-400" />
+                                    <span>1. Cronograma Geral</span>
+                                  </span>
+                                  <span className="text-xs font-mono font-bold text-indigo-300">
+                                    {modalTimelineProg.percent}%
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-gray-400">{modalTimelineProg.detail}</p>
+                                <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden border border-white/5">
+                                  <div
+                                    className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full transition-all duration-300"
+                                    style={{ width: `${modalTimelineProg.percent}%` }}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* 2. Sprint / Checks */}
+                              <div className="p-3.5 rounded-2xl bg-purple-950/20 border border-purple-500/20 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                                    <CheckSquare size={13} className="text-purple-400" />
+                                    <span>2. Sprint Mensal (Checks)</span>
+                                  </span>
+                                  <span className="text-xs font-mono font-bold text-purple-300">
+                                    {modalSprintProg.percent}%
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-gray-400">{modalSprintProg.detail}</p>
+                                <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden border border-white/5">
+                                  <div
+                                    className="h-full bg-gradient-to-r from-purple-500 to-emerald-400 rounded-full transition-all duration-300"
+                                    style={{ width: `${modalSprintProg.percent}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {/* URLs Links */}
@@ -5684,26 +8154,132 @@ export default function AdminDashboardPage() {
                           </button>
                         </div>
 
-                        {/* Progress Bar */}
+                        {/* Month Filter & Progress Bars */}
                         {milestones.length > 0 && (() => {
-                          const completedCount = milestones.filter((m) => m.completed || getMilestoneStatus(m) === "concluido").length;
-                          const progressPct = Math.round((completedCount / milestones.length) * 100);
+                          const monthMap = new Map<string, { key: string; label: string; count: number; completed: number }>();
+                          milestones.forEach((m) => {
+                            const key = getMilestoneMonthKey(m.due_date);
+                            const label = formatMonthKeyLabel(key);
+                            const isDone = m.completed || getMilestoneStatus(m) === "concluido";
+                            if (!monthMap.has(key)) {
+                              monthMap.set(key, { key, label, count: 0, completed: 0 });
+                            }
+                            const curr = monthMap.get(key)!;
+                            curr.count += 1;
+                            if (isDone) curr.completed += 1;
+                          });
+
+                          const monthList = Array.from(monthMap.values()).sort((a, b) => {
+                            if (a.key === "sem_data") return 1;
+                            if (b.key === "sem_data") return -1;
+                            return a.key.localeCompare(b.key);
+                          });
+
+                          const totalCompleted = milestones.filter((m) => m.completed || getMilestoneStatus(m) === "concluido").length;
+                          const totalProgressPct = Math.round((totalCompleted / milestones.length) * 100);
+
+                          const displayedList = milestoneMonthFilter === "all"
+                            ? milestones
+                            : milestones.filter((m) => getMilestoneMonthKey(m.due_date) === milestoneMonthFilter);
+
+                          const activeMonthObj = monthList.find((m) => m.key === milestoneMonthFilter);
+                          const activeMonthCompleted = displayedList.filter((m) => m.completed || getMilestoneStatus(m) === "concluido").length;
+                          const activeMonthPct = displayedList.length > 0
+                            ? Math.round((activeMonthCompleted / displayedList.length) * 100)
+                            : 0;
+
                           return (
-                            <div className="p-4 rounded-2xl bg-black/40 border border-white/10 space-y-2">
-                              <div className="flex items-center justify-between text-xs">
-                                <span className="font-bold text-gray-300 flex items-center gap-1.5">
-                                  <CheckCircle2 size={14} className="text-emerald-400" />
-                                  <span>Progresso do Projeto</span>
-                                </span>
-                                <span className="font-mono font-bold text-emerald-300">
-                                  {progressPct}% ({completedCount} de {milestones.length} etapas)
-                                </span>
-                              </div>
-                              <div className="h-2.5 w-full bg-white/5 rounded-full overflow-hidden">
-                                <div
-                                  className="h-full bg-gradient-to-r from-emerald-500 via-teal-500 to-indigo-500 transition-all duration-500 rounded-full"
-                                  style={{ width: `${progressPct}%` }}
-                                />
+                            <div className="space-y-4">
+                              {/* Month Filter Tabs Bar */}
+                              {monthList.length > 0 && (
+                                <div className="space-y-2 p-3.5 rounded-2xl bg-black/30 border border-white/10">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+                                      <Calendar size={13} className="text-indigo-400" />
+                                      <span>Filtro por Mês (Prazo das Etapas):</span>
+                                    </span>
+                                    {milestoneMonthFilter !== "all" && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setMilestoneMonthFilter("all")}
+                                        className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer underline"
+                                      >
+                                        Mostrar todos os meses
+                                      </button>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-1 scrollbar-thin">
+                                    <button
+                                      type="button"
+                                      onClick={() => setMilestoneMonthFilter("all")}
+                                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                                        milestoneMonthFilter === "all"
+                                          ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 border border-indigo-400"
+                                          : "bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 border border-white/10"
+                                      }`}
+                                    >
+                                      <ListTodo size={13} />
+                                      <span>Todas as Etapas</span>
+                                      <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-black/40 text-gray-300 font-mono">
+                                        {milestones.length}
+                                      </span>
+                                    </button>
+
+                                    {monthList.map((mMonth) => {
+                                      const isSelected = milestoneMonthFilter === mMonth.key;
+                                      return (
+                                        <button
+                                          key={mMonth.key}
+                                          type="button"
+                                          onClick={() => setMilestoneMonthFilter(mMonth.key)}
+                                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                                            isSelected
+                                              ? "bg-emerald-600 text-white shadow-lg shadow-emerald-600/30 border border-emerald-400"
+                                              : "bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 border border-white/10"
+                                          }`}
+                                        >
+                                          <Calendar size={13} className={isSelected ? "text-white" : "text-emerald-400"} />
+                                          <span>{mMonth.label}</span>
+                                          <span
+                                            className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                                              isSelected ? "bg-black/30 text-white" : "bg-black/40 text-emerald-400"
+                                            }`}
+                                          >
+                                            {mMonth.completed}/{mMonth.count}
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Progress Bar */}
+                              <div className="p-4 rounded-2xl bg-black/40 border border-white/10 space-y-2">
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="font-bold text-gray-300 flex items-center gap-1.5">
+                                    <CheckCircle2 size={14} className="text-emerald-400" />
+                                    <span>
+                                      {milestoneMonthFilter === "all"
+                                        ? "Progresso Geral do Projeto"
+                                        : `Progresso de ${activeMonthObj?.label || "Mês Selecionado"}`}
+                                    </span>
+                                  </span>
+                                  <span className="font-mono font-bold text-emerald-300">
+                                    {milestoneMonthFilter === "all"
+                                      ? `${totalProgressPct}% (${totalCompleted} de ${milestones.length} etapas)`
+                                      : `${activeMonthPct}% (${activeMonthCompleted} de ${displayedList.length} etapas)`}
+                                  </span>
+                                </div>
+                                <div className="h-2.5 w-full bg-white/5 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-gradient-to-r from-emerald-500 via-teal-500 to-indigo-500 transition-all duration-500 rounded-full"
+                                    style={{
+                                      width: `${milestoneMonthFilter === "all" ? totalProgressPct : activeMonthPct}%`,
+                                    }}
+                                  />
+                                </div>
                               </div>
                             </div>
                           );
@@ -5724,137 +8300,263 @@ export default function AdminDashboardPage() {
                               <span>Criar primeira etapa</span>
                             </button>
                           </div>
-                        ) : (
-                          <div className="space-y-2">
-                            {milestones.map((m) => {
-                              const status = getMilestoneStatus(m);
-                              const statusCfg = getMilestoneStatusConfig(status);
-                              const cleanDesc = getMilestoneCleanDescription(m);
-                              const isDone = status === "concluido";
-                              const isActive = status === "em_andamento";
+                        ) : (() => {
+                          const displayedMilestones = milestoneMonthFilter === "all"
+                            ? milestones
+                            : milestones.filter((m) => getMilestoneMonthKey(m.due_date) === milestoneMonthFilter);
 
-                              return (
-                                <div
-                                  key={m.id}
-                                  className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                                    isDone
-                                      ? "bg-emerald-950/10 border-emerald-500/20"
-                                      : isActive
-                                      ? "bg-blue-950/10 border-blue-500/20"
-                                      : "bg-white/[0.02] border-white/5 hover:border-white/10"
-                                  }`}
+                          if (displayedMilestones.length === 0) {
+                            return (
+                              <div className="p-8 rounded-2xl bg-black/30 border border-dashed border-white/10 text-center space-y-2">
+                                <Calendar size={28} className="mx-auto text-gray-600" />
+                                <p className="text-xs text-gray-400">
+                                  Nenhuma etapa encontrada com prazo para este mês.
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => setMilestoneMonthFilter("all")}
+                                  className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer underline"
                                 >
-                                  {/* Left: Status icon + Info */}
-                                  <div className="flex items-start gap-3 min-w-0 flex-1">
-                                    <div className="pt-0.5">
-                                      {isDone ? (
-                                        <div className="w-6 h-6 rounded-lg bg-emerald-500 text-white flex items-center justify-center">
-                                          <Check size={14} />
-                                        </div>
-                                      ) : isActive ? (
-                                        <div className="w-6 h-6 rounded-lg bg-blue-500/20 text-blue-300 border border-blue-500/40 flex items-center justify-center">
-                                          <Zap size={13} />
-                                        </div>
-                                      ) : (
-                                        <div className="w-6 h-6 rounded-lg bg-white/5 border border-white/20 flex items-center justify-center text-gray-400">
-                                          <Clock size={13} />
-                                        </div>
-                                      )}
-                                    </div>
+                                  Mostrar todas as etapas
+                                </button>
+                              </div>
+                            );
+                          }
 
-                                    <div className="min-w-0 space-y-1">
-                                      <h4 className={`text-xs font-bold truncate ${isDone ? "text-emerald-300 line-through" : "text-white"}`}>
-                                        {m.title}
-                                      </h4>
+                          return (
+                            <div className="space-y-3">
+                              {displayedMilestones.map((m) => {
+                                const status = getMilestoneStatus(m);
+                                const statusCfg = getMilestoneStatusConfig(status);
+                                const cleanDesc = getMilestoneCleanDescription(m);
+                                const tasks = parseMilestoneTasks(m);
+                                const milestoneProg = getMilestoneProgress(m);
+                                const isDone = status === "concluido" || milestoneProg === 100;
+                                const isActive = status === "em_andamento" || (milestoneProg > 0 && !isDone);
+                                const completedTasksCount = tasks.filter((t) => t.completed).length;
 
-                                      {cleanDesc && (
-                                        <p className="text-[11px] text-gray-400 line-clamp-1">{cleanDesc}</p>
-                                      )}
+                                return (
+                                  <div
+                                    key={m.id}
+                                    className={`p-4 sm:p-5 rounded-2xl border transition-all space-y-3.5 ${
+                                      isDone
+                                        ? "bg-emerald-950/15 border-emerald-500/25 shadow-sm shadow-emerald-950/30"
+                                        : isActive
+                                        ? "bg-blue-950/15 border-blue-500/25 shadow-sm shadow-blue-950/30"
+                                        : "bg-white/[0.02] border-white/5 hover:border-white/10"
+                                    }`}
+                                  >
+                                    {/* Top Header: Status icon + Info + Actions */}
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                      {/* Left: Status icon + Title + Due Date */}
+                                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                                        <div className="pt-0.5">
+                                          {isDone ? (
+                                            <div className="w-6 h-6 rounded-lg bg-emerald-500 text-white flex items-center justify-center shadow-md shadow-emerald-500/30">
+                                              <Check size={14} />
+                                            </div>
+                                          ) : isActive ? (
+                                            <div className="w-6 h-6 rounded-lg bg-blue-500/20 text-blue-300 border border-blue-500/40 flex items-center justify-center">
+                                              <Zap size={13} />
+                                            </div>
+                                          ) : (
+                                            <div className="w-6 h-6 rounded-lg bg-white/5 border border-white/20 flex items-center justify-center text-gray-400">
+                                              <Clock size={13} />
+                                            </div>
+                                          )}
+                                        </div>
 
-                                      <div className="flex flex-wrap items-center gap-2 text-[10px] text-gray-400">
-                                        {m.due_date && (
-                                          <span className="flex items-center gap-1">
-                                            <Calendar size={10} className="text-gray-500" />
-                                            <span>Prazo: {new Date(m.due_date).toLocaleDateString("pt-BR")}</span>
-                                          </span>
-                                        )}
-                                        {isDone && m.completed_at && (
-                                          <span className="flex items-center gap-1 text-emerald-400">
-                                            <ShieldCheck size={10} />
-                                            <span>Concluído em {new Date(m.completed_at).toLocaleDateString("pt-BR")}</span>
-                                          </span>
-                                        )}
+                                        <div className="min-w-0 space-y-1">
+                                          <div className="flex items-center gap-2 flex-wrap">
+                                            <h4 className={`text-xs sm:text-sm font-bold truncate ${isDone ? "text-emerald-300 line-through" : "text-white"}`}>
+                                              {m.title}
+                                            </h4>
+                                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${isDone ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30" : isActive ? "bg-blue-500/10 text-blue-300 border-blue-500/30" : "bg-amber-500/10 text-amber-300 border-amber-500/30"}`}>
+                                              {statusCfg.label}
+                                            </span>
+                                          </div>
+
+                                          {cleanDesc && (
+                                            <p className="text-[11px] text-gray-400 line-clamp-2 leading-relaxed">{cleanDesc}</p>
+                                          )}
+
+                                          <div className="flex flex-wrap items-center gap-3 text-[10px] text-gray-400 pt-0.5">
+                                            {m.due_date && (
+                                              <span className="flex items-center gap-1">
+                                                <Calendar size={10} className="text-gray-500" />
+                                                <span>Prazo: <strong className="text-gray-300">{new Date(m.due_date.includes("T") ? m.due_date : `${m.due_date}T12:00:00`).toLocaleDateString("pt-BR")}</strong></span>
+                                              </span>
+                                            )}
+                                            {isDone && m.completed_at && (
+                                              <span className="flex items-center gap-1 text-emerald-400">
+                                                <ShieldCheck size={10} />
+                                                <span>Concluído em {new Date(m.completed_at).toLocaleDateString("pt-BR")}</span>
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Right: Status Switcher + Actions */}
+                                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                                        {/* Status Switcher */}
+                                        <div className="flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/10">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleQuickUpdateMilestoneStatus(m, "pendente")}
+                                            className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${
+                                              status === "pendente"
+                                                ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                                                : "text-gray-400 hover:text-white"
+                                            }`}
+                                            title="Marcar como Pendente"
+                                          >
+                                            Pendente
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleQuickUpdateMilestoneStatus(m, "em_andamento")}
+                                            className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${
+                                              status === "em_andamento"
+                                                ? "bg-blue-500/20 text-blue-300 border border-blue-500/30"
+                                                : "text-gray-400 hover:text-white"
+                                            }`}
+                                            title="Marcar como Em Andamento"
+                                          >
+                                            Em Andamento
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleQuickUpdateMilestoneStatus(m, "concluido")}
+                                            className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${
+                                              status === "concluido"
+                                                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                                                : "text-gray-400 hover:text-white"
+                                            }`}
+                                            title="Marcar como Concluído"
+                                          >
+                                            Concluído
+                                          </button>
+                                        </div>
+
+                                        {/* Edit */}
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenMilestoneModal(m)}
+                                          className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-colors cursor-pointer"
+                                          title="Editar etapa e checks"
+                                        >
+                                          <Edit2 size={13} />
+                                        </button>
+
+                                        {/* Delete */}
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteMilestone(m.id)}
+                                          className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer"
+                                          title="Excluir etapa"
+                                        >
+                                          <Trash2 size={13} />
+                                        </button>
                                       </div>
                                     </div>
-                                  </div>
 
-                                  {/* Right: Status Switcher + Actions */}
-                                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                                    {/* Status Switcher */}
-                                    <div className="flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/10">
-                                      <button
-                                        type="button"
-                                        onClick={() => handleQuickUpdateMilestoneStatus(m, "pendente")}
-                                        className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${
-                                          status === "pendente"
-                                            ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-                                            : "text-gray-400 hover:text-white"
-                                        }`}
-                                        title="Pendente"
-                                      >
-                                        Pendente
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleQuickUpdateMilestoneStatus(m, "em_andamento")}
-                                        className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${
-                                          status === "em_andamento"
-                                            ? "bg-blue-500/20 text-blue-300 border border-blue-500/30"
-                                            : "text-gray-400 hover:text-white"
-                                        }`}
-                                        title="Em Andamento"
-                                      >
-                                        Em Andamento
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleQuickUpdateMilestoneStatus(m, "concluido")}
-                                        className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${
-                                          status === "concluido"
-                                            ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                                            : "text-gray-400 hover:text-white"
-                                        }`}
-                                        title="Concluído"
-                                      >
-                                        Concluído
-                                      </button>
+                                    {/* Milestone Individual Progress Bar */}
+                                    <div className="p-3 rounded-xl bg-black/40 border border-white/5 space-y-1.5">
+                                      <div className="flex items-center justify-between text-[11px]">
+                                        <span className="text-gray-300 font-semibold flex items-center gap-1.5">
+                                          <TrendingUp size={12} className={isDone ? "text-emerald-400" : "text-indigo-400"} />
+                                          <span>Conclusão da Etapa:</span>
+                                        </span>
+                                        <span className={`font-mono font-bold ${
+                                          isDone
+                                            ? "text-emerald-400"
+                                            : milestoneProg > 0
+                                            ? "text-indigo-300"
+                                            : "text-gray-400"
+                                        }`}>
+                                          {milestoneProg}% Concluído {tasks.length > 0 && `(${completedTasksCount}/${tasks.length} itens)`}
+                                        </span>
+                                      </div>
+                                      <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
+                                        <div
+                                          className={`h-full transition-all duration-500 rounded-full ${
+                                            isDone
+                                              ? "bg-gradient-to-r from-teal-500 to-emerald-500 shadow-sm shadow-emerald-500/40"
+                                              : milestoneProg > 0
+                                              ? "bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
+                                              : "bg-transparent"
+                                          }`}
+                                          style={{ width: `${milestoneProg}%` }}
+                                        />
+                                      </div>
                                     </div>
 
-                                    {/* Edit */}
-                                    <button
-                                      type="button"
-                                      onClick={() => handleOpenMilestoneModal(m)}
-                                      className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-colors cursor-pointer"
-                                      title="Editar etapa"
-                                    >
-                                      <Edit2 size={13} />
-                                    </button>
+                                    {/* Checklist Items of what will be done */}
+                                    {tasks.length > 0 ? (
+                                      <div className="space-y-2 pt-1">
+                                        <div className="flex items-center justify-between text-[10px] uppercase font-bold text-gray-400 tracking-wider">
+                                          <span className="flex items-center gap-1 text-gray-300">
+                                            <CheckSquare size={11} className="text-indigo-400" />
+                                            O que será feito nesta etapa (Checklist)
+                                          </span>
+                                          <span className="text-indigo-300">
+                                            {completedTasksCount} de {tasks.length} checks finalizados
+                                          </span>
+                                        </div>
 
-                                    {/* Delete */}
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteMilestone(m.id)}
-                                      className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer"
-                                      title="Excluir etapa"
-                                    >
-                                      <Trash2 size={13} />
-                                    </button>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                          {tasks.map((task) => (
+                                            <button
+                                              key={task.id}
+                                              type="button"
+                                              onClick={() => handleToggleMilestoneTask(m, task.id)}
+                                              className={`p-2.5 rounded-xl border text-left transition-all flex items-start gap-2.5 cursor-pointer group ${
+                                                task.completed
+                                                  ? "bg-emerald-950/20 border-emerald-500/30 text-emerald-300 hover:bg-emerald-950/30"
+                                                  : "bg-black/30 border-white/5 hover:border-indigo-500/30 text-gray-300 hover:bg-white/[0.02]"
+                                              }`}
+                                              title={task.completed ? "Clique para desmarcar check" : "Clique para marcar check como concluído"}
+                                            >
+                                              <div
+                                                className={`w-4 h-4 rounded-md flex items-center justify-center text-[10px] shrink-0 mt-0.5 transition-colors ${
+                                                  task.completed
+                                                    ? "bg-emerald-500 text-white shadow-sm shadow-emerald-500/50"
+                                                    : "bg-white/5 border border-white/20 text-transparent group-hover:border-indigo-400"
+                                                }`}
+                                              >
+                                                <Check size={11} />
+                                              </div>
+                                              <span
+                                                className={`text-xs leading-tight select-none ${
+                                                  task.completed ? "line-through text-gray-400" : "text-white"
+                                                }`}
+                                              >
+                                                {task.text}
+                                              </span>
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center justify-between pt-1 text-[11px] text-gray-500">
+                                        <span>Nenhum check detalhado cadastrado ainda.</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenMilestoneModal(m)}
+                                          className="text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer flex items-center gap-1 hover:underline"
+                                        >
+                                          <Plus size={12} />
+                                          <span>Adicionar campos de check</span>
+                                        </button>
+                                      </div>
+                                    )}
                                   </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {/* Gestão Manual de Pagamentos e Faturamento */}
@@ -6857,20 +9559,36 @@ export default function AdminDashboardPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/10">
-                  <button
-                    type="button"
-                    onClick={() => setProjectModalOpen(false)}
-                    className="px-4 py-2.5 rounded-xl text-xs font-semibold text-gray-400 hover:text-white cursor-pointer"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-indigo-600/30 cursor-pointer"
-                  >
-                    {editingProject ? "Salvar Alterações do Escopo" : "Cadastrar Projeto"}
-                  </button>
+                <div className="flex items-center justify-between gap-3 pt-4 border-t border-white/10">
+                  {editingProject ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProjectModalOpen(false);
+                        handleDeleteProject(editingProject.id);
+                      }}
+                      className="px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/25 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Trash2 size={13} />
+                      <span>Excluir Projeto</span>
+                    </button>
+                  ) : <div />}
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setProjectModalOpen(false)}
+                      className="px-4 py-2.5 rounded-xl text-xs font-semibold text-gray-400 hover:text-white cursor-pointer"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-indigo-600/30 cursor-pointer"
+                    >
+                      {editingProject ? "Salvar Alterações do Escopo" : "Cadastrar Projeto"}
+                    </button>
+                  </div>
                 </div>
               </form>
             </motion.div>
@@ -7532,8 +10250,7 @@ export default function AdminDashboardPage() {
         )}
       </AnimatePresence>
 
-      {/* Modal: Milestone & Stage Add/Edit */}
-      {/* Modal: Etapa Add/Edit (Simplified Checklist) */}
+      {/* Modal: Etapa Add/Edit with Checklist and Progress Percentage */}
       <AnimatePresence>
         {milestoneModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
@@ -7541,17 +10258,22 @@ export default function AdminDashboardPage() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border border-white/10 shadow-2xl relative my-8"
+              className="w-full max-w-xl p-6 sm:p-7 rounded-3xl bg-slate-900 border border-white/10 shadow-2xl relative my-8"
             >
-              <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/10">
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <ListTodo size={18} className="text-emerald-400" />
-                  <span>{editingMilestone ? "Editar Etapa" : "Nova Etapa"}</span>
-                </h3>
+              <div className="flex items-center justify-between mb-5 pb-3 border-b border-white/10">
+                <div>
+                  <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                    <ListTodo size={20} className="text-emerald-400" />
+                    <span>{editingMilestone ? "Editar Etapa & Checklist" : "Nova Etapa do Projeto"}</span>
+                  </h3>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Defina o título da etapa, adicione os checks do que será feito e acompanhe a porcentagem de conclusão.
+                  </p>
+                </div>
                 <button
                   type="button"
                   onClick={() => setMilestoneModalOpen(false)}
-                  className="text-gray-400 hover:text-white p-1"
+                  className="text-gray-400 hover:text-white p-1.5 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
                 >
                   <X size={18} />
                 </button>
@@ -7568,82 +10290,263 @@ export default function AdminDashboardPage() {
                     required
                     value={mTitle}
                     onChange={(e) => setMTitle(e.target.value)}
-                    placeholder="Ex: Design das Telas Principais"
+                    placeholder="Ex: Fase 02: Design de Interface & Protótipo Visual"
                     className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-xs outline-none focus:border-indigo-500"
                   />
                 </div>
 
-                {/* Status */}
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 uppercase mb-1.5">
-                    Status
-                  </label>
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setMStatus("pendente")}
-                      className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                        mStatus === "pendente"
-                          ? "bg-amber-500/20 border-amber-500/40 text-amber-300 shadow-md"
-                          : "bg-black/30 border-white/5 text-gray-400 hover:text-white"
-                      }`}
-                    >
-                      <Clock size={13} />
-                      <span>Pendente</span>
-                    </button>
+                {/* Status & Prazo em Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Status */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-300 uppercase mb-1.5">
+                      Status da Etapa
+                    </label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setMStatus("pendente")}
+                        className={`p-2 rounded-xl border text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                          mStatus === "pendente"
+                            ? "bg-amber-500/20 border-amber-500/40 text-amber-300 shadow-md"
+                            : "bg-black/30 border-white/5 text-gray-400 hover:text-white"
+                        }`}
+                      >
+                        <Clock size={12} />
+                        <span>Pendente</span>
+                      </button>
 
-                    <button
-                      type="button"
-                      onClick={() => setMStatus("em_andamento")}
-                      className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                        mStatus === "em_andamento"
-                          ? "bg-blue-500/20 border-blue-500/40 text-blue-300 shadow-md"
-                          : "bg-black/30 border-white/5 text-gray-400 hover:text-white"
-                      }`}
-                    >
-                      <Zap size={13} />
-                      <span>Em Andamento</span>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => setMStatus("em_andamento")}
+                        className={`p-2 rounded-xl border text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                          mStatus === "em_andamento"
+                            ? "bg-blue-500/20 border-blue-500/40 text-blue-300 shadow-md"
+                            : "bg-black/30 border-white/5 text-gray-400 hover:text-white"
+                        }`}
+                      >
+                        <Zap size={12} />
+                        <span>Andamento</span>
+                      </button>
 
-                    <button
-                      type="button"
-                      onClick={() => setMStatus("concluido")}
-                      className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                        mStatus === "concluido"
-                          ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300 shadow-md"
-                          : "bg-black/30 border-white/5 text-gray-400 hover:text-white"
-                      }`}
-                    >
-                      <CheckCircle2 size={13} />
-                      <span>Concluído</span>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => setMStatus("concluido")}
+                        className={`p-2 rounded-xl border text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                          mStatus === "concluido"
+                            ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300 shadow-md"
+                            : "bg-black/30 border-white/5 text-gray-400 hover:text-white"
+                        }`}
+                      >
+                        <CheckCircle2 size={12} />
+                        <span>Concluído</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Data Prevista */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-300 uppercase mb-1.5">
+                      Prazo Previsto de Entrega
+                    </label>
+                    <input
+                      type="date"
+                      value={mDueDate}
+                      onChange={(e) => setMDueDate(e.target.value)}
+                      className="w-full px-3.5 py-2 rounded-xl bg-black/40 border border-white/10 text-white text-xs outline-none focus:border-indigo-500"
+                    />
                   </div>
                 </div>
 
-                {/* Data Prevista */}
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 uppercase mb-1">
-                    Prazo Previsto
-                  </label>
-                  <input
-                    type="date"
-                    value={mDueDate}
-                    onChange={(e) => setMDueDate(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-xs outline-none focus:border-indigo-500"
-                  />
-                </div>
+                {/* Checklist & Barra de Porcentagem de Conclusão */}
+                {(() => {
+                  const completedChecks = mTasks.filter((t) => t.completed).length;
+                  const modalProg =
+                    mTasks.length > 0
+                      ? Math.round((completedChecks / mTasks.length) * 100)
+                      : mStatus === "concluido"
+                      ? 100
+                      : 0;
 
-                {/* Descrição */}
+                  return (
+                    <div className="p-4 rounded-2xl bg-black/40 border border-white/10 space-y-3.5">
+                      {/* Section Title & Progress Stat */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                        <div className="flex items-center gap-2">
+                          <CheckSquare size={16} className="text-emerald-400" />
+                          <span className="text-xs font-bold text-white uppercase tracking-wider">
+                            Campos de Checks (O que será feito)
+                          </span>
+                        </div>
+
+                        <span className={`text-xs font-mono font-bold ${modalProg === 100 ? "text-emerald-400" : "text-indigo-300"}`}>
+                          {modalProg}% Concluído {mTasks.length > 0 && `(${completedChecks}/${mTasks.length} checks)`}
+                        </span>
+                      </div>
+
+                      {/* Live Progress Bar */}
+                      <div className="h-2.5 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
+                        <div
+                          className={`h-full transition-all duration-300 rounded-full ${
+                            modalProg === 100
+                              ? "bg-gradient-to-r from-teal-400 to-emerald-400 shadow-sm shadow-emerald-500/40"
+                              : modalProg > 0
+                              ? "bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
+                              : "bg-transparent"
+                          }`}
+                          style={{ width: `${modalProg}%` }}
+                        />
+                      </div>
+
+                      {/* Add new check input */}
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={mNewTaskText}
+                          onChange={(e) => setMNewTaskText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              if (mNewTaskText.trim()) {
+                                setMTasks((prev) => [
+                                  ...prev,
+                                  {
+                                    id: `task-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                                    text: mNewTaskText.trim(),
+                                    completed: false,
+                                  },
+                                ]);
+                                setMNewTaskText("");
+                              }
+                            }
+                          }}
+                          placeholder="Adicione um item do que será feito nesta etapa (ex: Criar tela de login)..."
+                          className="flex-1 px-3.5 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs outline-none focus:border-emerald-500 transition-colors"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (mNewTaskText.trim()) {
+                              setMTasks((prev) => [
+                                ...prev,
+                                {
+                                  id: `task-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                                  text: mNewTaskText.trim(),
+                                  completed: false,
+                                },
+                              ]);
+                              setMNewTaskText("");
+                            }
+                          }}
+                          className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shrink-0 flex items-center gap-1 transition-all cursor-pointer shadow-md shadow-emerald-900/30"
+                        >
+                          <Plus size={14} />
+                          <span>Adicionar Check</span>
+                        </button>
+                      </div>
+
+                      {/* Quick Suggestion Chips */}
+                      <div className="space-y-1 pt-1">
+                        <span className="text-[10px] uppercase font-bold text-gray-400 block">
+                          Sugestões rápidas de itens:
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {[
+                            "Wireframe & Fluxo UX",
+                            "Design UI de Alta Fidelidade",
+                            "Configuração do Supabase/Banco",
+                            "Implementação Front-end Mobile",
+                            "Integração de APIs & Endpoints",
+                            "Testes no Celular (QA)",
+                            "Publicação / Homologação",
+                          ].map((suggestion) => (
+                            <button
+                              key={suggestion}
+                              type="button"
+                              onClick={() => {
+                                if (!mTasks.some((t) => t.text.toLowerCase() === suggestion.toLowerCase())) {
+                                  setMTasks((prev) => [
+                                    ...prev,
+                                    {
+                                      id: `task-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                                      text: suggestion,
+                                      completed: false,
+                                    },
+                                  ]);
+                                }
+                              }}
+                              className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-[10px] font-medium transition-colors cursor-pointer"
+                            >
+                              + {suggestion}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Tasks List */}
+                      {mTasks.length > 0 ? (
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1 pt-1">
+                          {mTasks.map((task, index) => (
+                            <div
+                              key={task.id}
+                              className={`p-2 rounded-xl border flex items-center justify-between gap-2 transition-all ${
+                                task.completed
+                                  ? "bg-emerald-950/20 border-emerald-500/30 text-emerald-300"
+                                  : "bg-slate-900/80 border-white/10 text-gray-200"
+                              }`}
+                            >
+                              <label className="flex items-center gap-2 flex-1 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={task.completed}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setMTasks((prev) =>
+                                      prev.map((t) =>
+                                        t.id === task.id ? { ...t, completed: checked } : t
+                                      )
+                                    );
+                                  }}
+                                  className="w-4 h-4 rounded text-emerald-500 bg-black/40 border-white/20 focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                                />
+                                <span className={`text-xs ${task.completed ? "line-through text-gray-400" : "text-white"}`}>
+                                  {index + 1}. {task.text}
+                                </span>
+                              </label>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setMTasks((prev) => prev.filter((t) => t.id !== task.id));
+                                }}
+                                className="text-gray-500 hover:text-rose-400 p-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
+                                title="Remover este item"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-gray-500 italic py-1">
+                          Nenhum check adicionado ainda. Adicione itens acima ou clique nas sugestões rápidas para montar o escopo desta etapa.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Descrição Adicional */}
                 <div>
                   <label className="block text-xs font-semibold text-gray-300 uppercase mb-1">
-                    Descrição (opcional)
+                    Observações / Descrição da Etapa (opcional)
                   </label>
-                  <input
-                    type="text"
+                  <textarea
+                    rows={2}
                     value={mDescription}
                     onChange={(e) => setMDescription(e.target.value)}
-                    placeholder="Ex: Telas de login, feed e perfil..."
-                    className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-xs outline-none focus:border-indigo-500"
+                    placeholder="Ex: Esta etapa compreende a aprovação do design de alta fidelidade antes de iniciar a codificação..."
+                    className="w-full px-4 py-2 rounded-xl bg-black/40 border border-white/10 text-white text-xs outline-none focus:border-indigo-500"
                   />
                 </div>
 
@@ -7652,7 +10555,7 @@ export default function AdminDashboardPage() {
                   <button
                     type="button"
                     onClick={() => setMilestoneModalOpen(false)}
-                    className="px-4 py-2 rounded-xl text-xs font-semibold text-gray-400 hover:text-white cursor-pointer"
+                    className="px-4 py-2.5 rounded-xl text-xs font-semibold text-gray-400 hover:text-white cursor-pointer"
                   >
                     Cancelar
                   </button>
@@ -7660,7 +10563,7 @@ export default function AdminDashboardPage() {
                     type="submit"
                     className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-900/30 border border-emerald-400/30 cursor-pointer"
                   >
-                    {editingMilestone ? "Atualizar" : "Salvar"}
+                    {editingMilestone ? "Salvar Alterações da Etapa" : "Cadastrar Etapa com Checks"}
                   </button>
                 </div>
               </form>
@@ -8864,12 +11767,12 @@ export default function AdminDashboardPage() {
                         </div>
                       </div>
 
-                      {/* Main Grid: Left 8 cols, Right 4 cols */}
-                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                        {/* Left Column (8 cols) */}
-                        <div className="lg:col-span-8 flex flex-col gap-6">
+                      {/* Main Grid: Left 8 cols, Right 4 cols for desktop; stacked flex for tablet and mobile */}
+                      <div className={previewDevice === "desktop" ? "grid grid-cols-1 lg:grid-cols-12 gap-6" : "flex flex-col gap-6"}>
+                        {/* Left Column */}
+                        <div className={previewDevice === "desktop" ? "lg:col-span-8 flex flex-col gap-6" : "flex flex-col gap-6"}>
                           {/* Card 1: Project Overview Hero */}
-                          <div className="p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl">
+                          <div className="p-4 sm:p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl">
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
                               <div>
                                 <span className="text-[10px] uppercase font-bold text-indigo-400 tracking-wider">
@@ -8894,26 +11797,72 @@ export default function AdminDashboardPage() {
                               </p>
                             )}
 
-                            {/* Progress bar */}
-                            {previewProject.progress > 0 && (
-                              <div className="space-y-2 mb-6">
-                                <div className="flex justify-between text-xs font-bold">
-                                  <span className="text-gray-300">Progresso Geral das Sprints</span>
-                                  <span className="text-indigo-400 font-mono text-sm">
-                                    {previewProject.progress}% Concluído
-                                  </span>
+                            {/* Dual Progress Bars: 1. Progresso Geral (Cronograma/Meses) + 2. Progresso da Sprint Mensal (Checks) */}
+                            {(() => {
+                              const timelineProg = calculateTimelineProgress(previewProject.start_date, previewProject.deadline);
+                              const sprintProg = calculateSprintProgress(clientMilestones);
+
+                              return (
+                                <div className="space-y-3.5 mb-6">
+                                  {/* 1. Progresso Geral (Cronograma & Meses) */}
+                                  <div className="p-3.5 rounded-2xl bg-indigo-950/30 border border-indigo-500/25 space-y-2">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <div>
+                                        <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                                          <Calendar size={13} className="text-indigo-400" />
+                                          <span>1. Progresso Geral do Cronograma</span>
+                                        </span>
+                                        <span className="text-[10px] text-gray-400 block mt-0.5">
+                                          {timelineProg.detail}
+                                        </span>
+                                      </div>
+                                      <span className="font-mono font-bold text-xs px-2.5 py-0.5 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                                        {timelineProg.percent}% Decorrido
+                                      </span>
+                                    </div>
+                                    <div className="w-full h-2 bg-black/60 rounded-full overflow-hidden p-0.5 border border-white/5">
+                                      <div
+                                        className="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-cyan-400 rounded-full transition-all duration-500 shadow-sm shadow-indigo-500/50"
+                                        style={{ width: `${timelineProg.percent}%` }}
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {/* 2. Progresso da Sprint Mensal (Checks & Entregas) */}
+                                  <div className="p-3.5 rounded-2xl bg-purple-950/30 border border-purple-500/25 space-y-2">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <div>
+                                        <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                                          <CheckSquare size={13} className="text-purple-400" />
+                                          <span>2. Progresso da Sprint Mensal</span>
+                                        </span>
+                                        <span className="text-[10px] text-gray-400 block mt-0.5">
+                                          {sprintProg.detail}
+                                        </span>
+                                      </div>
+                                      <span className="font-mono font-bold text-xs px-2.5 py-0.5 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                                        {sprintProg.percent}% Concluído
+                                      </span>
+                                    </div>
+                                    <div className="w-full h-2 bg-black/60 rounded-full overflow-hidden p-0.5 border border-white/5">
+                                      <div
+                                        className="h-full bg-gradient-to-r from-purple-500 via-pink-500 to-emerald-400 rounded-full transition-all duration-500 shadow-sm shadow-purple-500/50"
+                                        style={{ width: `${sprintProg.percent}%` }}
+                                      />
+                                    </div>
+                                  </div>
                                 </div>
-                                <div className="w-full h-2.5 bg-black/50 rounded-full overflow-hidden p-0.5 border border-white/5">
-                                  <div
-                                    className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full transition-all duration-500 shadow-sm shadow-indigo-500/50"
-                                    style={{ width: `${previewProject.progress}%` }}
-                                  />
-                                </div>
-                              </div>
-                            )}
+                              );
+                            })()}
 
                             {/* Key Stats Row */}
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-4 border-t border-white/5">
+                            <div className={`pt-4 border-t border-white/5 ${
+                              previewDevice === "desktop"
+                                ? "grid grid-cols-2 sm:grid-cols-3 gap-3"
+                                : previewDevice === "tablet"
+                                ? "grid grid-cols-3 gap-3"
+                                : "grid grid-cols-1 gap-2"
+                            }`}>
                               <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5">
                                 <span className="text-[10px] uppercase font-bold text-gray-400 flex items-center gap-1">
                                   <Calendar size={11} className="text-indigo-400" /> Início
@@ -8936,7 +11885,7 @@ export default function AdminDashboardPage() {
                                 </p>
                               </div>
 
-                              <div className="col-span-2 sm:col-span-1 p-3 rounded-2xl bg-white/[0.02] border border-white/5">
+                              <div className={`${previewDevice === "desktop" ? "col-span-2 sm:col-span-1" : ""} p-3 rounded-2xl bg-white/[0.02] border border-white/5`}>
                                 <span className="text-[10px] uppercase font-bold text-gray-400 flex items-center gap-1">
                                   <ShieldCheck size={11} className="text-emerald-400" /> Garantia
                                 </span>
@@ -8947,70 +11896,6 @@ export default function AdminDashboardPage() {
                             </div>
                           </div>
 
-                          {/* Card 2: Interactive Phase Stepper */}
-                          <div className="p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl">
-                            <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
-                              <Layers size={16} className="text-indigo-400" />
-                              <span>Fases de Desenvolvimento</span>
-                            </h3>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
-                              {[
-                                { step: 1, label: "Planejamento & Requisitos" },
-                                { step: 2, label: "UI/UX & Protótipo" },
-                                { step: 3, label: "Desenvolvimento" },
-                                { step: 4, label: "Testes & QA" },
-                                { step: 5, label: "Lançamento & Suporte" },
-                              ].map((phase) => {
-                                const isCompleted = phase.step < currentPhaseIndex;
-                                const isCurrent = phase.step === currentPhaseIndex;
-
-                                return (
-                                  <div
-                                    key={phase.step}
-                                    className={`p-3 rounded-2xl border transition-all flex flex-col justify-between gap-1.5 ${
-                                      isCurrent
-                                        ? "bg-indigo-600/20 border-indigo-500 shadow-md shadow-indigo-600/20"
-                                        : isCompleted
-                                        ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
-                                        : "bg-white/[0.02] border-white/5 text-gray-500"
-                                    }`}
-                                  >
-                                    <div className="flex items-center justify-between">
-                                      <span
-                                        className={`w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center ${
-                                          isCompleted
-                                            ? "bg-emerald-500 text-white"
-                                            : isCurrent
-                                            ? "bg-indigo-500 text-white animate-pulse"
-                                            : "bg-white/10 text-gray-400"
-                                        }`}
-                                      >
-                                        {isCompleted ? <Check size={10} /> : phase.step}
-                                      </span>
-                                      {isCurrent && (
-                                        <span className="text-[8px] font-bold uppercase text-indigo-300 bg-indigo-500/20 px-1 py-0.5 rounded">
-                                          Atual
-                                        </span>
-                                      )}
-                                    </div>
-                                    <p
-                                      className={`text-[11px] font-bold leading-tight ${
-                                        isCurrent
-                                          ? "text-white"
-                                          : isCompleted
-                                          ? "text-emerald-300"
-                                          : "text-gray-400"
-                                      }`}
-                                    >
-                                      {phase.label}
-                                    </p>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-
                           {/* Card: Módulo Financeiro do Cliente */}
                           {(() => {
                             const pFin = projectFinances[previewProject.id] || generateDefaultProjectFinances(previewProject);
@@ -9018,8 +11903,8 @@ export default function AdminDashboardPage() {
                             const installments = pFin.installments || [];
 
                             return (
-                              <div className="p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-4">
-                                <div className="flex items-center justify-between">
+                              <div className="p-4 sm:p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-4">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                                   <div>
                                     <h3 className="text-sm font-bold text-white flex items-center gap-2">
                                       <DollarSign size={16} className="text-emerald-400" />
@@ -9029,13 +11914,19 @@ export default function AdminDashboardPage() {
                                       Visão de quitação consolidada disponibilizada para o cliente.
                                     </p>
                                   </div>
-                                  <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-bold">
+                                  <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-bold w-fit">
                                     {finSummary.percentPaid}% Quitado
                                   </span>
                                 </div>
 
                                 {/* 3 KPI Cards */}
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div className={`grid gap-3 ${
+                                  previewDevice === "desktop"
+                                    ? "grid-cols-1 sm:grid-cols-3"
+                                    : previewDevice === "tablet"
+                                    ? "grid-cols-3"
+                                    : "grid-cols-1"
+                                }`}>
                                   <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5">
                                     <span className="text-[10px] uppercase font-bold text-gray-400">Total Contratado</span>
                                     <p className="text-lg font-black text-white font-mono mt-1">{formatBRL(finSummary.contractValue)}</p>
@@ -9089,88 +11980,261 @@ export default function AdminDashboardPage() {
                           })()}
 
                           {/* Card 3: Milestones & Deliverables */}
-                          <div className="p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl">
-                            <div className="flex items-center justify-between mb-4">
+                          <div className="p-4 sm:p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-white/10">
                               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                                 <CheckCircle2 size={16} className="text-emerald-400" />
                                 <span>Entregas & Marcos Concluídos</span>
                               </h3>
                               <span className="text-xs text-gray-400">
-                                {clientMilestones.filter((m) => m.completed).length} de{" "}
+                                {clientMilestones.filter((m) => m.completed || getMilestoneStatus(m) === "concluido").length} de{" "}
                                 {clientMilestones.length} concluídos
                               </span>
                             </div>
+
+                            {/* Month Filter Bar */}
+                            {clientMilestones.length > 0 && (() => {
+                              const monthMap = new Map<string, { key: string; label: string; count: number; completed: number }>();
+                              clientMilestones.forEach((m) => {
+                                const key = getMilestoneMonthKey(m.due_date);
+                                const label = formatMonthKeyLabel(key);
+                                const isDone = m.completed || getMilestoneStatus(m) === "concluido";
+                                if (!monthMap.has(key)) {
+                                  monthMap.set(key, { key, label, count: 0, completed: 0 });
+                                }
+                                const curr = monthMap.get(key)!;
+                                curr.count += 1;
+                                if (isDone) curr.completed += 1;
+                              });
+
+                              const monthList = Array.from(monthMap.values()).sort((a, b) => {
+                                if (a.key === "sem_data") return 1;
+                                if (b.key === "sem_data") return -1;
+                                return a.key.localeCompare(b.key);
+                              });
+
+                              if (monthList.length <= 1 && monthList[0]?.key === "sem_data") return null;
+
+                              return (
+                                <div className="p-3 rounded-2xl bg-black/40 border border-white/10 space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+                                      <Calendar size={13} className="text-indigo-400" />
+                                      <span>Filtrar por Mês (Prazo):</span>
+                                    </span>
+                                    {previewMilestoneMonthFilter !== "all" && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setPreviewMilestoneMonthFilter("all")}
+                                        className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer underline"
+                                      >
+                                        Ver todos
+                                      </button>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+                                    <button
+                                      type="button"
+                                      onClick={() => setPreviewMilestoneMonthFilter("all")}
+                                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                                        previewMilestoneMonthFilter === "all"
+                                          ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30 border border-indigo-400"
+                                          : "bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 border border-white/10"
+                                      }`}
+                                    >
+                                      <ListTodo size={12} />
+                                      <span>Todas</span>
+                                      <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-black/40 text-gray-300 font-mono">
+                                        {clientMilestones.length}
+                                      </span>
+                                    </button>
+
+                                    {monthList.map((mMonth) => {
+                                      const isSelected = previewMilestoneMonthFilter === mMonth.key;
+                                      return (
+                                        <button
+                                          key={mMonth.key}
+                                          type="button"
+                                          onClick={() => setPreviewMilestoneMonthFilter(mMonth.key)}
+                                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                                            isSelected
+                                              ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30 border border-emerald-400"
+                                              : "bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 border border-white/10"
+                                          }`}
+                                        >
+                                          <Calendar size={12} className={isSelected ? "text-white" : "text-emerald-400"} />
+                                          <span>{mMonth.label}</span>
+                                          <span
+                                            className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                                              isSelected ? "bg-black/30 text-white" : "bg-black/40 text-emerald-400"
+                                            }`}
+                                          >
+                                            {mMonth.completed}/{mMonth.count}
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })()}
 
                             {clientMilestones.length === 0 ? (
                               <p className="text-xs text-gray-400 py-3 text-center">
                                 Marcos em processo de definição pela equipe.
                               </p>
-                            ) : (
-                              <div className="space-y-2.5">
-                                {clientMilestones.map((m) => {
+                            ) : (() => {
+                              const displayedClientMilestones = previewMilestoneMonthFilter === "all"
+                                ? clientMilestones
+                                : clientMilestones.filter((m) => getMilestoneMonthKey(m.due_date) === previewMilestoneMonthFilter);
+
+                              if (displayedClientMilestones.length === 0) {
+                                return (
+                                  <div className="p-6 rounded-2xl bg-black/40 border border-white/5 text-center space-y-1.5">
+                                    <Calendar size={24} className="mx-auto text-gray-500" />
+                                    <p className="text-xs text-gray-300 font-semibold">
+                                      Nenhum marco cadastrado com prazo para este mês.
+                                    </p>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPreviewMilestoneMonthFilter("all")}
+                                      className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold underline cursor-pointer"
+                                    >
+                                      Ver todos os marcos
+                                    </button>
+                                  </div>
+                                );
+                              }
+
+                              return (
+                                <div className="space-y-3">
+                                  {displayedClientMilestones.map((m) => {
                                   const status = getMilestoneStatus(m);
                                   const cleanDesc = getMilestoneCleanDescription(m);
-                                  const isDone = status === "concluido";
+                                  const tasks = parseMilestoneTasks(m);
+                                  const milestoneProg = getMilestoneProgress(m);
+                                  const isDone = status === "concluido" || milestoneProg === 100;
+                                  const isActive = status === "em_andamento" || (milestoneProg > 0 && !isDone);
+                                  const completedTasksCount = tasks.filter((t) => t.completed).length;
+
                                   return (
                                     <div
                                       key={m.id}
-                                      className={`p-3.5 rounded-2xl border transition-all flex items-start justify-between gap-3 ${
+                                      className={`p-4 rounded-2xl border transition-all space-y-3 ${
                                         isDone
                                           ? "bg-emerald-500/[0.04] border-emerald-500/20"
+                                          : isActive
+                                          ? "bg-blue-500/[0.04] border-blue-500/20"
                                           : "bg-white/[0.02] border-white/5"
                                       }`}
                                     >
-                                      <div className="flex items-start gap-2.5">
-                                        <div
-                                          className={`w-5 h-5 rounded-md shrink-0 mt-0.5 flex items-center justify-center text-xs ${
-                                            isDone
-                                              ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                                              : status === "em_andamento"
-                                              ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
-                                              : "bg-white/5 text-gray-500 border border-white/10"
-                                          }`}
-                                        >
-                                          {isDone ? <Check size={12} /> : status === "em_andamento" ? <Zap size={10} /> : <Clock size={10} />}
-                                        </div>
-                                        <div>
-                                          <p
-                                            className={`text-xs font-semibold ${
-                                              isDone ? "text-gray-300 line-through" : "text-gray-200"
+                                      <div className="flex items-start justify-between gap-3">
+                                        <div className="flex items-start gap-2.5">
+                                          <div
+                                            className={`w-5 h-5 rounded-md shrink-0 mt-0.5 flex items-center justify-center text-xs ${
+                                              isDone
+                                                ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                                                : isActive
+                                                ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                                                : "bg-white/5 text-gray-500 border border-white/10"
                                             }`}
                                           >
-                                            {m.title}
-                                          </p>
-                                          {cleanDesc && (
-                                            <p className="text-[11px] text-gray-400 mt-0.5">
-                                              {cleanDesc}
+                                            {isDone ? <Check size={12} /> : isActive ? <Zap size={10} /> : <Clock size={10} />}
+                                          </div>
+                                          <div>
+                                            <p
+                                              className={`text-xs font-semibold ${
+                                                isDone ? "text-gray-300 line-through" : "text-gray-200"
+                                              }`}
+                                            >
+                                              {m.title}
                                             </p>
+                                            {cleanDesc && (
+                                              <p className="text-[11px] text-gray-400 mt-0.5">
+                                                {cleanDesc}
+                                              </p>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-2 shrink-0">
+                                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border ${
+                                            isDone ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"
+                                            : isActive ? "bg-blue-500/10 text-blue-300 border-blue-500/20"
+                                            : "bg-white/5 text-gray-400 border-white/10"
+                                          }`}>
+                                            {isDone ? "Concluído" : isActive ? "Em Andamento" : "Pendente"}
+                                          </span>
+                                          {m.due_date && (
+                                            <span className="text-[10px] text-gray-400 shrink-0">
+                                              {new Date(m.due_date).toLocaleDateString("pt-BR")}
+                                            </span>
                                           )}
                                         </div>
                                       </div>
 
-                                      <div className="flex items-center gap-2 shrink-0">
-                                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border ${
-                                          isDone ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"
-                                          : status === "em_andamento" ? "bg-blue-500/10 text-blue-300 border-blue-500/20"
-                                          : "bg-white/5 text-gray-400 border-white/10"
-                                        }`}>
-                                          {isDone ? "Concluído" : status === "em_andamento" ? "Em Andamento" : "Pendente"}
-                                        </span>
-                                        {m.due_date && (
-                                          <span className="text-[10px] text-gray-400 shrink-0">
-                                            {new Date(m.due_date).toLocaleDateString("pt-BR")}
+                                      {/* Milestone Progress Bar */}
+                                      <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5">
+                                        <div className="flex items-center justify-between text-[10px]">
+                                          <span className="text-gray-400 font-semibold">Progresso da Etapa</span>
+                                          <span className={`font-mono font-bold ${isDone ? "text-emerald-400" : "text-indigo-300"}`}>
+                                            {milestoneProg}% Concluído {tasks.length > 0 && `(${completedTasksCount}/${tasks.length} checks)`}
                                           </span>
-                                        )}
+                                        </div>
+                                        <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                                          <div
+                                            className={`h-full rounded-full transition-all duration-300 ${
+                                              isDone
+                                                ? "bg-emerald-400"
+                                                : milestoneProg > 0
+                                                ? "bg-gradient-to-r from-indigo-500 to-purple-500"
+                                                : "bg-transparent"
+                                            }`}
+                                            style={{ width: `${milestoneProg}%` }}
+                                          />
+                                        </div>
                                       </div>
+
+                                      {/* Checklist Items */}
+                                      {tasks.length > 0 && (
+                                        <div className="space-y-1 pt-0.5">
+                                          <span className="text-[9px] uppercase font-bold text-gray-400 tracking-wider block">
+                                            Itens de Execução:
+                                          </span>
+                                          <div className={`grid gap-1.5 ${previewDevice === "desktop" ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}>
+                                            {tasks.map((task) => (
+                                              <div
+                                                key={task.id}
+                                                className={`px-2 py-1.5 rounded-lg border text-[11px] flex items-center gap-1.5 ${
+                                                  task.completed
+                                                    ? "bg-emerald-950/20 border-emerald-500/20 text-emerald-300"
+                                                    : "bg-black/20 border-white/5 text-gray-400"
+                                                }`}
+                                              >
+                                                <div className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[9px] shrink-0 ${
+                                                  task.completed ? "bg-emerald-500 text-white" : "bg-white/5 border border-white/20 text-transparent"
+                                                }`}>
+                                                  <Check size={9} />
+                                                </div>
+                                                <span className={`truncate ${task.completed ? "line-through text-gray-400" : "text-white"}`}>
+                                                  {task.text}
+                                                </span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 })}
                               </div>
-                            )}
-                          </div>
+                            );
+                          })()}
+                        </div>
 
                           {/* Card 4: Timeline de Updates e Notas */}
-                          <div className="p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl">
+                          <div className="p-4 sm:p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl">
                             <div className="flex items-center justify-between mb-5">
                               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                                 <Sparkles size={16} className="text-purple-400" />
@@ -9243,7 +12307,7 @@ export default function AdminDashboardPage() {
                           </div>
 
                           {/* Card 5: Contratos & Documentos */}
-                          <div className="p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl">
+                          <div className="p-4 sm:p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl">
                             <div className="flex items-center justify-between mb-4">
                               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                                 <FileText size={16} className="text-pink-400" />
@@ -9259,7 +12323,7 @@ export default function AdminDashboardPage() {
                                 Nenhum documento público anexado a este projeto ainda.
                               </p>
                             ) : (
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div className={`grid gap-3 ${previewDevice === "desktop" ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}>
                                 {clientDocs.map((doc) => {
                                   const catInfo = getDocumentCategoryInfo(doc.category);
                                   return (
@@ -9308,90 +12372,120 @@ export default function AdminDashboardPage() {
                         </div>
 
                         {/* Right Column (4 cols): Deliverables & Direct Contact */}
-                        <div className="lg:col-span-4 flex flex-col gap-6">
+                        <div className={previewDevice === "desktop" ? "lg:col-span-4 flex flex-col gap-6" : "flex flex-col gap-6"}>
                           {/* Deliverables Card */}
-                          <div className="p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl">
+                          <div className="p-4 sm:p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl">
                             <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-2">
                               <ExternalLink size={14} className="text-indigo-400" />
                               <span>Entregáveis & Acessos</span>
                             </h3>
 
                             <div className="space-y-2.5">
-                              {previewProject.figma_url ? (
-                                <a
-                                  href={previewProject.figma_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="p-3 rounded-2xl bg-[#1e1b2e]/80 border border-purple-500/30 flex items-center justify-between text-white transition-all hover:border-purple-400"
-                                >
-                                  <div className="flex items-center gap-2.5">
-                                    <div className="p-1.5 rounded-lg bg-purple-500/20 text-purple-400">
-                                      <Palette size={16} />
-                                    </div>
-                                    <div>
-                                      <p className="text-xs font-bold">Protótipo Figma</p>
-                                      <p className="text-[10px] text-gray-400">Design navegável</p>
-                                    </div>
-                                  </div>
-                                  <ChevronRight size={14} className="text-gray-400" />
-                                </a>
-                              ) : (
-                                <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center gap-2.5 text-gray-500">
-                                  <Palette size={16} className="opacity-40" />
-                                  <div>
-                                    <p className="text-xs font-semibold">Protótipo Figma</p>
-                                    <p className="text-[10px] text-gray-500">Liberado na fase de Design</p>
-                                  </div>
-                                </div>
-                              )}
+                              {(() => {
+                                const customLinks = (projectQuickLinks[previewProject.id] || []).filter(
+                                  (l) => l.is_active && l.url && l.url.trim() !== "" &&
+                                  l.url !== previewProject.figma_url &&
+                                  l.url !== previewProject.preview_url &&
+                                  l.url !== previewProject.repo_url
+                                );
+                                const hasFigma = Boolean(previewProject.figma_url && previewProject.figma_url.trim() !== "");
+                                const hasPreview = Boolean(previewProject.preview_url && previewProject.preview_url.trim() !== "");
+                                const hasRepo = Boolean(previewProject.repo_url && previewProject.repo_url.trim() !== "");
+                                const hasAny = hasFigma || hasPreview || hasRepo || customLinks.length > 0;
 
-                              {previewProject.preview_url ? (
-                                <a
-                                  href={previewProject.preview_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="p-3 rounded-2xl bg-[#11262d]/80 border border-cyan-500/30 flex items-center justify-between text-white transition-all hover:border-cyan-400"
-                                >
-                                  <div className="flex items-center gap-2.5">
-                                    <div className="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-400">
-                                      <Globe size={16} />
+                                if (!hasAny) {
+                                  return (
+                                    <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 text-center text-xs text-gray-500">
+                                      Nenhum link ou entregável disponível no momento.
                                     </div>
-                                    <div>
-                                      <p className="text-xs font-bold">Ambiente Staging</p>
-                                      <p className="text-[10px] text-gray-400">Testes online</p>
-                                    </div>
-                                  </div>
-                                  <ChevronRight size={14} className="text-gray-400" />
-                                </a>
-                              ) : (
-                                <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center gap-2.5 text-gray-500">
-                                  <Globe size={16} className="opacity-40" />
-                                  <div>
-                                    <p className="text-xs font-semibold">Ambiente de Testes</p>
-                                    <p className="text-[10px] text-gray-500">Liberado na fase de Testes</p>
-                                  </div>
-                                </div>
-                              )}
+                                  );
+                                }
 
-                              {previewProject.repo_url && (
-                                <a
-                                  href={previewProject.repo_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="p-3 rounded-2xl bg-[#1a1c29]/80 border border-white/10 flex items-center justify-between text-white transition-all hover:border-white/20"
-                                >
-                                  <div className="flex items-center gap-2.5">
-                                    <div className="p-1.5 rounded-lg bg-white/5 text-gray-300">
-                                      <FolderGit2 size={16} />
-                                    </div>
-                                    <div>
-                                      <p className="text-xs font-bold">Repositório GitHub</p>
-                                      <p className="text-[10px] text-gray-400">Código auditável</p>
-                                    </div>
-                                  </div>
-                                  <ChevronRight size={14} className="text-gray-400" />
-                                </a>
-                              )}
+                                return (
+                                  <>
+                                    {hasFigma && (
+                                      <a
+                                        href={previewProject.figma_url!}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="p-3 rounded-2xl bg-[#1e1b2e]/80 border border-purple-500/30 flex items-center justify-between text-white transition-all hover:border-purple-400 hover:bg-[#1e1b2e]"
+                                      >
+                                        <div className="flex items-center gap-2.5">
+                                          <div className="p-1.5 rounded-lg bg-purple-500/20 text-purple-400">
+                                            <Palette size={16} />
+                                          </div>
+                                          <div>
+                                            <p className="text-xs font-bold">Protótipo Figma</p>
+                                            <p className="text-[10px] text-gray-400">Design navegável</p>
+                                          </div>
+                                        </div>
+                                        <ChevronRight size={14} className="text-gray-400" />
+                                      </a>
+                                    )}
+
+                                    {hasPreview && (
+                                      <a
+                                        href={previewProject.preview_url!}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="p-3 rounded-2xl bg-[#11262d]/80 border border-cyan-500/30 flex items-center justify-between text-white transition-all hover:border-cyan-400 hover:bg-[#11262d]"
+                                      >
+                                        <div className="flex items-center gap-2.5">
+                                          <div className="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-400">
+                                            <Globe size={16} />
+                                          </div>
+                                          <div>
+                                            <p className="text-xs font-bold">Ambiente Staging</p>
+                                            <p className="text-[10px] text-gray-400">Testes online</p>
+                                          </div>
+                                        </div>
+                                        <ChevronRight size={14} className="text-gray-400" />
+                                      </a>
+                                    )}
+
+                                    {hasRepo && (
+                                      <a
+                                        href={previewProject.repo_url!}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="p-3 rounded-2xl bg-[#1a1c29]/80 border border-white/10 flex items-center justify-between text-white transition-all hover:border-white/20 hover:bg-[#1a1c29]"
+                                      >
+                                        <div className="flex items-center gap-2.5">
+                                          <div className="p-1.5 rounded-lg bg-white/5 text-gray-300">
+                                            <FolderGit2 size={16} />
+                                          </div>
+                                          <div>
+                                            <p className="text-xs font-bold">Repositório GitHub</p>
+                                            <p className="text-[10px] text-gray-400">Código auditável</p>
+                                          </div>
+                                        </div>
+                                        <ChevronRight size={14} className="text-gray-400" />
+                                      </a>
+                                    )}
+
+                                    {customLinks.map((link) => (
+                                      <a
+                                        key={link.id}
+                                        href={link.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="p-3 rounded-2xl bg-indigo-950/30 border border-indigo-500/30 flex items-center justify-between text-white transition-all hover:border-indigo-400 hover:bg-indigo-900/30"
+                                      >
+                                        <div className="flex items-center gap-2.5">
+                                          <div className="p-1.5 rounded-lg bg-indigo-500/20 text-indigo-400">
+                                            <ExternalLink size={16} />
+                                          </div>
+                                          <div>
+                                            <p className="text-xs font-bold">{link.label}</p>
+                                            <p className="text-[10px] text-gray-400">{link.description || "Link de acesso"}</p>
+                                          </div>
+                                        </div>
+                                        <ChevronRight size={14} className="text-gray-400" />
+                                      </a>
+                                    ))}
+                                  </>
+                                );
+                              })()}
                             </div>
                           </div>
 

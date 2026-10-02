@@ -40,4 +40,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-.vercel
+# local data storage (contains clients & projects runtime data)
+/src/data/portal-data.json
+/src/data/*.json

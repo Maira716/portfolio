@@ -20,29 +20,41 @@ export async function POST(req: Request) {
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
-    // 1. Admin direct login check
+    // 1. Admin login password verification
     if (
       cleanEmail === "mairareis2017@gmail.com" ||
-      cleanEmail.includes("admin@mairareis")
+      cleanEmail === "admin@mairareis.com.br"
     ) {
-      const adminUser = {
-        id: "admin-mairareis",
-        email: cleanEmail,
-        user_metadata: { full_name: "Maira Reis", role: "admin" },
-      };
-      const adminProfile = {
-        id: "admin-mairareis",
-        email: cleanEmail,
-        full_name: "Maira Reis",
-        role: "admin",
-        status: "active",
-      };
-      return NextResponse.json({
-        success: true,
-        user: adminUser,
-        profile: adminProfile,
-        message: "Login de administradora autorizado!",
-      });
+      try {
+        const supabase = createClient(supabaseUrl, supabaseAnonKey);
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password: cleanPassword,
+        });
+
+        if (!authError && authData.user) {
+          const adminUser = {
+            id: authData.user.id,
+            email: cleanEmail,
+            user_metadata: { full_name: "Maira Reis", role: "admin" },
+          };
+          const adminProfile = {
+            id: authData.user.id,
+            email: cleanEmail,
+            full_name: "Maira Reis",
+            role: "admin",
+            status: "active",
+          };
+          return NextResponse.json({
+            success: true,
+            user: adminUser,
+            profile: adminProfile,
+            message: "Login de administradora autorizado!",
+          });
+        }
+      } catch (authErr) {
+        console.warn("Admin Supabase auth check failed:", authErr);
+      }
     }
 
     // 2. Check local/server store first for instant client recognition
@@ -56,12 +68,11 @@ export async function POST(req: Request) {
         );
       }
 
-      // Check password: allow their specific password or default Cliente@123 (case-tolerant for initial c)
-      const validPass =
-        storedClient.password === cleanPassword ||
-        cleanPassword === "Cliente@123" ||
-        cleanPassword.toLowerCase() === "cliente@123" ||
-        (storedClient.password && storedClient.password.trim() === cleanPassword);
+      // Check password: validate against stored client password
+      const validPass = Boolean(
+        storedClient.password &&
+        (storedClient.password === cleanPassword || storedClient.password.trim() === cleanPassword)
+      );
 
       if (!validPass) {
         return NextResponse.json(
@@ -165,33 +176,6 @@ export async function POST(req: Request) {
       }
     } catch (dbErr) {
       console.warn("DB profile lookup failed:", dbErr);
-    }
-
-    // If client email contains @ and password is standard Cliente@123, auto-register client session
-    if (cleanEmail.includes("@") && (cleanPassword === "Cliente@123" || cleanPassword.toLowerCase() === "cliente@123")) {
-      const namePart = cleanEmail.split("@")[0];
-      const formattedName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
-      const newClient = saveClient({
-        email: cleanEmail,
-        full_name: formattedName,
-        password: cleanPassword,
-        role: "client",
-        status: "active",
-      });
-
-      return NextResponse.json({
-        success: true,
-        user: {
-          id: newClient.id,
-          email: cleanEmail,
-          user_metadata: {
-            full_name: newClient.full_name,
-            role: "client",
-          },
-        },
-        profile: newClient,
-        message: "Login autenticado com sucesso!",
-      });
     }
 
     return NextResponse.json(

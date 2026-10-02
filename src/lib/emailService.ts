@@ -1,7 +1,7 @@
 // src/lib/emailService.ts
 // Transactional Email Service for Portfólio
 
-export type TransactionalEmailType = "delivery_completed" | "payment_confirmed";
+export type TransactionalEmailType = "delivery_completed" | "payment_confirmed" | "update_posted";
 
 export interface DeliveryCompletedPayload {
   type: "delivery_completed";
@@ -35,7 +35,22 @@ export interface PaymentConfirmedPayload {
   portalUrl?: string;
 }
 
-export type EmailNotificationPayload = DeliveryCompletedPayload | PaymentConfirmedPayload;
+export interface UpdatePostedPayload {
+  type: "update_posted";
+  recipientEmail: string;
+  recipientName: string;
+  projectName: string;
+  projectId: string;
+  updateTitle: string;
+  updateCategory?: string;
+  updateSummary?: string;
+  actionUrl?: string;
+}
+
+export type EmailNotificationPayload =
+  | DeliveryCompletedPayload
+  | PaymentConfirmedPayload
+  | UpdatePostedPayload;
 
 export interface DispatchedEmailLog {
   id: string;
@@ -65,7 +80,7 @@ export function generateDeliveryCompletedHtml(data: DeliveryCompletedPayload): {
     year: "numeric",
   });
 
-  const portalLink = data.portalUrl || "https://mairareis.dev/portal";
+  const portalLink = data.portalUrl || "https://www.mairareis.com.br/portal";
 
   const deliverablesHtml =
     data.deliverables && data.deliverables.length > 0
@@ -88,7 +103,6 @@ export function generateDeliveryCompletedHtml(data: DeliveryCompletedPayload): {
 </head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #070913; margin: 0; padding: 30px 15px; color: #1e293b;">
   <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.4);">
-    <!-- Header Banner -->
     <div style="background: linear-gradient(135deg, #4338ca 0%, #6366f1 50%, #ec4899 100%); padding: 36px 30px; text-align: center; color: #ffffff;">
       <div style="display: inline-block; padding: 6px 14px; background-color: rgba(255,255,255,0.2); border-radius: 20px; font-size: 11px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 12px;">
         🚀 Notificação de Entrega
@@ -101,16 +115,14 @@ export function generateDeliveryCompletedHtml(data: DeliveryCompletedPayload): {
       </p>
     </div>
 
-    <!-- Body Content -->
     <div style="padding: 32px 30px;">
       <p style="font-size: 15px; line-height: 1.6; color: #334155; margin-top: 0;">
         Olá, <strong>${data.recipientName}</strong>!
       </p>
       <p style="font-size: 14px; line-height: 1.6; color: #475569;">
-        Temos uma ótima notícia: a etapa <strong>"${data.milestoneTitle}"</strong> (${data.stageName}) do seu projeto acaba de ser concluída e validada por nossa equipe de engenharia.
+        Temos uma ótima notícia: a etapa <strong>"${data.milestoneTitle}"</strong> (${data.stageName}) do seu projeto acaba de ser concluída e validada.
       </p>
 
-      <!-- Milestone Summary Card -->
       <div style="background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); border: 1px solid #86efac; border-radius: 14px; padding: 20px; margin: 24px 0;">
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
           <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #166534; letter-spacing: 0.5px;">
@@ -140,26 +152,11 @@ export function generateDeliveryCompletedHtml(data: DeliveryCompletedPayload): {
           : ""
       }
 
-      <!-- Call To Action Button -->
-      <div style="text-align: center; margin: 36px 0 24px 0;">
-        <a href="${portalLink}" style="display: inline-block; background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 12px; font-size: 14px; font-weight: 800; box-shadow: 0 8px 20px rgba(79, 70, 229, 0.35);">
-          Acessar Portal do Cliente & Testar →
+      <div style="text-align: center; margin: 36px 0 20px 0;">
+        <a href="${portalLink}" style="display: inline-block; background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; font-weight: 800; font-size: 14px; border-radius: 14px; box-shadow: 0 10px 25px rgba(79, 70, 229, 0.4);">
+          Acessar Portal do Cliente →
         </a>
       </div>
-
-      <p style="font-size: 12px; color: #94a3b8; text-align: center; margin-bottom: 0;">
-        Você pode aprovar a entrega ou registrar considerações diretamente pelo portal.
-      </p>
-    </div>
-
-    <!-- Footer -->
-    <div style="background-color: #0f172a; padding: 24px 30px; text-align: center; color: #94a3b8; font-size: 11px; border-top: 1px solid #1e293b;">
-      <p style="margin: 0 0 6px 0; font-weight: 700; color: #ffffff;">
-        Maira Reis • Engenharia de Software & Soluções Digitais
-      </p>
-      <p style="margin: 0; color: #64748b;">
-        Este é um e-mail transacional automático. Em caso de dúvidas, responda diretamente ou contate via WhatsApp.
-      </p>
     </div>
   </div>
 </body>
@@ -175,19 +172,12 @@ export function generatePaymentConfirmedHtml(data: PaymentConfirmedPayload): {
   subject: string;
   html: string;
 } {
-  const formattedAmount = (data.amount || 0).toLocaleString("pt-BR", {
+  const formattedAmount = data.amount.toLocaleString("pt-BR", {
     style: "currency",
     currency: "BRL",
   });
-
-  const subject = `✅ Pagamento Confirmado: Parcela #${data.installmentNumber} (${formattedAmount}) — ${data.projectName}`;
-  const formattedDate = new Date(data.paidAt).toLocaleDateString("pt-BR", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  });
-
-  const portalLink = data.portalUrl || "https://mairareis.dev/portal";
+  const subject = `💳 Confirmação de Pagamento: ${data.installmentTitle} (${formattedAmount}) — ${data.projectName}`;
+  const portalLink = data.portalUrl || "https://www.mairareis.com.br/portal";
 
   const html = `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -198,90 +188,43 @@ export function generatePaymentConfirmedHtml(data: PaymentConfirmedPayload): {
 </head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #070913; margin: 0; padding: 30px 15px; color: #1e293b;">
   <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.4);">
-    <!-- Header Banner -->
-    <div style="background: linear-gradient(135deg, #059669 0%, #10b981 50%, #0284c7 100%); padding: 36px 30px; text-align: center; color: #ffffff;">
+    <div style="background: linear-gradient(135deg, #059669 0%, #10b981 50%, #14b8a6 100%); padding: 36px 30px; text-align: center; color: #ffffff;">
       <div style="display: inline-block; padding: 6px 14px; background-color: rgba(255,255,255,0.2); border-radius: 20px; font-size: 11px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 12px;">
-        💳 Confirmação Financeira
+        💳 Recibo de Pagamento
       </div>
       <h1 style="margin: 0; font-size: 24px; font-weight: 900; letter-spacing: -0.5px;">
-        Pagamento Confirmado & Quitado!
+        Pagamento Confirmado!
       </h1>
       <p style="margin: 8px 0 0 0; font-size: 14px; opacity: 0.9;">
-        Recibo Oficial: <strong>${data.receiptNumber}</strong>
+        Projeto: <strong>${data.projectName}</strong>
       </p>
     </div>
 
-    <!-- Body Content -->
     <div style="padding: 32px 30px;">
       <p style="font-size: 15px; line-height: 1.6; color: #334155; margin-top: 0;">
         Olá, <strong>${data.recipientName}</strong>!
       </p>
       <p style="font-size: 14px; line-height: 1.6; color: #475569;">
-        Confirmamos com sucesso o recebimento e a baixa manual da <strong>Parcela #${data.installmentNumber}${data.totalInstallments ? ` de ${data.totalInstallments}` : ""}</strong> referente ao contrato do projeto <strong>"${data.projectName}"</strong>.
+        Confirmamos com sucesso o recebimento da parcela referente ao seu projeto.
       </p>
 
-      <!-- Amount Highlight Box -->
-      <div style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border: 2px solid #a7f3d0; border-radius: 16px; padding: 24px; text-align: center; margin: 24px 0;">
-        <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #047857; letter-spacing: 1px; display: block; margin-bottom: 4px;">
+      <div style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border: 1px solid #6ee7b7; border-radius: 14px; padding: 24px; margin: 24px 0; text-align: center;">
+        <span style="font-size: 12px; font-weight: 800; text-transform: uppercase; color: #047857; letter-spacing: 0.5px; display: block; margin-bottom: 4px;">
           Valor Liquidado
         </span>
-        <div style="font-size: 32px; font-weight: 900; color: #065f46; font-family: monospace;">
+        <h2 style="margin: 0; font-size: 32px; font-weight: 900; color: #065f46; letter-spacing: -0.5px;">
           ${formattedAmount}
-        </div>
-        <div style="font-size: 12px; color: #047857; margin-top: 6px; font-weight: 600;">
-          Status: Quitado em ${formattedDate} via ${data.paymentMethod}
-        </div>
-      </div>
-
-      <!-- Financial Details Table -->
-      <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin-bottom: 24px;">
-        <table style="width: 100%; font-size: 12px; border-collapse: collapse;">
-          <tr>
-            <td style="padding: 6px 0; color: #64748b;"><strong>Identificação:</strong></td>
-            <td style="padding: 6px 0; text-align: right; color: #0f172a; font-weight: 600;">${data.installmentTitle}</td>
-          </tr>
-          <tr>
-            <td style="padding: 6px 0; color: #64748b;"><strong>Forma de Pagamento:</strong></td>
-            <td style="padding: 6px 0; text-align: right; color: #0f172a; font-weight: 600; text-transform: uppercase;">${data.paymentMethod}</td>
-          </tr>
-          <tr>
-            <td style="padding: 6px 0; color: #64748b;"><strong>Número do Recibo:</strong></td>
-            <td style="padding: 6px 0; text-align: right; color: #4338ca; font-weight: 700; font-family: monospace;">${data.receiptNumber}</td>
-          </tr>
-          ${
-            data.authCode
-              ? `<tr>
-                  <td style="padding: 6px 0; color: #64748b;"><strong>Autenticação SHA-256:</strong></td>
-                  <td style="padding: 6px 0; text-align: right; color: #059669; font-weight: 600; font-family: monospace; font-size: 10px;">${data.authCode}</td>
-                </tr>`
-              : ""
-          }
-        </table>
-      </div>
-
-      <!-- Statement text -->
-      <div style="padding: 14px 18px; border-left: 4px solid #10b981; background-color: #f8fafc; border-radius: 0 10px 10px 0; margin-bottom: 28px;">
-        <p style="margin: 0; font-size: 12px; color: #475569; line-height: 1.6;">
-          O comprovante e o <strong>Recibo Oficial de Quitação</strong> já se encontram emitidos e disponíveis para download no formato PDF em seu portal.
+        </h2>
+        <p style="margin: 8px 0 0 0; font-size: 13px; color: #047857; font-weight: 600;">
+          ${data.installmentTitle} • ${data.paymentMethod}
         </p>
       </div>
 
-      <!-- Call To Action Button -->
-      <div style="text-align: center; margin: 32px 0 20px 0;">
-        <a href="${portalLink}" style="display: inline-block; background: linear-gradient(135deg, #059669 0%, #0d9488 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 12px; font-size: 14px; font-weight: 800; box-shadow: 0 8px 20px rgba(5, 150, 105, 0.35);">
-          Acessar Extrato & Baixar Recibo (PDF) →
+      <div style="text-align: center; margin: 36px 0 20px 0;">
+        <a href="${portalLink}" style="display: inline-block; background: linear-gradient(135deg, #059669 0%, #10b981 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; font-weight: 800; font-size: 14px; border-radius: 14px; box-shadow: 0 10px 25px rgba(5, 150, 105, 0.4);">
+          Ver Financeiro no Portal →
         </a>
       </div>
-    </div>
-
-    <!-- Footer -->
-    <div style="background-color: #0f172a; padding: 24px 30px; text-align: center; color: #94a3b8; font-size: 11px; border-top: 1px solid #1e293b;">
-      <p style="margin: 0 0 6px 0; font-weight: 700; color: #ffffff;">
-        Maira Reis • Engenharia de Software & Soluções Digitais
-      </p>
-      <p style="margin: 0; color: #64748b;">
-        CNPJ: 48.291.802/0001-94 • contato@mairareis.dev
-      </p>
     </div>
   </div>
 </body>
@@ -291,15 +234,68 @@ export function generatePaymentConfirmedHtml(data: PaymentConfirmedPayload): {
 }
 
 /**
- * Dispatches an asynchronous transactional email notification
+ * Generate formatted HTML template for Update Posted / Broadcast email
  */
-export async function sendTransactionalEmail(
-  payload: EmailNotificationPayload
-): Promise<DispatchedEmailLog> {
+export function generateUpdatePostedHtml(data: UpdatePostedPayload): {
+  subject: string;
+  html: string;
+} {
+  const subject = `📢 ${data.updateTitle} — ${data.projectName}`;
+  const portalLink = data.actionUrl || "https://www.mairareis.com.br/portal";
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${subject}</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #070913; margin: 0; padding: 30px 15px; color: #1e293b;">
+  <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.4);">
+    <div style="background: linear-gradient(135deg, #7c3aed 0%, #6366f1 50%, #3b82f6 100%); padding: 36px 30px; text-align: center; color: #ffffff;">
+      <div style="display: inline-block; padding: 6px 14px; background-color: rgba(255,255,255,0.2); border-radius: 20px; font-size: 11px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 12px;">
+        📢 Atualização Oficial
+      </div>
+      <h1 style="margin: 0; font-size: 24px; font-weight: 900; letter-spacing: -0.5px;">
+        ${data.updateTitle}
+      </h1>
+      <p style="margin: 8px 0 0 0; font-size: 14px; opacity: 0.9;">
+        Projeto: <strong>${data.projectName}</strong>
+      </p>
+    </div>
+
+    <div style="padding: 32px 30px;">
+      <p style="font-size: 15px; line-height: 1.6; color: #334155; margin-top: 0;">
+        Olá, <strong>${data.recipientName}</strong>!
+      </p>
+      
+      <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 20px; margin: 20px 0; color: #334155; font-size: 14px; line-height: 1.7; white-space: pre-line;">
+        ${data.updateSummary || "Novidades disponíveis para o seu projeto."}
+      </div>
+
+      <div style="text-align: center; margin: 36px 0 20px 0;">
+        <a href="${portalLink}" style="display: inline-block; background: linear-gradient(135deg, #7c3aed 0%, #6366f1 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; font-weight: 800; font-size: 14px; border-radius: 14px; box-shadow: 0 10px 25px rgba(124, 58, 237, 0.4);">
+          Acessar Portal do Projeto →
+        </a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  return { subject, html };
+}
+
+/**
+ * Dispatch a transactional email notification and record it to local state/API
+ */
+export function sendTransactionalEmail(payload: EmailNotificationPayload): DispatchedEmailLog {
   const { subject, html } =
     payload.type === "delivery_completed"
       ? generateDeliveryCompletedHtml(payload)
-      : generatePaymentConfirmedHtml(payload);
+      : payload.type === "payment_confirmed"
+      ? generatePaymentConfirmedHtml(payload)
+      : generateUpdatePostedHtml(payload);
 
   const emailLog: DispatchedEmailLog = {
     id: `email-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -310,7 +306,9 @@ export async function sendTransactionalEmail(
     previewText:
       payload.type === "delivery_completed"
         ? `Entrega "${payload.milestoneTitle}" concluída para ${payload.projectName}`
-        : `Pagamento de ${payload.amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} confirmado para ${payload.projectName}`,
+        : payload.type === "payment_confirmed"
+        ? `Pagamento de ${payload.amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} confirmado para ${payload.projectName}`
+        : `Atualização: ${payload.updateTitle} (${payload.projectName})`,
     projectId: payload.projectId,
     projectName: payload.projectName,
     sentAt: new Date().toISOString(),
@@ -319,7 +317,6 @@ export async function sendTransactionalEmail(
   };
 
   try {
-    // Call server API endpoint asynchronously
     if (typeof window !== "undefined") {
       fetch("/api/notifications/email", {
         method: "POST",
@@ -336,11 +333,10 @@ export async function sendTransactionalEmail(
         console.warn("Async email notification background dispatch notice:", err);
       });
 
-      // Save to local storage notification audit log
       const storageKey = "portfolio_email_notifications_v1";
       const existingRaw = localStorage.getItem(storageKey);
       let logs: DispatchedEmailLog[] = existingRaw ? JSON.parse(existingRaw) : [];
-      logs = [emailLog, ...logs].slice(0, 50); // keep last 50
+      logs = [emailLog, ...logs].slice(0, 50);
       localStorage.setItem(storageKey, JSON.stringify(logs));
     }
   } catch (err) {
