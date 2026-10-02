@@ -1,9 +1,9 @@
 -- ==============================================================================
--- SUPABASE ROW LEVEL SECURITY (RLS) & SCHEMA SETUP
+-- SUPABASE ROW LEVEL SECURITY (RLS) & SCHEMA SETUP (CORRIGIDO & IDEMPOTENTE)
 -- Portfólio & Gestão de Clientes - Maira Reis
 -- ==============================================================================
 
--- 1. Criação das Tabelas (caso não existam)
+-- 1. Criação das Tabelas e Garantia de Colunas
 -- ------------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS public.profiles (
@@ -21,8 +21,6 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 CREATE TABLE IF NOT EXISTS public.projects (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   client_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
-  client_email TEXT,
-  client_name TEXT,
   title TEXT NOT NULL,
   description TEXT,
   status TEXT DEFAULT 'planejamento',
@@ -36,6 +34,14 @@ CREATE TABLE IF NOT EXISTS public.projects (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Garantir que colunas adicionais existam caso a tabela já tenha sido criada anteriormente
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS client_email TEXT;
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS client_name TEXT;
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS preview_url TEXT;
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS figma_url TEXT;
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS repo_url TEXT;
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS category TEXT;
 
 CREATE TABLE IF NOT EXISTS public.project_milestones (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -90,11 +96,9 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- 4. Políticas de Segurança (Policies) para PROFILES
 -- ------------------------------------------------------------------------------
 
--- Remover políticas antigas para evitar duplicidade
 DROP POLICY IF EXISTS "Admins possuem acesso total a perfis" ON public.profiles;
 DROP POLICY IF EXISTS "Clientes visualizam próprio perfil" ON public.profiles;
 DROP POLICY IF EXISTS "Clientes editam próprio perfil" ON public.profiles;
-DROP POLICY IF EXISTS "Permitir auto-cadastro inicial" ON public.profiles;
 
 -- Admins: Acesso total (SELECT, INSERT, UPDATE, DELETE)
 CREATE POLICY "Admins possuem acesso total a perfis"
@@ -141,7 +145,7 @@ CREATE POLICY "Clientes visualizam apenas seus projetos"
   TO authenticated
   USING (
     client_id = auth.uid() OR
-    LOWER(client_email) = LOWER(auth.jwt() ->> 'email')
+    (client_email IS NOT NULL AND LOWER(client_email) = LOWER(auth.jwt() ->> 'email'))
   );
 
 -- ------------------------------------------------------------------------------
@@ -172,7 +176,7 @@ CREATE POLICY "Clientes visualizam milestones de seus projetos"
       WHERE public.projects.id = public.project_milestones.project_id
         AND (
           public.projects.client_id = auth.uid() OR
-          LOWER(public.projects.client_email) = LOWER(auth.jwt() ->> 'email')
+          (public.projects.client_email IS NOT NULL AND LOWER(public.projects.client_email) = LOWER(auth.jwt() ->> 'email'))
         )
     )
   );
@@ -196,7 +200,7 @@ CREATE POLICY "Clientes visualizam updates de seus projetos"
       WHERE public.projects.id = public.project_updates.project_id
         AND (
           public.projects.client_id = auth.uid() OR
-          LOWER(public.projects.client_email) = LOWER(auth.jwt() ->> 'email')
+          (public.projects.client_email IS NOT NULL AND LOWER(public.projects.client_email) = LOWER(auth.jwt() ->> 'email'))
         )
     )
   );
@@ -209,5 +213,3 @@ CREATE INDEX IF NOT EXISTS idx_projects_client_id ON public.projects(client_id);
 CREATE INDEX IF NOT EXISTS idx_projects_client_email ON public.projects(client_email);
 CREATE INDEX IF NOT EXISTS idx_project_milestones_proj_id ON public.project_milestones(project_id);
 CREATE INDEX IF NOT EXISTS idx_project_updates_proj_id ON public.project_updates(project_id);
-
--- Concluído com sucesso!
