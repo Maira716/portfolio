@@ -1,23 +1,30 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { checkRateLimit, isValidEmail, sanitizeString } from "@/lib/apiSecurity";
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    // Rate limit email dispatches (15 per minute per IP to prevent spam abuse)
+    const rateLimit = checkRateLimit(req, 15, 60 * 1000);
+    if (!rateLimit.allowed) {
+      return NextResponse.json({ error: "Limite de disparos de e-mail atingido. Tente novamente mais tarde." }, { status: 429 });
+    }
+
+    const body = await req.json().catch(() => ({}));
     const { type, recipientEmail, recipientName, subject, html, payload } = body;
 
-    if (!recipientEmail || !subject) {
+    if (!recipientEmail || !subject || !isValidEmail(recipientEmail)) {
       return NextResponse.json(
-        { error: "recipientEmail e subject são obrigatórios." },
+        { error: "recipientEmail válido e subject são obrigatórios." },
         { status: 400 }
       );
     }
 
-    const timestamp = new Date().toISOString();
-    console.log(
-      `[EMAIL NOTIFICATION DISPATCH] Type: ${type} | To: ${recipientName} <${recipientEmail}> | Subject: "${subject}" | Time: ${timestamp}`
-    );
+    const cleanSubject = sanitizeString(subject, 200);
+    const cleanRecipientName = sanitizeString(recipientName || "", 100);
 
-    // If Resend API Key is configured in env, we can send real email via Resend
+    const timestamp = new Date().toISOString();
+
+    // If Resend API Key is configured in env, send real email via Resend
     const resendApiKey = process.env.RESEND_API_KEY;
     let providerResult: any = { provider: "mock_simulation" };
 
@@ -31,9 +38,9 @@ export async function POST(req: Request) {
           },
           body: JSON.stringify({
             from: "Maira Reis <notificacoes@mairareis.dev>",
-            to: [recipientEmail],
-            subject: subject,
-            html: html,
+            to: [recipientEmail.trim().toLowerCase()],
+            subject: cleanSubject,
+            html: html || `<p>${cleanSubject}</p>`,
           }),
         });
         providerResult = await res.json();
@@ -45,18 +52,17 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       messageId: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      type,
-      recipientEmail,
-      recipientName,
-      subject,
+      type: sanitizeString(type || "notification", 50),
+      recipientEmail: recipientEmail.trim().toLowerCase(),
+      recipientName: cleanRecipientName,
+      subject: cleanSubject,
       dispatchedAt: timestamp,
       provider: resendApiKey ? "resend" : "simulated_local",
       providerResult,
     });
   } catch (err: any) {
-    console.error("[EMAIL NOTIFICATION ERROR]", err);
     return NextResponse.json(
-      { error: err.message || "Erro interno ao disparar e-mail transacional." },
+      { error: "Erro ao processar disparo de notificação." },
       { status: 500 }
     );
   }

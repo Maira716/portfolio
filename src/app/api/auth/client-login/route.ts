@@ -1,17 +1,41 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getClientByEmail, saveClient, readPortalData } from "@/lib/serverStore";
+import { checkRateLimit, verifyPassword, isValidEmail, sanitizeString, ADMIN_EMAILS } from "@/lib/apiSecurity";
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const { email, password } = await req.json();
+    // 1. Server-side Rate Limiting (10 attempts per minute per IP)
+    const rateLimit = checkRateLimit(req, 10, 60 * 1000);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Muitas tentativas de login. Por segurança, aguarde 1 minuto antes de tentar novamente." },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": Math.ceil(rateLimit.resetInMs / 1000).toString(),
+          },
+        }
+      );
+    }
 
-    const cleanEmail = (email || "").trim().toLowerCase();
-    const cleanPassword = (password || "").trim();
+    const body = await req.json().catch(() => ({}));
+    const rawEmail = body.email;
+    const rawPassword = body.password;
 
-    if (!cleanEmail || !cleanPassword) {
+    if (!rawEmail || !rawPassword || typeof rawEmail !== "string" || typeof rawPassword !== "string") {
       return NextResponse.json(
         { error: "E-mail e senha são obrigatórios." },
+        { status: 400 }
+      );
+    }
+
+    const cleanEmail = rawEmail.trim().toLowerCase();
+    const cleanPassword = rawPassword.trim();
+
+    if (!isValidEmail(cleanEmail)) {
+      return NextResponse.json(
+        { error: "Formato de e-mail inválido." },
         { status: 400 }
       );
     }
@@ -20,11 +44,9 @@ export async function POST(req: Request) {
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
-    // 1. Admin login password verification
-    if (
-      cleanEmail === "mairareis2017@gmail.com" ||
-      cleanEmail === "admin@mairareis.com.br"
-    ) {
+    // 2. Admin login verification
+    const isAdminEmail = ADMIN_EMAILS.includes(cleanEmail);
+    if (isAdminEmail) {
       try {
         const supabase = createClient(supabaseUrl, supabaseAnonKey);
         const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
@@ -57,7 +79,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // 2. Check local/server store first for instant client recognition
+    // 3. Check local/server store first for instant client recognition
     const storedClient = getClientByEmail(cleanEmail);
 
     if (storedClient) {
@@ -68,10 +90,9 @@ export async function POST(req: Request) {
         );
       }
 
-      // Check password: validate against stored client password
+      // Check password with constant-time verification & salt support
       const validPass = Boolean(
-        storedClient.password &&
-        (storedClient.password === cleanPassword || storedClient.password.trim() === cleanPassword)
+        storedClient.password && verifyPassword(cleanPassword, storedClient.password)
       );
 
       if (!validPass) {

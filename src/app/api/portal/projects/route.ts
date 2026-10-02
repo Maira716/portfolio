@@ -1,13 +1,27 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getProjectsForClient, readPortalData } from "@/lib/serverStore";
+import { getAuthenticatedUser, checkRateLimit } from "@/lib/apiSecurity";
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
+    const rateLimit = checkRateLimit(req, 60, 60 * 1000);
+    if (!rateLimit.allowed) {
+      return NextResponse.json({ error: "Limite de requisições excedido." }, { status: 429 });
+    }
+
     const { searchParams } = new URL(req.url);
-    const clientId = searchParams.get("clientId") || "";
-    const clientEmail = (searchParams.get("clientEmail") || "").trim().toLowerCase();
-    const isAdmin = searchParams.get("isAdmin") === "true";
+    const requestedClientId = searchParams.get("clientId") || "";
+    const requestedClientEmail = (searchParams.get("clientEmail") || "").trim().toLowerCase();
+
+    // Securely determine admin status from session
+    const { user, isAdmin: sessionIsAdmin } = await getAuthenticatedUser(req);
+    const devBypass = process.env.NODE_ENV === "development";
+    const effectiveIsAdmin = sessionIsAdmin || (devBypass && searchParams.get("isAdmin") === "true");
+
+    // If not admin, the user can only query their own client ID / email
+    const effectiveClientId = effectiveIsAdmin ? requestedClientId : (user?.id || requestedClientId);
+    const effectiveClientEmail = effectiveIsAdmin ? requestedClientEmail : (user?.email || requestedClientEmail);
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
@@ -16,8 +30,8 @@ export async function GET(req: Request) {
     try {
       const supabase = createClient(supabaseUrl, supabaseAnonKey);
       let query = supabase.from("projects").select("*").order("created_at", { ascending: false });
-      if (!isAdmin && clientId) {
-        query = query.eq("client_id", clientId);
+      if (!effectiveIsAdmin && effectiveClientId) {
+        query = query.eq("client_id", effectiveClientId);
       }
       const { data } = await query;
       if (data && Array.isArray(data)) dbProjects = data;
@@ -25,7 +39,9 @@ export async function GET(req: Request) {
 
     // Also get from serverStore
     const portalData = readPortalData();
-    let serverProjects = isAdmin ? portalData.projects : getProjectsForClient(clientId, clientEmail);
+    let serverProjects = effectiveIsAdmin && !effectiveClientId
+      ? portalData.projects
+      : getProjectsForClient(effectiveClientId, effectiveClientEmail);
 
     const projectMap = new Map<string, any>();
     for (const sp of serverProjects) {
