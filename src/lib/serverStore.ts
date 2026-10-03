@@ -204,7 +204,26 @@ const DEFAULT_DATA: PortalData = {
       created_at: new Date().toISOString(),
     },
   ],
-  projects: [],
+  projects: [
+    {
+      id: "a892a989-cfd0-40cd-a0e7-22a2ade6d016",
+      client_id: "client-gabriel-01",
+      client_email: "gabrielmonteiropersonalswim@gmail.com",
+      client_name: "Gabriel",
+      title: "Desenvolvimento de Aplicativo sob Medida",
+      description: "Desenvolvimento de aplicativo mobile sob medida e sistema de gestão",
+      status: "desenvolvimento",
+      progress: 35,
+      start_date: "2026-09-14",
+      deadline: "2026-12-20",
+      preview_url: null,
+      figma_url: null,
+      repo_url: null,
+      category: "Mobile App (React Native)",
+      created_at: "2026-09-14T20:30:01.000Z",
+      updated_at: "2026-10-02T23:00:00.000Z",
+    },
+  ],
   updates: {},
   milestones: {},
   quickLinks: {},
@@ -244,7 +263,7 @@ export function readPortalData(): PortalData {
     const parsed = JSON.parse(raw);
     
     if (!parsed.clients || !Array.isArray(parsed.clients)) parsed.clients = DEFAULT_DATA.clients;
-    if (!parsed.projects || !Array.isArray(parsed.projects)) parsed.projects = [];
+    if (!parsed.projects || !Array.isArray(parsed.projects)) parsed.projects = DEFAULT_DATA.projects;
     if (!parsed.updates || typeof parsed.updates !== "object") parsed.updates = {};
     if (!parsed.notifications || !Array.isArray(parsed.notifications)) parsed.notifications = [];
     if (!parsed.finances || typeof parsed.finances !== "object") parsed.finances = {};
@@ -257,6 +276,13 @@ export function readPortalData(): PortalData {
     for (const defClient of DEFAULT_DATA.clients) {
       if (!parsed.clients.some((c: any) => c.email?.toLowerCase() === defClient.email.toLowerCase())) {
         parsed.clients.push(defClient);
+      }
+    }
+
+    // Ensure authentic project is present
+    for (const defProj of DEFAULT_DATA.projects) {
+      if (!parsed.projects.some((p: any) => p.id === defProj.id || p.title === defProj.title)) {
+        parsed.projects.push(defProj);
       }
     }
 
