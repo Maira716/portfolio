@@ -26,6 +26,7 @@ import {
   RefreshCw,
   LogOut,
   ChevronRight,
+  ChevronLeft,
   UserCheck,
   BarChart3,
   Sliders,
@@ -249,6 +250,8 @@ export interface Project {
   figma_url: string | null;
   repo_url: string | null;
   category: string | null;
+  next_update_at?: string | null;
+  countdown_released?: boolean;
   created_at: string;
 }
 
@@ -1474,6 +1477,7 @@ export default function AdminDashboardPage() {
   const [pProgress, setPProgress] = useState(0);
   const [pStartDate, setPStartDate] = useState("");
   const [pDeadline, setPDeadline] = useState("");
+  const [pNextUpdateAt, setPNextUpdateAt] = useState("");
   const [pPreviewUrl, setPPreviewUrl] = useState("");
   const [pFigmaUrl, setPFigmaUrl] = useState("");
   const [pRepoUrl, setPRepoUrl] = useState("");
@@ -1535,6 +1539,27 @@ export default function AdminDashboardPage() {
     setPreviewProject(project);
     setPreviewDevice("desktop");
     setClientPreviewModalOpen(true);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("portfolio_admin_preview_project_id", project.id);
+        const u = new URL(window.location.href);
+        u.searchParams.set("previewProject", project.id);
+        window.history.replaceState({}, "", u.toString());
+      } catch (e) {}
+    }
+  };
+
+  const handleCloseClientPreview = () => {
+    setClientPreviewModalOpen(false);
+    setPreviewProject(null);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem("portfolio_admin_preview_project_id");
+        const u = new URL(window.location.href);
+        u.searchParams.delete("previewProject");
+        window.history.replaceState({}, "", u.toString());
+      } catch (e) {}
+    }
   };
 
   const allFeedbacksFlat = useMemo(() => Object.values(deliveryFeedbacks).flat(), [deliveryFeedbacks]);
@@ -1565,7 +1590,32 @@ export default function AdminDashboardPage() {
         setSearchDropdownOpen(true);
       }
       if (e.key === "Escape") {
+        // Universal ESC Key: Close all active modals, card details, popups and overlays
         setSearchDropdownOpen(false);
+        setProjectModalOpen(false);
+        setProjectDetailsModalOpen(false);
+        setMilestoneModalOpen(false);
+        setUpdateModalOpen(false);
+        setClientModalOpen(false);
+        setClientDetailsModalOpen(false);
+        setInstallmentModalOpen(false);
+        setContractValueModalOpen(false);
+        setSplitGeneratorOpen(false);
+        setEmailLogsModalOpen(false);
+        setWaNotifyModal(null);
+        setDocModalOpen(false);
+        setDocGeneratorModalOpen(false);
+        setPdfViewerModalOpen(false);
+        setQuickLinkModalOpen(false);
+        setTicketModalOpen(false);
+        setCreatedClientInfo(null);
+        setEditingProject(null);
+        setEditingMilestone(null);
+        setEditingUpdate(null);
+        setEditingClient(null);
+        setEditingInstallment(null);
+        setEditingDocument(null);
+        setViewingDocument(null);
       }
     };
     const handleClickOutside = (e: MouseEvent) => {
@@ -1935,7 +1985,15 @@ export default function AdminDashboardPage() {
           const pJson = await pRes.json();
           if (pJson.projects && Array.isArray(pJson.projects)) {
             for (const sp of pJson.projects) {
-              if (!mergedMap.has(sp.id)) {
+              if (mergedMap.has(sp.id)) {
+                const existing = mergedMap.get(sp.id)!;
+                mergedMap.set(sp.id, {
+                  ...existing,
+                  ...sp,
+                  next_update_at: sp.next_update_at || existing.next_update_at || null,
+                  status: normalizeProjectStatus(sp.status || existing.status),
+                });
+              } else {
                 mergedMap.set(sp.id, { ...sp, status: normalizeProjectStatus(sp.status) });
               }
             }
@@ -1946,7 +2004,15 @@ export default function AdminDashboardPage() {
       }
 
       for (const p of filteredLocal) {
-        if (!mergedMap.has(p.id)) {
+        if (mergedMap.has(p.id)) {
+          const existing = mergedMap.get(p.id)!;
+          mergedMap.set(p.id, {
+            ...existing,
+            ...p,
+            next_update_at: p.next_update_at || existing.next_update_at || null,
+            status: normalizeProjectStatus(p.status || existing.status),
+          });
+        } else {
           mergedMap.set(p.id, { ...p, status: normalizeProjectStatus(p.status) });
         }
       }
@@ -2218,6 +2284,21 @@ export default function AdminDashboardPage() {
         setSelectedProject(current);
         await fetchProjectDetails(current.id);
       }
+
+      // Restore Client Vision Preview if it was open before refresh
+      if (typeof window !== "undefined") {
+        try {
+          const urlParams = new URLSearchParams(window.location.search);
+          const previewId = urlParams.get("previewProject") || localStorage.getItem("portfolio_admin_preview_project_id");
+          if (previewId) {
+            const matchedProj = finalProjectsList.find((p) => p.id === previewId);
+            if (matchedProj) {
+              setPreviewProject(matchedProj);
+              setClientPreviewModalOpen(true);
+            }
+          }
+        } catch (e) {}
+      }
     } catch (err) {
       console.error("Error fetching admin data:", err);
     } finally {
@@ -2329,6 +2410,21 @@ export default function AdminDashboardPage() {
       setPProgress(proj.progress);
       setPStartDate(proj.start_date || "");
       setPDeadline(proj.deadline || "");
+      if (proj.next_update_at) {
+        try {
+          const d = new Date(proj.next_update_at);
+          if (!isNaN(d.getTime())) {
+            const pad = (n: number) => String(n).padStart(2, "0");
+            setPNextUpdateAt(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`);
+          } else {
+            setPNextUpdateAt("");
+          }
+        } catch {
+          setPNextUpdateAt("");
+        }
+      } else {
+        setPNextUpdateAt("");
+      }
       setPPreviewUrl(proj.preview_url || "");
       setPFigmaUrl(proj.figma_url || "");
       setPRepoUrl(proj.repo_url || "");
@@ -2342,6 +2438,7 @@ export default function AdminDashboardPage() {
       setPProgress(0);
       setPStartDate(new Date().toISOString().split("T")[0]);
       setPDeadline("");
+      setPNextUpdateAt("");
       setPPreviewUrl("");
       setPFigmaUrl("");
       setPRepoUrl("");
@@ -2363,6 +2460,7 @@ export default function AdminDashboardPage() {
         progress: Number(pProgress),
         start_date: pStartDate || null,
         deadline: pDeadline || null,
+        next_update_at: pNextUpdateAt ? new Date(pNextUpdateAt).toISOString() : null,
         preview_url: pPreviewUrl || null,
         figma_url: pFigmaUrl || null,
         repo_url: pRepoUrl || null,
@@ -2406,6 +2504,7 @@ export default function AdminDashboardPage() {
         progress: Number(pProgress),
         start_date: pStartDate || null,
         deadline: pDeadline || null,
+        next_update_at: pNextUpdateAt ? new Date(pNextUpdateAt).toISOString() : null,
         preview_url: pPreviewUrl || null,
         figma_url: pFigmaUrl || null,
         repo_url: pRepoUrl || null,
@@ -2438,6 +2537,7 @@ export default function AdminDashboardPage() {
           progress: Number(pProgress),
           start_date: pStartDate || null,
           deadline: pDeadline || null,
+          next_update_at: pNextUpdateAt ? new Date(pNextUpdateAt).toISOString() : null,
           preview_url: pPreviewUrl || null,
           figma_url: pFigmaUrl || null,
           repo_url: pRepoUrl || null,
@@ -2505,6 +2605,159 @@ export default function AdminDashboardPage() {
       await fetchData();
     } catch (err: any) {
       console.warn("Erro ao alterar status do projeto:", err);
+    }
+  };
+
+  const handleQuickUpdateNextUpdateAt = async (projectId: string, newDateTimeLocal: string) => {
+    try {
+      let isoString: string | null = null;
+      if (newDateTimeLocal && newDateTimeLocal.trim() !== "") {
+        const d = new Date(newDateTimeLocal);
+        if (!isNaN(d.getTime())) {
+          isoString = d.toISOString();
+        } else {
+          return;
+        }
+      }
+
+      const targetProj = projects.find((p) => p.id === projectId) || selectedProject;
+      if (targetProj) {
+        const updatedProj = { ...targetProj, next_update_at: isoString };
+
+        // 1. Direct dedicated localStorage keys for foolproof instant lookup
+        try {
+          if (isoString) {
+            localStorage.setItem(`portfolio_project_next_update_${projectId}`, isoString);
+            if (targetProj.title) {
+              localStorage.setItem(`portfolio_project_next_update_title_${targetProj.title.toLowerCase().trim()}`, isoString);
+            }
+          } else {
+            localStorage.removeItem(`portfolio_project_next_update_${projectId}`);
+            if (targetProj.title) {
+              localStorage.removeItem(`portfolio_project_next_update_title_${targetProj.title.toLowerCase().trim()}`);
+            }
+          }
+        } catch (e) {}
+
+        // 2. Update local projects array
+        try {
+          const localProjects: Project[] = JSON.parse(localStorage.getItem("portfolio_local_projects_v1") || "[]");
+          const updatedLocal = localProjects.map((p) => (p.id === projectId || p.title === targetProj.title ? { ...p, next_update_at: isoString } : p));
+          if (!updatedLocal.some((p) => p.id === projectId || p.title === targetProj.title)) {
+            updatedLocal.push(updatedProj);
+          }
+          localStorage.setItem("portfolio_local_projects_v1", JSON.stringify(updatedLocal));
+        } catch (e) {}
+
+        // 3. Broadcast custom event across open window/tabs
+        try {
+          window.dispatchEvent(
+            new CustomEvent("portfolio_project_updated", {
+              detail: { projectId, title: targetProj.title, next_update_at: isoString },
+            })
+          );
+        } catch (e) {}
+
+        // 4. Server API POST
+        try {
+          await fetch("/api/admin/projects", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(updatedProj),
+          });
+        } catch (e) {}
+
+        // 5. Supabase update if UUID
+        if (isDbUuid(projectId)) {
+          try {
+            await supabase
+              .from("projects")
+              .update({ next_update_at: isoString, updated_at: new Date().toISOString() })
+              .eq("id", projectId);
+          } catch (e) {}
+        }
+
+        // 6. Update Admin React states
+        setProjects((prev) => prev.map((p) => (p.id === projectId ? updatedProj : p)));
+        if (selectedProject && (selectedProject.id === projectId || selectedProject.title === targetProj.title)) {
+          setSelectedProject(updatedProj);
+        }
+      }
+    } catch (err: any) {
+      console.error("Error updating next_update_at:", err);
+    }
+  };
+
+  const handleToggleCountdownReleased = async (projectId: string, released: boolean) => {
+    try {
+      const targetProj = projects.find((p) => p.id === projectId) || selectedProject;
+      if (targetProj) {
+        const updatedProj: Project = { ...targetProj, countdown_released: released };
+
+        // 1. Direct dedicated localStorage keys for instant lookup
+        try {
+          localStorage.setItem(`portfolio_project_countdown_released_${projectId}`, released ? "true" : "false");
+          if (targetProj.title) {
+            localStorage.setItem(
+              `portfolio_project_countdown_released_title_${targetProj.title.toLowerCase().trim()}`,
+              released ? "true" : "false"
+            );
+          }
+        } catch (e) {}
+
+        // 2. Update local projects array
+        try {
+          const localProjects: Project[] = JSON.parse(localStorage.getItem("portfolio_local_projects_v1") || "[]");
+          const updatedLocal = localProjects.map((p) =>
+            p.id === projectId || p.title === targetProj.title ? { ...p, countdown_released: released } : p
+          );
+          if (!updatedLocal.some((p) => p.id === projectId || p.title === targetProj.title)) {
+            updatedLocal.push(updatedProj);
+          }
+          localStorage.setItem("portfolio_local_projects_v1", JSON.stringify(updatedLocal));
+        } catch (e) {}
+
+        // 3. Broadcast custom event across open window/tabs
+        try {
+          window.dispatchEvent(
+            new CustomEvent("portfolio_project_updated", {
+              detail: {
+                projectId,
+                title: targetProj.title,
+                next_update_at: targetProj.next_update_at,
+                countdown_released: released,
+              },
+            })
+          );
+        } catch (e) {}
+
+        // 4. Server API POST
+        try {
+          await fetch("/api/admin/projects", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(updatedProj),
+          });
+        } catch (e) {}
+
+        // 5. Supabase update if UUID
+        if (isDbUuid(projectId)) {
+          try {
+            await supabase
+              .from("projects")
+              .update({ countdown_released: released, updated_at: new Date().toISOString() })
+              .eq("id", projectId);
+          } catch (e) {}
+        }
+
+        // 6. Update Admin React states
+        setProjects((prev) => prev.map((p) => (p.id === projectId ? updatedProj : p)));
+        if (selectedProject && (selectedProject.id === projectId || selectedProject.title === targetProj.title)) {
+          setSelectedProject(updatedProj);
+        }
+      }
+    } catch (err: any) {
+      console.error("Error toggling countdown release:", err);
     }
   };
 
@@ -7551,30 +7804,41 @@ export default function AdminDashboardPage() {
 
       {/* ================= MODALS ================= */}
 
-      {/* Modal: Project Scope & Full Management Console */}
+      {/* Modal: Project Scope & Full Management Console (Full Screen Workspace Experience) */}
       <AnimatePresence>
         {projectDetailsModalOpen && selectedProject && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-md overflow-y-auto">
+          <div className="fixed inset-0 z-50 flex flex-col bg-slate-950 overflow-hidden animate-fadeIn">
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-5xl max-h-[92vh] flex flex-col rounded-3xl bg-slate-900 border border-white/10 shadow-2xl my-auto overflow-hidden relative"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 15 }}
+              transition={{ duration: 0.18 }}
+              className="w-full h-full flex flex-col overflow-hidden bg-slate-950"
             >
-              {/* Sticky Top Header */}
+              {/* Full Width Sticky Top Navigation Header */}
               {(() => {
                 const selectedClient = clients.find((c) => matchProjectToClient(selectedProject, c));
                 const statusCfg = getStatusConfig(selectedProject.status);
 
                 return (
-                  <div className="p-5 sm:p-6 bg-slate-900/95 border-b border-white/10 flex items-center justify-between gap-4 backdrop-blur-xl shrink-0 z-10">
-                    <div className="flex items-center gap-3 min-w-0">
+                  <div className="px-4 sm:px-8 py-3.5 sm:py-4 bg-slate-900/95 border-b border-white/10 flex items-center justify-between gap-4 backdrop-blur-xl shrink-0 z-20 shadow-xl">
+                    <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                      <button
+                        type="button"
+                        onClick={() => setProjectDetailsModalOpen(false)}
+                        className="p-2 sm:px-3 sm:py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold shrink-0 border border-white/10"
+                        title="Voltar aos Projetos (ESC)"
+                      >
+                        <ChevronLeft size={16} />
+                        <span className="hidden sm:inline">Voltar (ESC)</span>
+                      </button>
+
                       <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-600 flex items-center justify-center text-white shrink-0 shadow-lg shadow-indigo-500/20">
                         <FolderKanban size={20} />
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="text-base sm:text-xl font-bold text-white truncate">
+                          <h3 className="text-base sm:text-xl font-black text-white truncate">
                             {selectedProject.title}
                           </h3>
                           <span
@@ -7584,10 +7848,19 @@ export default function AdminDashboardPage() {
                             {statusCfg.label}
                           </span>
                         </div>
-                        <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-2">
+                        <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-2 flex-wrap">
                           <span className="text-indigo-300 font-medium">{selectedProject.category || "Software"}</span>
                           <span>•</span>
                           <span>Criado em {new Date(selectedProject.created_at).toLocaleDateString("pt-BR")}</span>
+                          {selectedProject.next_update_at && (
+                            <>
+                              <span>•</span>
+                              <span className="text-purple-300 font-mono flex items-center gap-1">
+                                <Clock size={11} className="text-purple-400" />
+                                Release: {new Date(selectedProject.next_update_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                            </>
+                          )}
                         </p>
                       </div>
                     </div>
@@ -7596,8 +7869,8 @@ export default function AdminDashboardPage() {
                       <button
                         type="button"
                         onClick={() => handleOpenClientPreview(selectedProject)}
-                        className="hidden sm:flex px-3.5 py-2 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 text-purple-300 text-xs font-bold border border-purple-500/40 items-center gap-1.5 transition-colors cursor-pointer shadow-lg shadow-purple-900/20"
-                        title="Simular visualização do cliente"
+                        className="hidden md:flex px-3.5 py-2 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 text-purple-300 text-xs font-bold border border-purple-500/40 items-center gap-1.5 transition-colors cursor-pointer shadow-lg shadow-purple-900/20"
+                        title="Simular visualização do cliente no Portal"
                       >
                         <Eye size={14} />
                         <span>Ver como Cliente</span>
@@ -7605,10 +7878,10 @@ export default function AdminDashboardPage() {
                       <button
                         type="button"
                         onClick={() => handleOpenProjectModal(selectedProject)}
-                        className="px-3.5 py-2 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 text-xs font-bold border border-indigo-500/40 flex items-center gap-1.5 transition-colors cursor-pointer"
+                        className="px-3.5 sm:px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/30 flex items-center gap-1.5 transition-colors cursor-pointer"
                       >
                         <Edit2 size={14} />
-                        <span className="hidden sm:inline">Editar Escopo</span>
+                        <span>Editar Escopo</span>
                       </button>
                       <button
                         type="button"
@@ -7622,7 +7895,7 @@ export default function AdminDashboardPage() {
                         type="button"
                         onClick={() => setProjectDetailsModalOpen(false)}
                         className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer ml-1"
-                        title="Fechar Detalhes"
+                        title="Fechar Workspace (ESC)"
                       >
                         <X size={20} />
                       </button>
@@ -7631,8 +7904,8 @@ export default function AdminDashboardPage() {
                 );
               })()}
 
-              {/* Scrollable Modal Body */}
-              <div className="p-5 sm:p-7 overflow-y-auto space-y-6">
+              {/* Wide Scrollable Full-Page Body */}
+              <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-6 space-y-6 max-w-7xl mx-auto w-full custom-scrollbar">
                 {(() => {
                   const selectedClient = clients.find((c) => matchProjectToClient(selectedProject, c));
                   const statusCfg = getStatusConfig(selectedProject.status);
@@ -7762,6 +8035,136 @@ export default function AdminDashboardPage() {
                             </p>
                           </div>
                         </div>
+
+                        {/* DATA & HORA DA PRÓXIMA PUBLICAÇÃO (TIMER NO PORTAL) - Visão Geral */}
+                        {(() => {
+                          const rawVal = selectedProject.next_update_at;
+                          let localInputVal = "";
+                          if (rawVal) {
+                            try {
+                              const d = new Date(rawVal);
+                              if (!isNaN(d.getTime())) {
+                                const pad = (n: number) => String(n).padStart(2, "0");
+                                localInputVal = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                              }
+                            } catch {}
+                          }
+
+                          const hasDate = Boolean(rawVal && !isNaN(new Date(rawVal).getTime()));
+                          const targetTime = hasDate ? new Date(rawVal!).getTime() : 0;
+                          const diff = targetTime - Date.now();
+                          const isPast = hasDate && diff <= 0;
+
+                          const days = Math.floor(Math.max(0, diff) / (1000 * 60 * 60 * 24));
+                          const hours = Math.floor((Math.max(0, diff) / (1000 * 60 * 60)) % 24);
+                          const minutes = Math.floor((Math.max(0, diff) / (1000 * 60)) % 60);
+
+                          const isReleased = Boolean(
+                            selectedProject.countdown_released ||
+                            (typeof window !== "undefined" && (
+                              localStorage.getItem(`portfolio_project_countdown_released_${selectedProject.id}`) === "true" ||
+                              (selectedProject.title && localStorage.getItem(`portfolio_project_countdown_released_title_${selectedProject.title.toLowerCase().trim()}`) === "true")
+                            ))
+                          );
+
+                          return (
+                            <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-black/60 border-2 border-purple-500/40 space-y-3.5 shadow-xl shadow-purple-950/30">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                <label className="text-xs font-bold text-purple-300 uppercase tracking-wider flex items-center gap-2">
+                                  <Clock size={16} className="text-purple-400 animate-pulse shrink-0" />
+                                  <span>DATA &amp; HORA DA PRÓXIMA PUBLICAÇÃO (TIMER NO PORTAL)</span>
+                                </label>
+                                {hasDate ? (
+                                  isPast ? (
+                                    <span className="text-[11px] font-semibold px-3 py-1 rounded-full bg-purple-900/60 text-purple-200 border border-purple-400/40 self-start sm:self-auto shrink-0 shadow-sm">
+                                      Data Atingida
+                                    </span>
+                                  ) : isReleased ? (
+                                    <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-500/50 flex items-center gap-1.5 self-start sm:self-auto shrink-0 shadow-sm shadow-emerald-950/40">
+                                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                                      Liberada no Portal
+                                    </span>
+                                  ) : (
+                                    <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-amber-950/80 text-amber-300 border border-amber-500/50 flex items-center gap-1.5 self-start sm:self-auto shrink-0 shadow-sm shadow-amber-950/40">
+                                      <AlertCircle size={12} className="text-amber-400" />
+                                      Aguardando Liberação
+                                    </span>
+                                  )
+                                ) : (
+                                  <span className="text-[11px] font-semibold px-3 py-1 rounded-full bg-purple-900/40 text-purple-300 border border-purple-400/30 self-start sm:self-auto shrink-0 shadow-sm">
+                                    Sem Data Definida
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-gray-300 leading-relaxed">
+                                Defina o dia e horário previstos para a próxima entrega/release e clique em <strong className="text-purple-200">Liberar Contagem</strong> para sincronizar instantaneamente com a tela do cliente.
+                              </p>
+
+                              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-1">
+                                <input
+                                  type="datetime-local"
+                                  defaultValue={localInputVal}
+                                  key={selectedProject.id + (selectedProject.next_update_at || "")}
+                                  onChange={(e) => handleQuickUpdateNextUpdateAt(selectedProject.id, e.target.value)}
+                                  onInput={(e) => handleQuickUpdateNextUpdateAt(selectedProject.id, (e.target as HTMLInputElement).value)}
+                                  onBlur={(e) => handleQuickUpdateNextUpdateAt(selectedProject.id, (e.target as HTMLInputElement).value)}
+                                  className="flex-1 px-4 py-3 rounded-xl bg-black/70 border border-purple-500/40 text-white text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-500/30 font-mono transition-all shadow-inner"
+                                />
+
+                                {hasDate && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleCountdownReleased(selectedProject.id, !isReleased)}
+                                    className={`px-4 py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shrink-0 shadow-lg ${
+                                      isReleased
+                                        ? "bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 shadow-emerald-950/30"
+                                        : "bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white border border-purple-400/40 shadow-purple-950/50 active:scale-95 animate-pulse hover:animate-none"
+                                    }`}
+                                    title={isReleased ? "Clique para pausar ou ocultar a contagem no portal do cliente" : "Liberar contagem regressiva no portal do cliente"}
+                                  >
+                                    {isReleased ? (
+                                      <>
+                                        <CheckCircle2 size={15} className="text-emerald-400" />
+                                        <span>Liberada (Pausar)</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Rocket size={15} className="text-white animate-bounce" />
+                                        <span>Liberar Contagem para o Cliente</span>
+                                      </>
+                                    )}
+                                  </button>
+                                )}
+
+                                {hasDate && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      handleQuickUpdateNextUpdateAt(selectedProject.id, "");
+                                      handleToggleCountdownReleased(selectedProject.id, false);
+                                    }}
+                                    className="px-4 py-3 rounded-xl bg-white/5 hover:bg-rose-500/20 text-gray-300 hover:text-rose-300 border border-white/10 hover:border-rose-500/30 text-xs font-semibold transition-colors cursor-pointer shrink-0"
+                                    title="Limpar agendamento"
+                                  >
+                                    Limpar Data
+                                  </button>
+                                )}
+                              </div>
+
+                              {hasDate && !isPast && (
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-mono bg-purple-950/40 px-3.5 py-2.5 rounded-xl border border-purple-500/30 text-purple-200">
+                                  <div className="flex items-center gap-2">
+                                    <Sparkles size={14} className="text-pink-400 shrink-0 animate-bounce" />
+                                    <span>Faltam: <strong>{days}d {hours}h {minutes}m</strong> para a publicação.</span>
+                                  </div>
+                                  <span className={`text-[11px] font-sans px-2 py-0.5 rounded-md ${isReleased ? "bg-emerald-950/70 text-emerald-300 border border-emerald-500/30" : "bg-amber-950/70 text-amber-300 border border-amber-500/30"}`}>
+                                    {isReleased ? "● Visível para o cliente no Portal" : "○ Não visível para o cliente (Clique no botão acima para liberar)"}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
 
                         {/* Dual Progress Bars */}
                         {(() => {
@@ -9347,19 +9750,21 @@ export default function AdminDashboardPage() {
         )}
       </AnimatePresence>
 
-      {/* Modal: Project Form (Create / Edit - ) */}
+      {/* Modal: Project Form (Create / Edit - Viewport Fitted & Fully Scrollable) */}
       <AnimatePresence>
         {projectModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 md:p-6 bg-black/80 backdrop-blur-md overflow-hidden">
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-2xl p-6 sm:p-8 rounded-3xl bg-slate-900 border border-white/10 shadow-2xl my-8 relative"
+              initial={{ opacity: 0, scale: 0.96, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 10 }}
+              transition={{ duration: 0.2 }}
+              className="w-full max-w-3xl max-h-[92vh] flex flex-col rounded-3xl bg-slate-900 border border-white/15 shadow-2xl shadow-black/80 overflow-hidden relative"
             >
-              <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-5">
+              {/* Sticky Modal Header */}
+              <div className="flex items-center justify-between px-5 sm:px-7 py-4 border-b border-white/10 shrink-0 bg-slate-900/95 backdrop-blur-md z-10">
                 <div>
-                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
                     <FolderKanban size={20} className="text-indigo-400" />
                     <span>{editingProject ? "Editar Projeto e Escopo" : "Cadastrar Novo Projeto"}</span>
                   </h3>
@@ -9370,210 +9775,237 @@ export default function AdminDashboardPage() {
                   </p>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setProjectModalOpen(false)}
-                  className="text-gray-400 hover:text-white p-1.5 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
+                  className="text-gray-400 hover:text-white p-2 rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
                 >
                   <X size={20} />
                 </button>
               </div>
 
-              <form onSubmit={handleSaveProject} className="space-y-4">
-                {/* Row 1: Title & Client Association */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
-                      Título do Projeto *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={pTitle}
-                      onChange={(e) => setPTitle(e.target.value)}
-                      placeholder="Ex: App Delivery Mobile (iOS & Android)"
-                      className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-sm outline-none focus:border-indigo-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
-                      Associação de Cliente *
-                    </label>
-                    <select
-                      value={pClientId}
-                      onChange={(e) => setPClientId(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-sm outline-none focus:border-indigo-500 cursor-pointer"
-                    >
-                      <option value="">Sem cliente vinculado (Projeto Interno/Admin)</option>
-                      {clients.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.full_name || "Sem Nome"} {c.company ? `(${c.company})` : ""} — {c.email}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Scope & Description */}
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
-                    Descrição & Escopo Detalhado do Projeto
-                  </label>
-                  <textarea
-                    rows={4}
-                    value={pDescription}
-                    onChange={(e) => setPDescription(e.target.value)}
-                    placeholder="Descreva o escopo, requisitos funcionais, telas principais e entregáveis acordados com o cliente..."
-                    className="w-full p-3.5 rounded-xl bg-black/40 border border-white/10 text-white text-xs sm:text-sm outline-none focus:border-indigo-500 resize-none leading-relaxed"
-                  />
-                </div>
-
-                {/* Project Status Selector */}
-                <div>
-                  <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-2">
-                    Status do Projeto (Ciclo de Vida) *
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                    {[
-                      { key: "planejamento", label: "Planejamento", desc: "Briefing & Escopo", activeClass: "bg-amber-500/20 border-amber-500 text-amber-300 shadow-md shadow-amber-500/10", dot: "bg-amber-400" },
-                      { key: "em_andamento", label: "Em Andamento", desc: "Design & Sprints", activeClass: "bg-blue-500/20 border-blue-500 text-blue-300 shadow-md shadow-blue-500/10", dot: "bg-blue-400" },
-                      { key: "homologacao", label: "Homologação", desc: "Testes & Validação", activeClass: "bg-cyan-500/20 border-cyan-500 text-cyan-300 shadow-md shadow-cyan-500/10", dot: "bg-cyan-400" },
-                      { key: "concluido", label: "Concluído", desc: "Entrega Finalizada", activeClass: "bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-md shadow-emerald-500/10", dot: "bg-emerald-400" },
-                    ].map((st) => {
-                      const isSelected =
-                        pStatus === st.key ||
-                        (st.key === "em_andamento" && (pStatus === "desenvolvimento" || pStatus === "design")) ||
-                        (st.key === "homologacao" && pStatus === "testes");
-
-                      return (
-                        <button
-                          type="button"
-                          key={st.key}
-                          onClick={() => setPStatus(st.key as ProjectStatus)}
-                          className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
-                            isSelected
-                              ? st.activeClass
-                              : "bg-black/30 border-white/10 text-gray-400 hover:text-white hover:border-white/20"
-                          }`}
-                        >
-                          <div className="flex items-center gap-1.5 mb-1">
-                            <span className={`w-2 h-2 rounded-full ${st.dot}`} />
-                            <span className="text-xs font-bold text-white">{st.label}</span>
-                          </div>
-                          <p className="text-[10px] text-gray-400">{st.desc}</p>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Tech Category and Progress */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
-                      Categoria / Stack Tecnológica
-                    </label>
-                    <input
-                      type="text"
-                      value={pCategory}
-                      onChange={(e) => setPCategory(e.target.value)}
-                      placeholder="Ex: Mobile App (React Native)"
-                      className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-sm outline-none focus:border-indigo-500"
-                    />
-                    <div className="flex items-center gap-1.5 flex-wrap mt-2">
-                      {["Mobile React Native", "Web App Next.js", "SaaS / Painel", "API Node.js"].map((tag) => (
-                        <button
-                          type="button"
-                          key={tag}
-                          onClick={() => setPCategory(tag)}
-                          className="px-2 py-0.5 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] font-semibold text-gray-400 hover:text-white transition-colors cursor-pointer"
-                        >
-                          {tag}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                        Progresso Geral
+              {/* Form & Scrollable Body */}
+              <form onSubmit={handleSaveProject} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                <div className="px-5 sm:px-7 py-5 overflow-y-auto space-y-4 flex-1 custom-scrollbar">
+                  {/* Row 1: Title & Client Association */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                        Título do Projeto *
                       </label>
-                      <span className="text-xs font-mono font-bold text-indigo-400">{pProgress}%</span>
+                      <input
+                        type="text"
+                        required
+                        value={pTitle}
+                        onChange={(e) => setPTitle(e.target.value)}
+                        placeholder="Ex: App Delivery Mobile (iOS & Android)"
+                        className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-sm outline-none focus:border-indigo-500"
+                      />
                     </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={pProgress}
-                      onChange={(e) => setPProgress(Number(e.target.value))}
-                      className="w-full mt-3 accent-indigo-500 cursor-pointer"
-                    />
-                    <div className="flex justify-between text-[10px] text-gray-500 mt-1">
-                      <span>0% (Início)</span>
-                      <span>50% (Sprints)</span>
-                      <span>100% (Pronto)</span>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                        Associação de Cliente *
+                      </label>
+                      <select
+                        value={pClientId}
+                        onChange={(e) => setPClientId(e.target.value)}
+                        className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-sm outline-none focus:border-indigo-500 cursor-pointer"
+                      >
+                        <option value="">Sem cliente vinculado (Projeto Interno/Admin)</option>
+                        {clients.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.full_name || "Sem Nome"} {c.company ? `(${c.company})` : ""} — {c.email}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
-                </div>
 
-                {/* Dates: Start Date & Deadline */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Scope & Description */}
                   <div>
                     <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
-                      Data de Início
+                      Descrição & Escopo Detalhado do Projeto
                     </label>
-                    <input
-                      type="date"
-                      value={pStartDate}
-                      onChange={(e) => setPStartDate(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-sm outline-none focus:border-indigo-500"
+                    <textarea
+                      rows={3}
+                      value={pDescription}
+                      onChange={(e) => setPDescription(e.target.value)}
+                      placeholder="Descreva o escopo, requisitos funcionais, telas principais e entregáveis acordados com o cliente..."
+                      className="w-full p-3.5 rounded-xl bg-black/40 border border-white/10 text-white text-xs sm:text-sm outline-none focus:border-indigo-500 resize-none leading-relaxed"
                     />
                   </div>
 
+                  {/* Project Status Selector */}
                   <div>
-                    <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
-                      Prazo Estimado de Entrega
+                    <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-2">
+                      Status do Projeto (Ciclo de Vida) *
                     </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      {[
+                        { key: "planejamento", label: "Planejamento", desc: "Briefing & Escopo", activeClass: "bg-amber-500/20 border-amber-500 text-amber-300 shadow-md shadow-amber-500/10", dot: "bg-amber-400" },
+                        { key: "em_andamento", label: "Em Andamento", desc: "Design & Sprints", activeClass: "bg-blue-500/20 border-blue-500 text-blue-300 shadow-md shadow-blue-500/10", dot: "bg-blue-400" },
+                        { key: "homologacao", label: "Homologação", desc: "Testes & Validação", activeClass: "bg-cyan-500/20 border-cyan-500 text-cyan-300 shadow-md shadow-cyan-500/10", dot: "bg-cyan-400" },
+                        { key: "concluido", label: "Concluído", desc: "Entrega Finalizada", activeClass: "bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-md shadow-emerald-500/10", dot: "bg-emerald-400" },
+                      ].map((st) => {
+                        const isSelected =
+                          pStatus === st.key ||
+                          (st.key === "em_andamento" && (pStatus === "desenvolvimento" || pStatus === "design")) ||
+                          (st.key === "homologacao" && pStatus === "testes");
+
+                        return (
+                          <button
+                            type="button"
+                            key={st.key}
+                            onClick={() => setPStatus(st.key as ProjectStatus)}
+                            className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                              isSelected
+                                ? st.activeClass
+                                : "bg-black/30 border-white/10 text-gray-400 hover:text-white hover:border-white/20"
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <span className={`w-2 h-2 rounded-full ${st.dot}`} />
+                              <span className="text-xs font-bold text-white">{st.label}</span>
+                            </div>
+                            <p className="text-[10px] text-gray-400">{st.desc}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Tech Category and Progress */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                        Categoria / Stack Tecnológica
+                      </label>
+                      <input
+                        type="text"
+                        value={pCategory}
+                        onChange={(e) => setPCategory(e.target.value)}
+                        placeholder="Ex: Mobile App (React Native)"
+                        className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-sm outline-none focus:border-indigo-500"
+                      />
+                      <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                        {["Mobile React Native", "Web App Next.js", "SaaS / Painel", "API Node.js"].map((tag) => (
+                          <button
+                            type="button"
+                            key={tag}
+                            onClick={() => setPCategory(tag)}
+                            className="px-2 py-0.5 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] font-semibold text-gray-400 hover:text-white transition-colors cursor-pointer"
+                          >
+                            {tag}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
+                          Progresso Geral
+                        </label>
+                        <span className="text-xs font-mono font-bold text-indigo-400">{pProgress}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={pProgress}
+                        onChange={(e) => setPProgress(Number(e.target.value))}
+                        className="w-full mt-3 accent-indigo-500 cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[10px] text-gray-500 mt-1">
+                        <span>0% (Início)</span>
+                        <span>50% (Sprints)</span>
+                        <span>100% (Pronto)</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Dates: Start Date & Deadline */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                        Data de Início
+                      </label>
+                      <input
+                        type="date"
+                        value={pStartDate}
+                        onChange={(e) => setPStartDate(e.target.value)}
+                        className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-sm outline-none focus:border-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                        Prazo Estimado de Entrega
+                      </label>
+                      <input
+                        type="date"
+                        value={pDeadline}
+                        onChange={(e) => setPDeadline(e.target.value)}
+                        className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-sm outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Previsão da Próxima Publicação / Atualização (Contador Regressivo no Portal) */}
+                  <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-black/40 border border-purple-500/30 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-purple-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <Clock size={14} className="text-purple-400" />
+                        <span>Data & Hora da Próxima Publicação (Timer no Portal)</span>
+                      </label>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-200 border border-purple-500/30">
+                        Contagem Regressiva
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-400">
+                      Defina o dia e horário previstos para a próxima entrega/release. Um timer dinâmico será exibido na tela Geral do cliente.
+                    </p>
                     <input
-                      type="date"
-                      value={pDeadline}
-                      onChange={(e) => setPDeadline(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-sm outline-none focus:border-indigo-500"
+                      type="datetime-local"
+                      value={pNextUpdateAt}
+                      onChange={(e) => setPNextUpdateAt(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl bg-black/50 border border-white/15 text-white text-sm outline-none focus:border-purple-500 font-mono"
                     />
+                  </div>
+
+                  {/* External Scope Links */}
+                  <div className="space-y-3 pt-1">
+                    <span className="block text-xs font-bold text-gray-400 uppercase tracking-wider">
+                      Links de Acesso & Entregáveis
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <input
+                        type="url"
+                        value={pFigmaUrl}
+                        onChange={(e) => setPFigmaUrl(e.target.value)}
+                        placeholder="URL Figma UI/UX"
+                        className="w-full px-3.5 py-2 rounded-xl bg-black/40 border border-white/10 text-white text-xs outline-none focus:border-purple-500"
+                      />
+                      <input
+                        type="url"
+                        value={pPreviewUrl}
+                        onChange={(e) => setPPreviewUrl(e.target.value)}
+                        placeholder="URL Staging Web Preview"
+                        className="w-full px-3.5 py-2 rounded-xl bg-black/40 border border-white/10 text-white text-xs outline-none focus:border-cyan-500"
+                      />
+                      <input
+                        type="url"
+                        value={pRepoUrl}
+                        onChange={(e) => setPRepoUrl(e.target.value)}
+                        placeholder="URL Repositório GitHub"
+                        className="w-full px-3.5 py-2 rounded-xl bg-black/40 border border-white/10 text-white text-xs outline-none focus:border-indigo-500"
+                      />
+                    </div>
                   </div>
                 </div>
 
-                {/* External Scope Links */}
-                <div className="space-y-3 pt-2">
-                  <span className="block text-xs font-bold text-gray-400 uppercase tracking-wider">
-                    Links de Acesso & Entregáveis
-                  </span>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <input
-                      type="url"
-                      value={pFigmaUrl}
-                      onChange={(e) => setPFigmaUrl(e.target.value)}
-                      placeholder="URL Figma UI/UX"
-                      className="w-full px-3.5 py-2 rounded-xl bg-black/40 border border-white/10 text-white text-xs outline-none focus:border-purple-500"
-                    />
-                    <input
-                      type="url"
-                      value={pPreviewUrl}
-                      onChange={(e) => setPPreviewUrl(e.target.value)}
-                      placeholder="URL Staging Web Preview"
-                      className="w-full px-3.5 py-2 rounded-xl bg-black/40 border border-white/10 text-white text-xs outline-none focus:border-cyan-500"
-                    />
-                    <input
-                      type="url"
-                      value={pRepoUrl}
-                      onChange={(e) => setPRepoUrl(e.target.value)}
-                      placeholder="URL Repositório GitHub"
-                      className="w-full px-3.5 py-2 rounded-xl bg-black/40 border border-white/10 text-white text-xs outline-none focus:border-indigo-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between gap-3 pt-4 border-t border-white/10">
+                {/* Sticky Modal Footer */}
+                <div className="flex items-center justify-between gap-3 px-5 sm:px-7 py-4 border-t border-white/10 shrink-0 bg-slate-900/95 backdrop-blur-md z-10">
                   {editingProject ? (
                     <button
                       type="button"
@@ -9611,18 +10043,21 @@ export default function AdminDashboardPage() {
       </AnimatePresence>
 
       {/* Modal: Client Registration & Edit */}
+      {/* Modal: Client Registration & Edit */}
       <AnimatePresence>
         {clientModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-md overflow-hidden">
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-lg p-6 sm:p-7 rounded-3xl bg-slate-900 border border-white/10 shadow-2xl relative my-8"
+              initial={{ opacity: 0, scale: 0.96, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 10 }}
+              transition={{ duration: 0.2 }}
+              className="w-full max-w-lg max-h-[92vh] flex flex-col rounded-3xl bg-slate-900 border border-white/15 shadow-2xl shadow-black/80 overflow-hidden relative"
             >
-              <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-5">
+              {/* Sticky Header */}
+              <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-white/10 shrink-0 bg-slate-900/95 backdrop-blur-md z-10">
                 <div>
-                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
                     <User size={20} className="text-purple-400" />
                     <span>{editingClient ? "Editar Dados do Cliente" : "Cadastrar Novo Cliente"}</span>
                   </h3>
@@ -9633,15 +10068,16 @@ export default function AdminDashboardPage() {
                   </p>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setClientModalOpen(false)}
-                  className="text-gray-400 hover:text-white p-1.5 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
+                  className="text-gray-400 hover:text-white p-2 rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
                 >
                   <X size={20} />
                 </button>
               </div>
 
               {createdClientInfo ? (
-                <div className="space-y-4">
+                <div className="p-5 sm:p-6 overflow-y-auto space-y-4 flex-1 custom-scrollbar">
                   <div className="p-5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300">
                     <p className="text-xs font-bold uppercase tracking-wider mb-1 flex items-center gap-1.5">
                       <CheckCircle2 size={16} className="text-emerald-400" />
@@ -9722,133 +10158,136 @@ export default function AdminDashboardPage() {
                   </button>
                 </div>
               ) : (
-                <form onSubmit={handleSaveClient} className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
-                      Nome Completo do Cliente *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={cFullName}
-                      onChange={(e) => setCFullName(e.target.value)}
-                      placeholder="Ex: Roberto Andrade"
-                      className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-sm outline-none focus:border-purple-500"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <form onSubmit={handleSaveClient} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                  <div className="px-5 sm:px-6 py-5 overflow-y-auto space-y-4 flex-1 custom-scrollbar">
                     <div>
                       <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
-                        E-mail de Login *
+                        Nome Completo do Cliente *
                       </label>
                       <input
-                        type="email"
+                        type="text"
                         required
-                        value={cEmail}
-                        onChange={(e) => setCEmail(e.target.value)}
-                        placeholder="cliente@empresa.com"
+                        value={cFullName}
+                        onChange={(e) => setCFullName(e.target.value)}
+                        placeholder="Ex: Roberto Andrade"
                         className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-sm outline-none focus:border-purple-500"
                       />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                          E-mail de Login *
+                        </label>
+                        <input
+                          type="email"
+                          required
+                          value={cEmail}
+                          onChange={(e) => setCEmail(e.target.value)}
+                          placeholder="cliente@empresa.com"
+                          className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-sm outline-none focus:border-purple-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                          Telefone / WhatsApp
+                        </label>
+                        <input
+                          type="tel"
+                          value={cPhone}
+                          onChange={(e) => setCPhone(e.target.value)}
+                          placeholder="Ex: (71) 99999-9999"
+                          className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-sm outline-none focus:border-purple-500"
+                        />
+                      </div>
                     </div>
 
                     <div>
                       <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
-                        Telefone / WhatsApp
+                        Empresa / Organização
                       </label>
                       <input
-                        type="tel"
-                        value={cPhone}
-                        onChange={(e) => setCPhone(e.target.value)}
-                        placeholder="Ex: (71) 99999-9999"
+                        type="text"
+                        value={cCompany}
+                        onChange={(e) => setCCompany(e.target.value)}
+                        placeholder="Ex: TechCorp Inovações LTDA"
                         className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-sm outline-none focus:border-purple-500"
                       />
                     </div>
-                  </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
-                      Empresa / Organização
-                    </label>
-                    <input
-                      type="text"
-                      value={cCompany}
-                      onChange={(e) => setCCompany(e.target.value)}
-                      placeholder="Ex: TechCorp Inovações LTDA"
-                      className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-sm outline-none focus:border-purple-500"
-                    />
-                  </div>
-
-                  {/* Status de Acesso */}
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
-                      Status de Acesso ao Portal *
-                    </label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setCStatus("active")}
-                        className={`p-3 rounded-xl border flex items-center gap-2.5 transition-all cursor-pointer ${
-                          cStatus === "active"
-                            ? "bg-emerald-500/15 border-emerald-500/50 text-emerald-300 shadow-lg shadow-emerald-500/10"
-                            : "bg-black/30 border-white/10 text-gray-400 hover:text-white"
-                        }`}
-                      >
-                        <CheckCircle2 size={16} className={cStatus === "active" ? "text-emerald-400" : "text-gray-500"} />
-                        <div className="text-left">
-                          <p className="text-xs font-bold">Ativo</p>
-                          <p className="text-[10px] text-gray-400">Pode acessar o portal</p>
-                        </div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setCStatus("blocked")}
-                        className={`p-3 rounded-xl border flex items-center gap-2.5 transition-all cursor-pointer ${
-                          cStatus === "blocked"
-                            ? "bg-rose-500/15 border-rose-500/50 text-rose-300 shadow-lg shadow-rose-500/10"
-                            : "bg-black/30 border-white/10 text-gray-400 hover:text-white"
-                        }`}
-                      >
-                        <Lock size={16} className={cStatus === "blocked" ? "text-rose-400" : "text-gray-500"} />
-                        <div className="text-left">
-                          <p className="text-xs font-bold">Bloqueado</p>
-                          <p className="text-[10px] text-gray-400">Acesso suspenso</p>
-                        </div>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Senha de Acesso */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                        {editingClient ? "Senha de Acesso (Padrão ou Atualizada) *" : "Senha Inicial de Acesso *"}
+                    {/* Status de Acesso */}
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                        Status de Acesso ao Portal *
                       </label>
-                      <button
-                        type="button"
-                        onClick={generateRandomPassword}
-                        className="text-[11px] text-purple-400 hover:text-purple-300 flex items-center gap-1 font-semibold cursor-pointer"
-                      >
-                        <Sparkles size={12} />
-                        <span>Gerar Aleatória</span>
-                      </button>
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setCStatus("active")}
+                          className={`p-3 rounded-xl border flex items-center gap-2.5 transition-all cursor-pointer ${
+                            cStatus === "active"
+                              ? "bg-emerald-500/15 border-emerald-500/50 text-emerald-300 shadow-lg shadow-emerald-500/10"
+                              : "bg-black/30 border-white/10 text-gray-400 hover:text-white"
+                          }`}
+                        >
+                          <CheckCircle2 size={16} className={cStatus === "active" ? "text-emerald-400" : "text-gray-500"} />
+                          <div className="text-left">
+                            <p className="text-xs font-bold">Ativo</p>
+                            <p className="text-[10px] text-gray-400">Pode acessar o portal</p>
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setCStatus("blocked")}
+                          className={`p-3 rounded-xl border flex items-center gap-2.5 transition-all cursor-pointer ${
+                            cStatus === "blocked"
+                              ? "bg-rose-500/15 border-rose-500/50 text-rose-300 shadow-lg shadow-rose-500/10"
+                              : "bg-black/30 border-white/10 text-gray-400 hover:text-white"
+                          }`}
+                        >
+                          <Lock size={16} className={cStatus === "blocked" ? "text-rose-400" : "text-gray-500"} />
+                          <div className="text-left">
+                            <p className="text-xs font-bold">Bloqueado</p>
+                            <p className="text-[10px] text-gray-400">Acesso suspenso</p>
+                          </div>
+                        </button>
+                      </div>
                     </div>
-                    <input
-                      type="text"
-                      required
-                      minLength={6}
-                      value={cPassword}
-                      onChange={(e) => setCPassword(e.target.value)}
-                      placeholder="Ex: Cliente@123"
-                      className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-sm outline-none focus:border-purple-500 font-mono"
-                    />
-                    <p className="text-[10px] text-gray-500 mt-1">
-                      Esta senha padrão será enviada nas mensagens do WhatsApp e usada pelo cliente para login no portal.
-                    </p>
+
+                    {/* Senha de Acesso */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
+                          {editingClient ? "Senha de Acesso (Padrão ou Atualizada) *" : "Senha Inicial de Acesso *"}
+                        </label>
+                        <button
+                          type="button"
+                          onClick={generateRandomPassword}
+                          className="text-[11px] text-purple-400 hover:text-purple-300 flex items-center gap-1 font-semibold cursor-pointer"
+                        >
+                          <Sparkles size={12} />
+                          <span>Gerar Aleatória</span>
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        required
+                        minLength={6}
+                        value={cPassword}
+                        onChange={(e) => setCPassword(e.target.value)}
+                        placeholder="Ex: Cliente@123"
+                        className="w-full px-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white text-sm outline-none focus:border-purple-500 font-mono"
+                      />
+                      <p className="text-[10px] text-gray-500 mt-1">
+                        Esta senha padrão será enviada nas mensagens do WhatsApp e usada pelo cliente para login no portal.
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="flex items-center justify-between gap-3 pt-4 border-t border-white/10">
+                  {/* Sticky Footer */}
+                  <div className="flex items-center justify-between gap-3 px-5 sm:px-6 py-4 border-t border-white/10 shrink-0 bg-slate-900/95 backdrop-blur-md z-10">
                     {editingClient ? (
                       <button
                         type="button"
@@ -11696,7 +12135,7 @@ export default function AdminDashboardPage() {
 
                 <button
                   type="button"
-                  onClick={() => setClientPreviewModalOpen(false)}
+                  onClick={handleCloseClientPreview}
                   className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/20 transition-colors cursor-pointer flex items-center gap-1 text-xs font-bold"
                   title="Fechar modo de visualização"
                 >
@@ -11714,824 +12153,23 @@ export default function AdminDashboardPage() {
               </span>
             </div>
 
-            {/* Viewport Frame Container */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex justify-center bg-[#050711]">
+            {/* Viewport Frame Container: Embeds the EXACT LIVE Client Portal */}
+            <div className="flex-1 overflow-hidden flex justify-center bg-[#050711] p-2 sm:p-4">
               <div
-                className={`transition-all duration-300 w-full ${
+                className={`transition-all duration-300 w-full h-full flex flex-col ${
                   previewDevice === "desktop"
                     ? "max-w-7xl"
                     : previewDevice === "tablet"
-                    ? "max-w-3xl border-x border-white/10 px-2"
-                    : "max-w-md border-x-4 border-y-4 border-slate-700/60 rounded-[36px] p-3 shadow-2xl bg-[#070913]"
+                    ? "max-w-3xl border border-purple-500/30 rounded-2xl overflow-hidden shadow-2xl"
+                    : "max-w-sm border-4 border-slate-700/80 rounded-[36px] overflow-hidden shadow-2xl bg-[#070913]"
                 }`}
               >
-                {/* Simulated Portal Content */}
-                {(() => {
-                  const client = clients.find((c) => c.id === previewProject.client_id);
-                  const statusCfg = getStatusConfig(previewProject.status);
-                  const clientMilestones = milestones.filter(
-                    (m) => m.project_id === previewProject.id
-                  );
-                  const clientDocs = (
-                    projectDocuments[previewProject.id] ||
-                    generateDefaultProjectDocuments(previewProject)
-                  ).filter((d) => d.visibility === "client");
-                  const clientUpdatesList =
-                    projectUpdates[previewProject.id] ||
-                    generateDefaultProjectUpdates(previewProject);
-
-                  const currentPhaseIndex =
-                    previewProject.status === "planejamento"
-                      ? 1
-                      : previewProject.status === "design"
-                      ? 2
-                      : previewProject.status === "desenvolvimento" ||
-                        previewProject.status === "em_andamento"
-                      ? 3
-                      : previewProject.status === "testes" ||
-                        previewProject.status === "homologacao"
-                      ? 4
-                      : previewProject.status === "concluido"
-                      ? 5
-                      : 3;
-
-                  return (
-                    <div className="space-y-6 text-white pb-12">
-                      {/* Simulated Client Navbar */}
-                      <div className="p-4 rounded-2xl bg-slate-900/90 border border-white/10 backdrop-blur-xl flex items-center justify-between">
-                        <div className="flex items-center gap-2.5">
-                          <span className="font-bold text-sm leading-tight tracking-tight text-white block">
-                            Portal do Cliente <span className="text-gradient">MR</span>
-                          </span>
-                          <span className="text-[10px] text-gray-400 hidden sm:inline">
-                            • Maira Reis
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center font-bold text-xs">
-                            {client?.full_name?.charAt(0) || "C"}
-                          </div>
-                          <div className="text-left">
-                            <span className="text-xs font-semibold text-white block leading-tight">
-                              {client?.full_name || "Cliente Autorizado"}
-                            </span>
-                            <span className="text-[9px] text-emerald-400">Acesso Concedido</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Main Grid: Left 8 cols, Right 4 cols for desktop; stacked flex for tablet and mobile */}
-                      <div className={previewDevice === "desktop" ? "grid grid-cols-1 lg:grid-cols-12 gap-6" : "flex flex-col gap-6"}>
-                        {/* Left Column */}
-                        <div className={previewDevice === "desktop" ? "lg:col-span-8 flex flex-col gap-6" : "flex flex-col gap-6"}>
-                          {/* Card 1: Project Overview Hero */}
-                          <div className="p-4 sm:p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
-                              <div>
-                                <span className="text-[10px] uppercase font-bold text-indigo-400 tracking-wider">
-                                  {previewProject.category || "Desenvolvimento de Software"}
-                                </span>
-                                <h1 className="text-xl sm:text-2xl font-black text-white mt-1">
-                                  {previewProject.title}
-                                </h1>
-                              </div>
-
-                              <span
-                                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border w-fit ${statusCfg.badgeClass}`}
-                              >
-                                <span className={`w-2 h-2 rounded-full ${statusCfg.dotClass} animate-pulse`} />
-                                {statusCfg.label}
-                              </span>
-                            </div>
-
-                            {previewProject.description && (
-                              <p className="text-xs sm:text-sm text-gray-300 leading-relaxed mb-6">
-                                {previewProject.description}
-                              </p>
-                            )}
-
-                            {/* Dual Progress Bars: 1. Progresso Geral (Cronograma/Meses) + 2. Progresso da Sprint Mensal (Checks) */}
-                            {(() => {
-                              const timelineProg = calculateTimelineProgress(previewProject.start_date, previewProject.deadline);
-                              const sprintProg = calculateSprintProgress(clientMilestones);
-
-                              return (
-                                <div className="space-y-3.5 mb-6">
-                                  {/* 1. Progresso Geral (Cronograma & Meses) */}
-                                  <div className="p-3.5 rounded-2xl bg-indigo-950/30 border border-indigo-500/25 space-y-2">
-                                    <div className="flex flex-wrap items-center justify-between gap-2">
-                                      <div>
-                                        <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                                          <Calendar size={13} className="text-indigo-400" />
-                                          <span>1. Progresso Geral do Cronograma</span>
-                                        </span>
-                                        <span className="text-[10px] text-gray-400 block mt-0.5">
-                                          {timelineProg.detail}
-                                        </span>
-                                      </div>
-                                      <span className="font-mono font-bold text-xs px-2.5 py-0.5 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                                        {timelineProg.percent}% Decorrido
-                                      </span>
-                                    </div>
-                                    <div className="w-full h-2 bg-black/60 rounded-full overflow-hidden p-0.5 border border-white/5">
-                                      <div
-                                        className="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-cyan-400 rounded-full transition-all duration-500 shadow-sm shadow-indigo-500/50"
-                                        style={{ width: `${timelineProg.percent}%` }}
-                                      />
-                                    </div>
-                                  </div>
-
-                                  {/* 2. Progresso da Sprint Mensal (Checks & Entregas) */}
-                                  <div className="p-3.5 rounded-2xl bg-purple-950/30 border border-purple-500/25 space-y-2">
-                                    <div className="flex flex-wrap items-center justify-between gap-2">
-                                      <div>
-                                        <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                                          <CheckSquare size={13} className="text-purple-400" />
-                                          <span>2. Progresso da Sprint Mensal</span>
-                                        </span>
-                                        <span className="text-[10px] text-gray-400 block mt-0.5">
-                                          {sprintProg.detail}
-                                        </span>
-                                      </div>
-                                      <span className="font-mono font-bold text-xs px-2.5 py-0.5 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                                        {sprintProg.percent}% Concluído
-                                      </span>
-                                    </div>
-                                    <div className="w-full h-2 bg-black/60 rounded-full overflow-hidden p-0.5 border border-white/5">
-                                      <div
-                                        className="h-full bg-gradient-to-r from-purple-500 via-pink-500 to-emerald-400 rounded-full transition-all duration-500 shadow-sm shadow-purple-500/50"
-                                        style={{ width: `${sprintProg.percent}%` }}
-                                      />
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })()}
-
-                            {/* Key Stats Row */}
-                            <div className={`pt-4 border-t border-white/5 ${
-                              previewDevice === "desktop"
-                                ? "grid grid-cols-2 sm:grid-cols-3 gap-3"
-                                : previewDevice === "tablet"
-                                ? "grid grid-cols-3 gap-3"
-                                : "grid grid-cols-1 gap-2"
-                            }`}>
-                              <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5">
-                                <span className="text-[10px] uppercase font-bold text-gray-400 flex items-center gap-1">
-                                  <Calendar size={11} className="text-indigo-400" /> Início
-                                </span>
-                                <p className="text-xs font-semibold text-white mt-1">
-                                  {previewProject.start_date
-                                    ? new Date(previewProject.start_date).toLocaleDateString("pt-BR")
-                                    : "A definir"}
-                                </p>
-                              </div>
-
-                              <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5">
-                                <span className="text-[10px] uppercase font-bold text-gray-400 flex items-center gap-1">
-                                  <Clock size={11} className="text-pink-400" /> Previsão
-                                </span>
-                                <p className="text-xs font-semibold text-white mt-1">
-                                  {previewProject.deadline
-                                    ? new Date(previewProject.deadline).toLocaleDateString("pt-BR")
-                                    : "Em andamento"}
-                                </p>
-                              </div>
-
-                              <div className={`${previewDevice === "desktop" ? "col-span-2 sm:col-span-1" : ""} p-3 rounded-2xl bg-white/[0.02] border border-white/5`}>
-                                <span className="text-[10px] uppercase font-bold text-gray-400 flex items-center gap-1">
-                                  <ShieldCheck size={11} className="text-emerald-400" /> Garantia
-                                </span>
-                                <p className="text-xs font-semibold text-emerald-300 mt-1">
-                                  Inclusa (30 dias)
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Card: Módulo Financeiro do Cliente */}
-                          {(() => {
-                            const pFin = projectFinances[previewProject.id] || generateDefaultProjectFinances(previewProject);
-                            const finSummary = calculateFinancialSummary(pFin);
-                            const installments = pFin.installments || [];
-
-                            return (
-                              <div className="p-4 sm:p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-4">
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                                  <div>
-                                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                                      <DollarSign size={16} className="text-emerald-400" />
-                                      <span>Extrato & Quitação do Contrato (Somente Leitura)</span>
-                                    </h3>
-                                    <p className="text-[11px] text-gray-400 mt-0.5">
-                                      Visão de quitação consolidada disponibilizada para o cliente.
-                                    </p>
-                                  </div>
-                                  <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-bold w-fit">
-                                    {finSummary.percentPaid}% Quitado
-                                  </span>
-                                </div>
-
-                                {/* 3 KPI Cards */}
-                                <div className={`grid gap-3 ${
-                                  previewDevice === "desktop"
-                                    ? "grid-cols-1 sm:grid-cols-3"
-                                    : previewDevice === "tablet"
-                                    ? "grid-cols-3"
-                                    : "grid-cols-1"
-                                }`}>
-                                  <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5">
-                                    <span className="text-[10px] uppercase font-bold text-gray-400">Total Contratado</span>
-                                    <p className="text-lg font-black text-white font-mono mt-1">{formatBRL(finSummary.contractValue)}</p>
-                                  </div>
-                                  <div className="p-3.5 rounded-2xl bg-emerald-950/20 border border-emerald-500/20">
-                                    <span className="text-[10px] uppercase font-bold text-emerald-400">Valor Já Pago</span>
-                                    <p className="text-lg font-black text-emerald-400 font-mono mt-1">{formatBRL(finSummary.totalPaid)}</p>
-                                  </div>
-                                  <div className="p-3.5 rounded-2xl bg-purple-950/20 border border-purple-500/20">
-                                    <span className="text-[10px] uppercase font-bold text-purple-300">Saldo Restante</span>
-                                    <p className="text-lg font-black text-purple-300 font-mono mt-1">{formatBRL(finSummary.remainingBalance)}</p>
-                                  </div>
-                                </div>
-
-                                {/* Table Extrato */}
-                                <div className="overflow-x-auto rounded-xl border border-white/5 bg-black/30">
-                                  <table className="w-full text-left text-[11px]">
-                                    <thead>
-                                      <tr className="border-b border-white/10 text-gray-400 uppercase font-bold bg-white/[0.02]">
-                                        <th className="py-2 px-3">Parcela</th>
-                                        <th className="py-2 px-3">Valor</th>
-                                        <th className="py-2 px-3">Vencimento</th>
-                                        <th className="py-2 px-3">Status</th>
-                                        <th className="py-2 px-3">Confirmação</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-white/5">
-                                      {installments.map((inst) => {
-                                        const st = getInstallmentStatus(inst);
-                                        return (
-                                          <tr key={inst.id} className="hover:bg-white/[0.02]">
-                                            <td className="py-2.5 px-3 font-semibold text-white">#{inst.installment_number} - {inst.title}</td>
-                                            <td className="py-2.5 px-3 font-mono font-bold text-white">{formatBRL(inst.amount)}</td>
-                                            <td className="py-2.5 px-3 text-gray-300">{inst.due_date ? new Date(inst.due_date).toLocaleDateString("pt-BR") : "-"}</td>
-                                            <td className="py-2.5 px-3">
-                                              <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border ${st.badgeClass}`}>
-                                                {st.label}
-                                              </span>
-                                            </td>
-                                            <td className="py-2.5 px-3 text-emerald-400">
-                                              {inst.paid_at ? `Quitado em ${new Date(inst.paid_at).toLocaleDateString("pt-BR")}` : <span className="text-gray-500">Aguardando quitação</span>}
-                                            </td>
-                                          </tr>
-                                        );
-                                      })}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
-                            );
-                          })()}
-
-                          {/* Card 3: Milestones & Deliverables */}
-                          <div className="p-4 sm:p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-4">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-white/10">
-                              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                                <CheckCircle2 size={16} className="text-emerald-400" />
-                                <span>Entregas & Marcos Concluídos</span>
-                              </h3>
-                              <span className="text-xs text-gray-400">
-                                {clientMilestones.filter((m) => m.completed || getMilestoneStatus(m) === "concluido").length} de{" "}
-                                {clientMilestones.length} concluídos
-                              </span>
-                            </div>
-
-                            {/* Month Filter Bar */}
-                            {clientMilestones.length > 0 && (() => {
-                              const monthMap = new Map<string, { key: string; label: string; count: number; completed: number }>();
-                              clientMilestones.forEach((m) => {
-                                const key = getMilestoneMonthKey(m.due_date);
-                                const label = formatMonthKeyLabel(key);
-                                const isDone = m.completed || getMilestoneStatus(m) === "concluido";
-                                if (!monthMap.has(key)) {
-                                  monthMap.set(key, { key, label, count: 0, completed: 0 });
-                                }
-                                const curr = monthMap.get(key)!;
-                                curr.count += 1;
-                                if (isDone) curr.completed += 1;
-                              });
-
-                              const monthList = Array.from(monthMap.values()).sort((a, b) => {
-                                if (a.key === "sem_data") return 1;
-                                if (b.key === "sem_data") return -1;
-                                return a.key.localeCompare(b.key);
-                              });
-
-                              if (monthList.length <= 1 && monthList[0]?.key === "sem_data") return null;
-
-                              return (
-                                <div className="p-3 rounded-2xl bg-black/40 border border-white/10 space-y-2">
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
-                                      <Calendar size={13} className="text-indigo-400" />
-                                      <span>Filtrar por Mês (Prazo):</span>
-                                    </span>
-                                    {previewMilestoneMonthFilter !== "all" && (
-                                      <button
-                                        type="button"
-                                        onClick={() => setPreviewMilestoneMonthFilter("all")}
-                                        className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer underline"
-                                      >
-                                        Ver todos
-                                      </button>
-                                    )}
-                                  </div>
-
-                                  <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
-                                    <button
-                                      type="button"
-                                      onClick={() => setPreviewMilestoneMonthFilter("all")}
-                                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-                                        previewMilestoneMonthFilter === "all"
-                                          ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30 border border-indigo-400"
-                                          : "bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 border border-white/10"
-                                      }`}
-                                    >
-                                      <ListTodo size={12} />
-                                      <span>Todas</span>
-                                      <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-black/40 text-gray-300 font-mono">
-                                        {clientMilestones.length}
-                                      </span>
-                                    </button>
-
-                                    {monthList.map((mMonth) => {
-                                      const isSelected = previewMilestoneMonthFilter === mMonth.key;
-                                      return (
-                                        <button
-                                          key={mMonth.key}
-                                          type="button"
-                                          onClick={() => setPreviewMilestoneMonthFilter(mMonth.key)}
-                                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-                                            isSelected
-                                              ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30 border border-emerald-400"
-                                              : "bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 border border-white/10"
-                                          }`}
-                                        >
-                                          <Calendar size={12} className={isSelected ? "text-white" : "text-emerald-400"} />
-                                          <span>{mMonth.label}</span>
-                                          <span
-                                            className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-                                              isSelected ? "bg-black/30 text-white" : "bg-black/40 text-emerald-400"
-                                            }`}
-                                          >
-                                            {mMonth.completed}/{mMonth.count}
-                                          </span>
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              );
-                            })()}
-
-                            {clientMilestones.length === 0 ? (
-                              <p className="text-xs text-gray-400 py-3 text-center">
-                                Marcos em processo de definição pela equipe.
-                              </p>
-                            ) : (() => {
-                              const displayedClientMilestones = previewMilestoneMonthFilter === "all"
-                                ? clientMilestones
-                                : clientMilestones.filter((m) => getMilestoneMonthKey(m.due_date) === previewMilestoneMonthFilter);
-
-                              if (displayedClientMilestones.length === 0) {
-                                return (
-                                  <div className="p-6 rounded-2xl bg-black/40 border border-white/5 text-center space-y-1.5">
-                                    <Calendar size={24} className="mx-auto text-gray-500" />
-                                    <p className="text-xs text-gray-300 font-semibold">
-                                      Nenhum marco cadastrado com prazo para este mês.
-                                    </p>
-                                    <button
-                                      type="button"
-                                      onClick={() => setPreviewMilestoneMonthFilter("all")}
-                                      className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold underline cursor-pointer"
-                                    >
-                                      Ver todos os marcos
-                                    </button>
-                                  </div>
-                                );
-                              }
-
-                              return (
-                                <div className="space-y-3">
-                                  {displayedClientMilestones.map((m) => {
-                                  const status = getMilestoneStatus(m);
-                                  const cleanDesc = getMilestoneCleanDescription(m);
-                                  const tasks = parseMilestoneTasks(m);
-                                  const milestoneProg = getMilestoneProgress(m);
-                                  const isDone = status === "concluido" || milestoneProg === 100;
-                                  const isActive = status === "em_andamento" || (milestoneProg > 0 && !isDone);
-                                  const completedTasksCount = tasks.filter((t) => t.completed).length;
-
-                                  return (
-                                    <div
-                                      key={m.id}
-                                      className={`p-4 rounded-2xl border transition-all space-y-3 ${
-                                        isDone
-                                          ? "bg-emerald-500/[0.04] border-emerald-500/20"
-                                          : isActive
-                                          ? "bg-blue-500/[0.04] border-blue-500/20"
-                                          : "bg-white/[0.02] border-white/5"
-                                      }`}
-                                    >
-                                      <div className="flex items-start justify-between gap-3">
-                                        <div className="flex items-start gap-2.5">
-                                          <div
-                                            className={`w-5 h-5 rounded-md shrink-0 mt-0.5 flex items-center justify-center text-xs ${
-                                              isDone
-                                                ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                                                : isActive
-                                                ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
-                                                : "bg-white/5 text-gray-500 border border-white/10"
-                                            }`}
-                                          >
-                                            {isDone ? <Check size={12} /> : isActive ? <Zap size={10} /> : <Clock size={10} />}
-                                          </div>
-                                          <div>
-                                            <p
-                                              className={`text-xs font-semibold ${
-                                                isDone ? "text-gray-300 line-through" : "text-gray-200"
-                                              }`}
-                                            >
-                                              {m.title}
-                                            </p>
-                                            {cleanDesc && (
-                                              <p className="text-[11px] text-gray-400 mt-0.5">
-                                                {cleanDesc}
-                                              </p>
-                                            )}
-                                          </div>
-                                        </div>
-
-                                        <div className="flex items-center gap-2 shrink-0">
-                                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border ${
-                                            isDone ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"
-                                            : isActive ? "bg-blue-500/10 text-blue-300 border-blue-500/20"
-                                            : "bg-white/5 text-gray-400 border-white/10"
-                                          }`}>
-                                            {isDone ? "Concluído" : isActive ? "Em Andamento" : "Pendente"}
-                                          </span>
-                                          {m.due_date && (
-                                            <span className="text-[10px] text-gray-400 shrink-0">
-                                              {new Date(m.due_date).toLocaleDateString("pt-BR")}
-                                            </span>
-                                          )}
-                                        </div>
-                                      </div>
-
-                                      {/* Milestone Progress Bar */}
-                                      <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5">
-                                        <div className="flex items-center justify-between text-[10px]">
-                                          <span className="text-gray-400 font-semibold">Progresso da Etapa</span>
-                                          <span className={`font-mono font-bold ${isDone ? "text-emerald-400" : "text-indigo-300"}`}>
-                                            {milestoneProg}% Concluído {tasks.length > 0 && `(${completedTasksCount}/${tasks.length} checks)`}
-                                          </span>
-                                        </div>
-                                        <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-                                          <div
-                                            className={`h-full rounded-full transition-all duration-300 ${
-                                              isDone
-                                                ? "bg-emerald-400"
-                                                : milestoneProg > 0
-                                                ? "bg-gradient-to-r from-indigo-500 to-purple-500"
-                                                : "bg-transparent"
-                                            }`}
-                                            style={{ width: `${milestoneProg}%` }}
-                                          />
-                                        </div>
-                                      </div>
-
-                                      {/* Checklist Items */}
-                                      {tasks.length > 0 && (
-                                        <div className="space-y-1 pt-0.5">
-                                          <span className="text-[9px] uppercase font-bold text-gray-400 tracking-wider block">
-                                            Itens de Execução:
-                                          </span>
-                                          <div className={`grid gap-1.5 ${previewDevice === "desktop" ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}>
-                                            {tasks.map((task) => (
-                                              <div
-                                                key={task.id}
-                                                className={`px-2 py-1.5 rounded-lg border text-[11px] flex items-center gap-1.5 ${
-                                                  task.completed
-                                                    ? "bg-emerald-950/20 border-emerald-500/20 text-emerald-300"
-                                                    : "bg-black/20 border-white/5 text-gray-400"
-                                                }`}
-                                              >
-                                                <div className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[9px] shrink-0 ${
-                                                  task.completed ? "bg-emerald-500 text-white" : "bg-white/5 border border-white/20 text-transparent"
-                                                }`}>
-                                                  <Check size={9} />
-                                                </div>
-                                                <span className={`truncate ${task.completed ? "line-through text-gray-400" : "text-white"}`}>
-                                                  {task.text}
-                                                </span>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            );
-                          })()}
-                        </div>
-
-                          {/* Card 4: Timeline de Updates e Notas */}
-                          <div className="p-4 sm:p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl">
-                            <div className="flex items-center justify-between mb-5">
-                              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                                <Sparkles size={16} className="text-purple-400" />
-                                <span>Timeline de Alinhamentos & Notas de Versão</span>
-                              </h3>
-                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/25">
-                                {clientUpdatesList.length} registros
-                              </span>
-                            </div>
-
-                            <div className="relative pl-6 space-y-5 before:content-[''] before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-gradient-to-b before:from-indigo-500 via-purple-500 to-pink-500">
-                              {clientUpdatesList.map((update) => {
-                                const typeInfo = getUpdateTypeInfo(update.category);
-                                const TypeIcon = typeInfo.icon;
-                                const dateObj = new Date(update.created_at);
-                                const formattedDate = !isNaN(dateObj.getTime())
-                                  ? dateObj.toLocaleDateString("pt-BR", {
-                                      day: "2-digit",
-                                      month: "short",
-                                    }) +
-                                    " às " +
-                                    dateObj.toLocaleTimeString("pt-BR", {
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                    })
-                                  : "";
-
-                                return (
-                                  <div key={update.id} className="relative">
-                                    <div
-                                      className={`absolute -left-6 top-1 w-3 h-3 rounded-full ${typeInfo.dotClass} ring-4 ring-[#070913]`}
-                                    />
-                                    <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-2">
-                                      <div className="flex flex-wrap items-center justify-between gap-1.5">
-                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                          <span
-                                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded border flex items-center gap-1 ${typeInfo.badgeClass}`}
-                                          >
-                                            <TypeIcon size={10} />
-                                            <span>{typeInfo.label}</span>
-                                          </span>
-                                          {update.version_tag && (
-                                            <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-0.5">
-                                              <Tag size={9} />
-                                              {update.version_tag}
-                                            </span>
-                                          )}
-                                          {update.meeting_attendees && (
-                                            <span className="text-[9px] text-gray-400 bg-white/5 px-1.5 py-0.5 rounded border border-white/10 flex items-center gap-1">
-                                              <Users size={9} className="text-indigo-400" />
-                                              {update.meeting_attendees}
-                                            </span>
-                                          )}
-                                        </div>
-                                        <span className="text-[10px] text-gray-400">{formattedDate}</span>
-                                      </div>
-
-                                      <h4 className="text-xs sm:text-sm font-bold text-white">
-                                        {update.title}
-                                      </h4>
-
-                                      <div className="pt-1 border-t border-white/5 text-xs text-gray-300">
-                                        {renderRichMarkdown(update.content)}
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          {/* Card 5: Contratos & Documentos */}
-                          <div className="p-4 sm:p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl">
-                            <div className="flex items-center justify-between mb-4">
-                              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                                <FileText size={16} className="text-pink-400" />
-                                <span>Contratos & Documentos Oficiais (PDF)</span>
-                              </h3>
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-pink-500/10 text-pink-300 border border-pink-500/20">
-                                {clientDocs.length} arquivos disponíveis
-                              </span>
-                            </div>
-
-                            {clientDocs.length === 0 ? (
-                              <p className="text-xs text-gray-400 text-center py-4">
-                                Nenhum documento público anexado a este projeto ainda.
-                              </p>
-                            ) : (
-                              <div className={`grid gap-3 ${previewDevice === "desktop" ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}>
-                                {clientDocs.map((doc) => {
-                                  const catInfo = getDocumentCategoryInfo(doc.category);
-                                  return (
-                                    <div
-                                      key={doc.id}
-                                      className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5 hover:border-pink-500/30 transition-all flex flex-col justify-between gap-2"
-                                    >
-                                      <div>
-                                        <div className="flex items-start justify-between gap-1 mb-1.5">
-                                          <span
-                                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${catInfo.badgeClass}`}
-                                          >
-                                            {catInfo.label}
-                                          </span>
-                                          <span className="text-[9px] text-gray-400 font-mono">
-                                            {doc.file_size_formatted}
-                                          </span>
-                                        </div>
-                                        <p className="text-xs font-bold text-white line-clamp-2">
-                                          {doc.title}
-                                        </p>
-                                      </div>
-
-                                      <div className="pt-2 border-t border-white/5 flex items-center justify-between">
-                                        <span className="text-[9px] text-gray-500">
-                                          {new Date(doc.uploaded_at).toLocaleDateString("pt-BR")}
-                                        </span>
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setViewingDocument(doc);
-                                            setPdfViewerModalOpen(true);
-                                          }}
-                                          className="text-[10px] font-semibold text-pink-400 hover:text-pink-300 flex items-center gap-1 cursor-pointer"
-                                        >
-                                          <Eye size={11} />
-                                          <span>Visualizar PDF</span>
-                                        </button>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Right Column (4 cols): Deliverables & Direct Contact */}
-                        <div className={previewDevice === "desktop" ? "lg:col-span-4 flex flex-col gap-6" : "flex flex-col gap-6"}>
-                          {/* Deliverables Card */}
-                          <div className="p-4 sm:p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl">
-                            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-2">
-                              <ExternalLink size={14} className="text-indigo-400" />
-                              <span>Entregáveis & Acessos</span>
-                            </h3>
-
-                            <div className="space-y-2.5">
-                              {(() => {
-                                const customLinks = (projectQuickLinks[previewProject.id] || []).filter(
-                                  (l) => l.is_active && l.url && l.url.trim() !== "" &&
-                                  l.url !== previewProject.figma_url &&
-                                  l.url !== previewProject.preview_url &&
-                                  l.url !== previewProject.repo_url
-                                );
-                                const hasFigma = Boolean(previewProject.figma_url && previewProject.figma_url.trim() !== "");
-                                const hasPreview = Boolean(previewProject.preview_url && previewProject.preview_url.trim() !== "");
-                                const hasRepo = Boolean(previewProject.repo_url && previewProject.repo_url.trim() !== "");
-                                const hasAny = hasFigma || hasPreview || hasRepo || customLinks.length > 0;
-
-                                if (!hasAny) {
-                                  return (
-                                    <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 text-center text-xs text-gray-500">
-                                      Nenhum link ou entregável disponível no momento.
-                                    </div>
-                                  );
-                                }
-
-                                return (
-                                  <>
-                                    {hasFigma && (
-                                      <a
-                                        href={previewProject.figma_url!}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="p-3 rounded-2xl bg-[#1e1b2e]/80 border border-purple-500/30 flex items-center justify-between text-white transition-all hover:border-purple-400 hover:bg-[#1e1b2e]"
-                                      >
-                                        <div className="flex items-center gap-2.5">
-                                          <div className="p-1.5 rounded-lg bg-purple-500/20 text-purple-400">
-                                            <Palette size={16} />
-                                          </div>
-                                          <div>
-                                            <p className="text-xs font-bold">Protótipo Figma</p>
-                                            <p className="text-[10px] text-gray-400">Design navegável</p>
-                                          </div>
-                                        </div>
-                                        <ChevronRight size={14} className="text-gray-400" />
-                                      </a>
-                                    )}
-
-                                    {hasPreview && (
-                                      <a
-                                        href={previewProject.preview_url!}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="p-3 rounded-2xl bg-[#11262d]/80 border border-cyan-500/30 flex items-center justify-between text-white transition-all hover:border-cyan-400 hover:bg-[#11262d]"
-                                      >
-                                        <div className="flex items-center gap-2.5">
-                                          <div className="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-400">
-                                            <Globe size={16} />
-                                          </div>
-                                          <div>
-                                            <p className="text-xs font-bold">Ambiente Staging</p>
-                                            <p className="text-[10px] text-gray-400">Testes online</p>
-                                          </div>
-                                        </div>
-                                        <ChevronRight size={14} className="text-gray-400" />
-                                      </a>
-                                    )}
-
-                                    {hasRepo && (
-                                      <a
-                                        href={previewProject.repo_url!}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="p-3 rounded-2xl bg-[#1a1c29]/80 border border-white/10 flex items-center justify-between text-white transition-all hover:border-white/20 hover:bg-[#1a1c29]"
-                                      >
-                                        <div className="flex items-center gap-2.5">
-                                          <div className="p-1.5 rounded-lg bg-white/5 text-gray-300">
-                                            <FolderGit2 size={16} />
-                                          </div>
-                                          <div>
-                                            <p className="text-xs font-bold">Repositório GitHub</p>
-                                            <p className="text-[10px] text-gray-400">Código auditável</p>
-                                          </div>
-                                        </div>
-                                        <ChevronRight size={14} className="text-gray-400" />
-                                      </a>
-                                    )}
-
-                                    {customLinks.map((link) => (
-                                      <a
-                                        key={link.id}
-                                        href={link.url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="p-3 rounded-2xl bg-indigo-950/30 border border-indigo-500/30 flex items-center justify-between text-white transition-all hover:border-indigo-400 hover:bg-indigo-900/30"
-                                      >
-                                        <div className="flex items-center gap-2.5">
-                                          <div className="p-1.5 rounded-lg bg-indigo-500/20 text-indigo-400">
-                                            <ExternalLink size={16} />
-                                          </div>
-                                          <div>
-                                            <p className="text-xs font-bold">{link.label}</p>
-                                            <p className="text-[10px] text-gray-400">{link.description || "Link de acesso"}</p>
-                                          </div>
-                                        </div>
-                                        <ChevronRight size={14} className="text-gray-400" />
-                                      </a>
-                                    ))}
-                                  </>
-                                );
-                              })()}
-                            </div>
-                          </div>
-
-                          {/* Direct Contact Simulator */}
-                          <div className="p-6 rounded-3xl bg-gradient-to-br from-indigo-900/40 via-purple-900/20 to-slate-900 border border-indigo-500/30 backdrop-blur-xl shadow-xl space-y-3">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-pink-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm">
-                                MR
-                              </div>
-                              <div>
-                                <h4 className="text-xs font-bold text-white">Maira Reis</h4>
-                                <p className="text-[10px] text-gray-400">Desenvolvedora Responsável</p>
-                              </div>
-                            </div>
-                            <p className="text-[11px] text-gray-300 leading-relaxed">
-                              Canal direto no WhatsApp para alinhamentos, dúvidas de escopo e aprovações rápidas.
-                            </p>
-                            <a
-                              href="https://wa.me/553598030543"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="w-full py-2 rounded-xl bg-emerald-600/30 hover:bg-emerald-600/40 text-emerald-300 text-xs font-bold border border-emerald-500/30 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                            >
-                              <MessageSquare size={13} />
-                              <span>Simular Contato WhatsApp</span>
-                            </a>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
+                <iframe
+                  key={`${previewProject.id}-${previewDevice}`}
+                  src={`/portal?impersonateProjectId=${encodeURIComponent(previewProject.id)}&preview=true`}
+                  className="w-full h-full border-0 rounded-xl bg-[#070913]"
+                  title="Visão Real do Portal do Cliente"
+                />
               </div>
             </div>
           </div>

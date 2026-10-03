@@ -7,11 +7,14 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { title, client_id, client_email } = body;
 
-    if (!title || !client_id) {
-      return NextResponse.json({ error: "Título e Cliente são obrigatórios." }, { status: 400 });
+    if (!title) {
+      return NextResponse.json({ error: "Título do projeto é obrigatório." }, { status: 400 });
     }
 
-    const saved = saveProject(body);
+    const saved = saveProject({
+      ...body,
+      client_id: client_id || body.client_email || "admin",
+    });
 
     // Sync with Supabase DB if possible
     try {
@@ -32,6 +35,7 @@ export async function POST(req: Request) {
           figma_url: saved.figma_url,
           repo_url: saved.repo_url,
           category: saved.category,
+          next_update_at: saved.next_update_at || null,
         },
       ]);
     } catch (e) {}

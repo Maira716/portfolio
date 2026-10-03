@@ -28,6 +28,8 @@ export interface StoredProject {
   figma_url: string | null;
   repo_url: string | null;
   category: string | null;
+  next_update_at?: string | null;
+  countdown_released?: boolean;
   created_at: string;
   updated_at?: string;
 }
@@ -158,6 +160,25 @@ export interface StoredQuickLink {
   created_at?: string;
 }
 
+export interface StoredIssuerSettings {
+  companyName: string;
+  tradingName: string;
+  documentNumber: string;
+  email: string;
+  phone: string;
+  address: string;
+  city: string;
+  state: string;
+  website: string;
+  roleTitle: string;
+  pixKeyType: "cpf" | "cnpj" | "email" | "phone" | "random";
+  pixKey: string;
+  pixBeneficiary: string;
+  bankName: string;
+  bankAgency: string;
+  bankAccount: string;
+}
+
 export interface PortalData {
   clients: StoredClient[];
   projects: StoredProject[];
@@ -168,6 +189,7 @@ export interface PortalData {
   proposals?: StoredCommercialProposal[];
   milestones?: Record<string, StoredMilestone[]>;
   quickLinks?: Record<string, StoredQuickLink[]>;
+  issuerSettings?: StoredIssuerSettings;
 }
 
 let memoryCache: PortalData | null = null;
@@ -210,18 +232,18 @@ const DEFAULT_DATA: PortalData = {
       client_id: "client-gabriel-01",
       client_email: "gabrielmonteiropersonalswim@gmail.com",
       client_name: "Gabriel",
-      title: "Desenvolvimento de Aplicativo sob Medida",
+      title: "AVANTT",
       description: "Desenvolvimento de aplicativo mobile sob medida e sistema de gestão",
       status: "desenvolvimento",
       progress: 35,
-      start_date: "2026-09-14",
-      deadline: "2026-12-20",
+      start_date: "2026-09-13",
+      deadline: "2027-09-20",
       preview_url: null,
       figma_url: null,
       repo_url: null,
-      category: "Mobile App (React Native)",
-      created_at: "2026-09-14T20:30:01.000Z",
-      updated_at: "2026-10-02T23:00:00.000Z",
+      category: "SAAS / PAINEL",
+      created_at: "2026-09-13T20:30:01.000Z",
+      updated_at: "2026-10-03T15:00:00.000Z",
     },
   ],
   updates: {},
@@ -245,10 +267,6 @@ function ensureDirectoryExists(filePath: string) {
 }
 
 export function readPortalData(): PortalData {
-  if (memoryCache) {
-    return memoryCache;
-  }
-
   const filePath = getDataFilePath();
   try {
     ensureDirectoryExists(filePath);
@@ -423,6 +441,8 @@ export function saveProject(proj: Partial<StoredProject> & { title: string; clie
     figma_url: proj.figma_url !== undefined ? proj.figma_url : (existingIdx >= 0 ? data.projects[existingIdx].figma_url : null),
     repo_url: proj.repo_url !== undefined ? proj.repo_url : (existingIdx >= 0 ? data.projects[existingIdx].repo_url : null),
     category: proj.category !== undefined ? proj.category : (existingIdx >= 0 ? data.projects[existingIdx].category : "Mobile App (React Native)"),
+    next_update_at: proj.next_update_at !== undefined ? proj.next_update_at : (existingIdx >= 0 ? data.projects[existingIdx].next_update_at || null : null),
+    countdown_released: proj.countdown_released !== undefined ? Boolean(proj.countdown_released) : (existingIdx >= 0 ? Boolean(data.projects[existingIdx].countdown_released) : false),
     created_at: existingIdx >= 0 ? data.projects[existingIdx].created_at : new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -687,6 +707,45 @@ export function saveAllQuickLinks(
   data.quickLinks = { ...(data.quickLinks || {}), ...linksMap };
   writePortalData(data);
   return data.quickLinks;
+}
+
+export const DEFAULT_ISSUER_SETTINGS: StoredIssuerSettings = {
+  companyName: "Maira Reis - Desenvolvimento & UI/UX Design",
+  tradingName: "Maira Reis Dev",
+  documentNumber: "55.843.406/0001-28",
+  email: "mairareis2017@gmail.com",
+  phone: "553598030543",
+  address: "Atendimento Remoto / Brasil",
+  city: "Pouso Alegre",
+  state: "MG",
+  website: "https://mairareis.dev",
+  roleTitle: "Engenheira de Software & UI/UX Designer",
+  pixKeyType: "cnpj",
+  pixKey: "55.843.406/0001-28",
+  pixBeneficiary: "Maira Reis",
+  bankName: "C6",
+  bankAgency: "0001",
+  bankAccount: "",
+};
+
+export function getIssuerSettings(): StoredIssuerSettings {
+  const data = readPortalData();
+  if (data.issuerSettings && data.issuerSettings.pixKey) {
+    return { ...DEFAULT_ISSUER_SETTINGS, ...data.issuerSettings };
+  }
+  return DEFAULT_ISSUER_SETTINGS;
+}
+
+export function saveIssuerSettings(settings: Partial<StoredIssuerSettings>): StoredIssuerSettings {
+  const data = readPortalData();
+  const updated: StoredIssuerSettings = {
+    ...DEFAULT_ISSUER_SETTINGS,
+    ...(data.issuerSettings || {}),
+    ...settings,
+  };
+  data.issuerSettings = updated;
+  writePortalData(data);
+  return updated;
 }
 
 

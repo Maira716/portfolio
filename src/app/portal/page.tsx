@@ -67,6 +67,7 @@ import {
   Mail,
   Headphones,
   MessageCircle,
+  QrCode,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -202,6 +203,12 @@ export const calculateFinancialSummary = (financialData?: ProjectFinancialData |
 
   const remainingBalance = Math.max(0, contractValue - totalPaid);
   const percentPaid = contractValue > 0 ? Math.min(100, Math.round((totalPaid / contractValue) * 100)) : 0;
+  const overdueCount = installments.filter((i) => getInstallmentStatus(i).status === "vencido").length;
+  const dueSoonCount = installments.filter((i) => getInstallmentStatus(i).status === "em_dia").length;
+  const pendingCount = installments.filter((i) => {
+    const st = getInstallmentStatus(i).status;
+    return st === "pendente" || st === "em_dia";
+  }).length;
 
   return {
     contractValue,
@@ -213,6 +220,9 @@ export const calculateFinancialSummary = (financialData?: ProjectFinancialData |
     percentPaid,
     installmentsCount: installments.length,
     paidCount: installments.filter((i) => !!i.paid_at).length,
+    overdueCount,
+    dueSoonCount,
+    pendingCount,
   };
 };
 
@@ -876,6 +886,8 @@ interface Project {
   figma_url: string | null;
   repo_url: string | null;
   category: string | null;
+  next_update_at?: string | null;
+  countdown_released?: boolean;
   created_at: string;
 }
 
@@ -1092,19 +1104,118 @@ function ClientPortalContent() {
   const [copiedReceiptAuth, setCopiedReceiptAuth] = useState(false);
 
   // Tab Menu Navigation State
-  const [activeTab, setActiveTab] = useState<
+  const [activeTab, setActiveTabState] = useState<
     "overview" | "milestones" | "financial" | "updates" | "documents" | "support"
   >("overview");
 
+  const setActiveTab = (tab: "overview" | "milestones" | "financial" | "updates" | "documents" | "support") => {
+    setActiveTabState(tab);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("portfolio_portal_active_tab_v1", tab);
+        const u = new URL(window.location.href);
+        if (u.searchParams.get("tab") !== tab) {
+          u.searchParams.set("tab", tab);
+          window.history.replaceState({}, "", u.toString());
+        }
+      } catch (e) {}
+    }
+  };
+
   useEffect(() => {
     const tabParam = searchParams.get("tab");
+    const savedTab = typeof window !== "undefined" ? (localStorage.getItem("portfolio_portal_active_tab_v1") as any) : null;
+    const targetTab = tabParam || savedTab;
     if (
-      tabParam &&
-      ["overview", "milestones", "financial", "updates", "documents", "support"].includes(tabParam)
+      targetTab &&
+      ["overview", "milestones", "financial", "updates", "documents", "support"].includes(targetTab)
     ) {
-      setActiveTab(tabParam as any);
+      setActiveTabState(targetTab as any);
     }
   }, [searchParams]);
+
+  // Public Billing & Pix Settings State
+  const [portalIssuerSettings, setPortalIssuerSettings] = useState<{
+    pixKeyType: string;
+    pixKey: string;
+    pixBeneficiary: string;
+    bankName: string;
+    bankAgency: string;
+    bankAccount: string;
+    companyName: string;
+    documentNumber: string;
+    email: string;
+    phone: string;
+  }>({
+    pixKeyType: "cnpj",
+    pixKey: "55.843.406/0001-28",
+    pixBeneficiary: "Maira Reis",
+    bankName: "C6",
+    bankAgency: "0001",
+    bankAccount: "",
+    companyName: "Maira Reis - Desenvolvimento & UI/UX Design",
+    documentNumber: "55.843.406/0001-28",
+    email: "mairareis2017@gmail.com",
+    phone: "553598030543",
+  });
+
+  const [copiedPixKey, setCopiedPixKey] = useState(false);
+  const [pixPaymentModalOpen, setPixPaymentModalOpen] = useState(false);
+  const [activePayingInstallment, setActivePayingInstallment] = useState<ProjectInstallment | null>(null);
+
+  const handleCopyPixKey = (keyToCopy: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(keyToCopy);
+      setCopiedPixKey(true);
+      setTimeout(() => setCopiedPixKey(false), 2500);
+    }
+  };
+
+  const handleOpenPixModal = (inst: ProjectInstallment) => {
+    setActivePayingInstallment(inst);
+    setPixPaymentModalOpen(true);
+  };
+
+  // Sync Pix & Billing Settings from Server API and LocalStorage in real time
+  useEffect(() => {
+    const fetchPortalSettings = async () => {
+      try {
+        const res = await fetch("/api/portal/settings", { cache: "no-store" });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.pixKey) {
+            setPortalIssuerSettings((prev) => ({ ...prev, ...json }));
+          }
+        }
+      } catch {}
+
+      if (typeof window !== "undefined") {
+        try {
+          const localSettings = localStorage.getItem("portfolio_admin_issuer_settings_v1");
+          if (localSettings) {
+            const parsed = JSON.parse(localSettings);
+            setPortalIssuerSettings((prev) => ({ ...prev, ...parsed }));
+          }
+        } catch {}
+      }
+    };
+
+    fetchPortalSettings();
+
+    const handleSettingsUpdate = (e: any) => {
+      if (e?.detail) {
+        setPortalIssuerSettings((prev) => ({ ...prev, ...e.detail }));
+      }
+    };
+
+    window.addEventListener("portfolio_settings_updated", handleSettingsUpdate);
+    window.addEventListener("storage", fetchPortalSettings);
+    return () => {
+      window.removeEventListener("portfolio_settings_updated", handleSettingsUpdate);
+      window.removeEventListener("storage", fetchPortalSettings);
+    };
+  }, []);
 
   // Contact & FAQ Widget State
   const [openFaqId, setOpenFaqId] = useState<string | null>("faq-1");
@@ -1147,7 +1258,16 @@ function ClientPortalContent() {
         company: (profile as any)?.company_name || undefined,
         document: (profile as any)?.document || undefined,
       },
-      agency: DEFAULT_AGENCY_DATA,
+      agency: {
+        name: portalIssuerSettings.pixBeneficiary || "Maira Reis",
+        tradeName: portalIssuerSettings.companyName || "Maira Reis - Desenvolvimento & UI/UX Design",
+        document: portalIssuerSettings.documentNumber || portalIssuerSettings.pixKey || "55.843.406/0001-28",
+        email: portalIssuerSettings.email || "mairareis2017@gmail.com",
+        phone: portalIssuerSettings.phone || "+55 (35) 9803-0543",
+        city: "Pouso Alegre",
+        state: "MG",
+        role: "Engenheira de Software & UI/UX Designer",
+      },
     };
   };
 
@@ -1174,6 +1294,227 @@ function ClientPortalContent() {
   // Deliverables & Timeline State
   const [deliverableTab, setDeliverableTab] = useState<"all" | "upcoming" | "current" | "history">("all");
   const [portalMilestoneMonthFilter, setPortalMilestoneMonthFilter] = useState<string>("all");
+  const [milestoneSearchQuery, setMilestoneSearchQuery] = useState<string>("");
+  const [milestoneViewMode, setMilestoneViewMode] = useState<"grid" | "timeline">("grid");
+  const [expandedMilestones, setExpandedMilestones] = useState<Record<string, boolean>>({});
+
+  const getEnrichedProject = (p: Project): Project => {
+    let nextUpdate = p.next_update_at;
+    let countdownReleased = p.countdown_released;
+    if (typeof window !== "undefined") {
+      const directId = localStorage.getItem(`portfolio_project_next_update_${p.id}`);
+      const directTitle = p.title ? localStorage.getItem(`portfolio_project_next_update_title_${p.title.toLowerCase().trim()}`) : null;
+      if (directId) nextUpdate = directId;
+      else if (directTitle) nextUpdate = directTitle;
+
+      const directReleasedId = localStorage.getItem(`portfolio_project_countdown_released_${p.id}`);
+      const directReleasedTitle = p.title ? localStorage.getItem(`portfolio_project_countdown_released_title_${p.title.toLowerCase().trim()}`) : null;
+      if (directReleasedId !== null) countdownReleased = directReleasedId === "true";
+      else if (directReleasedTitle !== null) countdownReleased = directReleasedTitle === "true";
+
+      if (!nextUpdate || countdownReleased === undefined) {
+        try {
+          const raw = localStorage.getItem("portfolio_local_projects_v1");
+          if (raw) {
+            const projs = JSON.parse(raw);
+            const match = projs.find(
+              (lp: any) =>
+                lp.id === p.id ||
+                (lp.title && p.title && lp.title.toLowerCase().trim() === p.title.toLowerCase().trim())
+            );
+            if (match?.next_update_at && !nextUpdate) nextUpdate = match.next_update_at;
+            if (match?.countdown_released !== undefined && countdownReleased === undefined) countdownReleased = match.countdown_released;
+          }
+        } catch {}
+      }
+    }
+    return {
+      ...p,
+      next_update_at: nextUpdate || null,
+      countdown_released: countdownReleased,
+    };
+  };
+
+  // Live Ticking Clock for Release & Publication Countdown Timer + Continuous Local Storage Sync + Background API Polling
+  const [currentPortalTimestamp, setCurrentPortalTimestamp] = useState<number>(Date.now());
+  useEffect(() => {
+    let tickCount = 0;
+    const timer = setInterval(async () => {
+      setCurrentPortalTimestamp(Date.now());
+      tickCount++;
+
+      if (typeof window !== "undefined" && selectedProject) {
+        const directId = localStorage.getItem(`portfolio_project_next_update_${selectedProject.id}`);
+        const directTitle = selectedProject.title
+          ? localStorage.getItem(`portfolio_project_next_update_title_${selectedProject.title.toLowerCase().trim()}`)
+          : null;
+        let bestNext = directId || directTitle;
+
+        const directReleasedId = localStorage.getItem(`portfolio_project_countdown_released_${selectedProject.id}`);
+        const directReleasedTitle = selectedProject.title
+          ? localStorage.getItem(`portfolio_project_countdown_released_title_${selectedProject.title.toLowerCase().trim()}`)
+          : null;
+        let bestReleased =
+          directReleasedId !== null
+            ? directReleasedId === "true"
+            : directReleasedTitle !== null
+            ? directReleasedTitle === "true"
+            : selectedProject.countdown_released;
+
+        if (!bestNext) {
+          try {
+            const raw = localStorage.getItem("portfolio_local_projects_v1");
+            if (raw) {
+              const projs = JSON.parse(raw);
+              const m = projs.find(
+                (p: any) =>
+                  p.id === selectedProject.id ||
+                  (p.title &&
+                    selectedProject.title &&
+                    p.title.toLowerCase().trim() === selectedProject.title.toLowerCase().trim())
+              );
+              if (m?.next_update_at) bestNext = m.next_update_at;
+              if (m?.countdown_released !== undefined && bestReleased === undefined) bestReleased = m.countdown_released;
+            }
+          } catch {}
+        }
+
+        // Lightweight poll every 3 seconds to keep sync even across different browsers/devices
+        if (tickCount % 3 === 0 && selectedProject.id) {
+          try {
+            const pollRes = await fetch(
+              `/api/portal/countdown?projectId=${encodeURIComponent(selectedProject.id)}&title=${encodeURIComponent(selectedProject.title || "")}`,
+              { cache: "no-store" }
+            );
+            if (pollRes.ok) {
+              const pollJson = await pollRes.json();
+              if (pollJson.found) {
+                bestNext = pollJson.next_update_at;
+                bestReleased = Boolean(pollJson.countdown_released);
+              }
+            }
+          } catch {}
+        }
+
+        if (
+          (bestNext && bestNext !== selectedProject.next_update_at) ||
+          (bestReleased !== undefined && bestReleased !== selectedProject.countdown_released)
+        ) {
+          setSelectedProject((prev) =>
+            prev ? { ...prev, next_update_at: bestNext, countdown_released: bestReleased } : prev
+          );
+        }
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [selectedProject]);
+
+  // Real-time synchronization for projects (e.g. next_update_at / countdown_released changes from admin)
+  useEffect(() => {
+    const syncLocalProject = (e?: any) => {
+      if (typeof window === "undefined") return;
+      try {
+        const eventDetail = e?.detail;
+        if (selectedProject) {
+          const directId = localStorage.getItem(`portfolio_project_next_update_${selectedProject.id}`);
+          const directTitle = selectedProject.title
+            ? localStorage.getItem(`portfolio_project_next_update_title_${selectedProject.title.toLowerCase().trim()}`)
+            : null;
+          const directVal =
+            (eventDetail &&
+            (eventDetail.projectId === selectedProject.id || eventDetail.title === selectedProject.title)
+              ? eventDetail.next_update_at
+              : null) ||
+            directId ||
+            directTitle;
+
+          const directRelId = localStorage.getItem(`portfolio_project_countdown_released_${selectedProject.id}`);
+          const directRelTitle = selectedProject.title
+            ? localStorage.getItem(`portfolio_project_countdown_released_title_${selectedProject.title.toLowerCase().trim()}`)
+            : null;
+          const directRelVal =
+            eventDetail && (eventDetail.projectId === selectedProject.id || eventDetail.title === selectedProject.title) && eventDetail.countdown_released !== undefined
+              ? eventDetail.countdown_released
+              : directRelId !== null
+              ? directRelId === "true"
+              : directRelTitle !== null
+              ? directRelTitle === "true"
+              : selectedProject.countdown_released;
+
+          if (
+            (directVal && directVal !== selectedProject.next_update_at) ||
+            (directRelVal !== undefined && directRelVal !== selectedProject.countdown_released)
+          ) {
+            setSelectedProject((prev) => (prev ? { ...prev, next_update_at: directVal, countdown_released: directRelVal } : prev));
+          }
+        }
+
+        const raw = localStorage.getItem("portfolio_local_projects_v1");
+        if (raw) {
+          const projs: Project[] = JSON.parse(raw);
+          if (Array.isArray(projs) && projs.length > 0) {
+            setProjects((prev) =>
+              prev.map((p) => {
+                const found = projs.find(
+                  (lp) =>
+                    lp.id === p.id ||
+                    (lp.title && p.title && lp.title.toLowerCase().trim() === p.title.toLowerCase().trim())
+                );
+                return found
+                  ? {
+                      ...p,
+                      next_update_at: found.next_update_at || p.next_update_at,
+                      countdown_released: found.countdown_released !== undefined ? found.countdown_released : p.countdown_released,
+                    }
+                  : p;
+              })
+            );
+          }
+        }
+      } catch (e) {}
+    };
+
+    const handleStorage = (e: StorageEvent) => {
+      if (
+        e.key === "portfolio_local_projects_v1" ||
+        e.key?.startsWith("portfolio_project_next_update_") ||
+        e.key?.startsWith("portfolio_project_countdown_released_")
+      ) {
+        syncLocalProject();
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener("focus", syncLocalProject);
+    window.addEventListener("portfolio_project_updated", syncLocalProject);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("focus", syncLocalProject);
+      window.removeEventListener("portfolio_project_updated", syncLocalProject);
+    };
+  }, [selectedProject]);
+
+  // Universal Escape Key Listener to Close Any Open Modal, Card, or Overlay in Portal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setReceiptModalOpen(false);
+        setPixPaymentModalOpen(false);
+        setActivePayingInstallment(null);
+        setFeedbackOpen(false);
+        setApprovalModalOpen(false);
+        setSelectedMilestoneForReview(null);
+        setActiveReceiptData(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  const toggleMilestoneExpanded = (id: string) => {
+    setExpandedMilestones((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
 
   // Quick Links State
   const [quickLinks, setQuickLinks] = useState<ProjectQuickLink[]>([]);
@@ -1344,56 +1685,77 @@ function ClientPortalContent() {
 
         const { data: projData, error: projError } = await query;
         if (!projError && projData && Array.isArray(projData)) {
-          clientProjects = (projData as Project[]).map((p) => ({
-            ...p,
-            status: (p.status as any) || "planejamento",
-          }));
+          clientProjects = (projData as Project[]).map((p) => {
+            let nextUpdate = p.next_update_at;
+            if (!nextUpdate && typeof window !== "undefined") {
+              nextUpdate =
+                localStorage.getItem(`portfolio_project_next_update_${p.id}`) ||
+                (p.title ? localStorage.getItem(`portfolio_project_next_update_title_${p.title.toLowerCase().trim()}`) : null) ||
+                null;
+            }
+            return {
+              ...p,
+              next_update_at: nextUpdate,
+              status: (p.status as any) || "planejamento",
+            };
+          });
         }
       } catch (e) {}
 
-      // Resilient server API fetch
+      // Resilient server API fetch (Authoritative Source of Truth)
       try {
         const isAdmin = profile?.role === "admin";
         const apiUrl = `/api/portal/projects?clientId=${encodeURIComponent(user.id)}&clientEmail=${encodeURIComponent(user.email || "")}&isAdmin=${isAdmin}`;
-        const res = await fetch(apiUrl);
+        const res = await fetch(apiUrl, { cache: "no-store" });
         if (res.ok) {
           const json = await res.json();
           if (json.projects && Array.isArray(json.projects)) {
-            for (const sp of json.projects) {
-              if (!clientProjects.some((cp) => cp.id === sp.id || cp.title === sp.title)) {
-                clientProjects.push({
-                  ...sp,
-                  status: sp.status || "planejamento",
-                });
+            clientProjects = json.projects.map((sp: any) => {
+              let nextUpdate = sp.next_update_at;
+              if (!nextUpdate && typeof window !== "undefined") {
+                nextUpdate =
+                  localStorage.getItem(`portfolio_project_next_update_${sp.id}`) ||
+                  (sp.title ? localStorage.getItem(`portfolio_project_next_update_title_${sp.title.toLowerCase().trim()}`) : null) ||
+                  null;
               }
-            }
+              return {
+                ...sp,
+                next_update_at: nextUpdate,
+                status: sp.status || "planejamento",
+              };
+            });
+            try {
+              localStorage.setItem("portfolio_local_projects_v1", JSON.stringify(clientProjects));
+            } catch (e) {}
           }
         }
       } catch (apiErr) {
         console.warn("Portal projects API load failed:", apiErr);
       }
 
-      try {
-        const localProjects: Project[] = JSON.parse(localStorage.getItem("portfolio_local_projects_v1") || "[]");
-        const cleanUserEmail = user.email?.toLowerCase().trim() || "";
-        const cleanUserName = profile?.full_name?.toLowerCase().trim() || "";
+      // Fallback to local storage ONLY if server API returned no projects
+      if (clientProjects.length === 0) {
+        try {
+          const localProjects: Project[] = JSON.parse(localStorage.getItem("portfolio_local_projects_v1") || "[]");
+          const cleanUserEmail = user.email?.toLowerCase().trim() || "";
+          const cleanUserName = profile?.full_name?.toLowerCase().trim() || "";
 
-        for (const lp of localProjects) {
-          if (!clientProjects.some((cp) => cp.id === lp.id || (cp.title === lp.title && cp.client_id === lp.client_id))) {
+          for (const lp of localProjects) {
             const matchesClient =
               profile?.role === "admin" ||
-              !lp.client_id ||
-              lp.client_id === user.id ||
-              (cleanUserEmail && lp.client_id?.toLowerCase() === cleanUserEmail) ||
-              (cleanUserEmail && (lp as any).client_email?.toLowerCase() === cleanUserEmail) ||
-              (cleanUserName && (lp as any).client_name?.toLowerCase() === cleanUserName);
+              (lp.client_id && (
+                lp.client_id === user.id ||
+                (cleanUserEmail && lp.client_id?.toLowerCase() === cleanUserEmail) ||
+                (cleanUserEmail && (lp as any).client_email?.toLowerCase() === cleanUserEmail) ||
+                (cleanUserName && (lp as any).client_name?.toLowerCase() === cleanUserName)
+              ));
 
             if (matchesClient) {
               clientProjects.push(lp);
             }
           }
-        }
-      } catch (e) {}
+        } catch (e) {}
+      }
 
       let current: Project | null = null;
       if (impersonateProjectId) {
@@ -1414,18 +1776,27 @@ function ClientPortalContent() {
         }
       }
 
-      setProjects(clientProjects);
+      const enrichedList = clientProjects.map((p) => getEnrichedProject(p));
+      setProjects(enrichedList);
 
-      if (!current && clientProjects.length > 0) {
+      if (!current && enrichedList.length > 0) {
+        const savedProjectId = typeof window !== "undefined" ? localStorage.getItem("portfolio_client_selected_project_id") : null;
         current =
-          selectedProject && clientProjects.some((p) => p.id === selectedProject.id)
-            ? clientProjects.find((p) => p.id === selectedProject.id)!
-            : clientProjects[0];
+          (impersonateProjectId && enrichedList.find((p) => p.id === impersonateProjectId)) ||
+          (selectedProject && enrichedList.find((p) => p.id === selectedProject.id)) ||
+          (savedProjectId && enrichedList.find((p) => p.id === savedProjectId)) ||
+          enrichedList[0];
       }
 
       if (current) {
-        setSelectedProject(current);
-        await loadProjectDetails(current.id, current.title, current);
+        const enrichedCurrent = getEnrichedProject(current);
+        setSelectedProject(enrichedCurrent);
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.setItem("portfolio_client_selected_project_id", enrichedCurrent.id);
+          } catch (e) {}
+        }
+        await loadProjectDetails(enrichedCurrent.id, enrichedCurrent.title, enrichedCurrent);
       } else {
         setSelectedProject(null);
         setMilestones([]);
@@ -1662,14 +2033,15 @@ function ClientPortalContent() {
   }, [user?.id, profile?.id]);
 
   const handleSelectProject = (proj: Project) => {
-    setSelectedProject(proj);
+    const enriched = getEnrichedProject(proj);
+    setSelectedProject(enriched);
     setDocuments([]);
     setFinancialData(null);
     setMilestones([]);
     setUpdates([]);
     setQuickLinks([]);
     setDeliveryFeedbacks([]);
-    loadProjectDetails(proj.id, proj.title, proj);
+    loadProjectDetails(enriched.id, enriched.title, enriched);
   };
 
   const handleOpenPdfViewer = (doc: ProjectDocument) => {
@@ -1906,17 +2278,17 @@ function ClientPortalContent() {
           </div>
         )}
 
-        {/* Menu de Navegação em Abas do Cliente */}
+        {/* Menu de Navegação em Abas do Cliente (100% Responsivo) */}
         {selectedProject && (
-          <div className="mb-8 border-b border-white/10 pb-3 overflow-x-auto no-scrollbar">
-            <div className="flex items-center gap-2 min-w-max p-1.5 bg-slate-900/60 rounded-2xl border border-white/10 backdrop-blur-xl">
+          <div className="mb-8 border-b border-white/10 pb-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 p-1.5 bg-slate-900/70 rounded-2xl border border-white/10 backdrop-blur-xl shadow-xl w-full">
               {[
-                { id: "overview", label: "Visão Geral", icon: LayoutDashboard, badge: null },
-                { id: "milestones", label: "Etapas & Entregas", icon: ListTodo, badge: milestones.length > 0 ? `${milestones.filter((m) => m.completed).length}/${milestones.length}` : null },
-                { id: "financial", label: "Financeiro & Recibos", icon: Receipt, badge: null },
+                { id: "overview", label: "Geral", icon: LayoutDashboard, badge: null },
+                { id: "milestones", label: "Etapas", icon: ListTodo, badge: milestones.length > 0 ? `${milestones.filter((m) => m.completed).length}/${milestones.length}` : null },
+                { id: "financial", label: "Financeiro", icon: Receipt, badge: null },
                 { id: "updates", label: "Atualizações", icon: Sparkles, badge: updates.length > 0 ? `${updates.length}` : null },
                 { id: "documents", label: "Documentos", icon: FileText, badge: documents.length > 0 ? `${documents.length}` : null },
-                { id: "support", label: "Suporte & FAQ", icon: Headphones, badge: null },
+                { id: "support", label: "Suporte", icon: Headphones, badge: null },
               ].map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
@@ -1925,17 +2297,17 @@ function ClientPortalContent() {
                     key={tab.id}
                     type="button"
                     onClick={() => setActiveTab(tab.id as any)}
-                    className={`px-4 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2.5 transition-all duration-200 cursor-pointer ${
+                    className={`w-full py-2.5 px-2.5 sm:px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200 cursor-pointer select-none ${
                       isActive
-                        ? "bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white shadow-lg shadow-indigo-600/30 border border-indigo-400/30"
+                        ? "bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white shadow-lg shadow-indigo-600/30 border border-indigo-400/30 scale-[1.01]"
                         : "text-gray-400 hover:text-white hover:bg-white/5 border border-transparent"
                     }`}
                   >
-                    <Icon size={16} className={isActive ? "text-white" : "text-gray-400"} />
-                    <span>{tab.label}</span>
+                    <Icon size={16} className={isActive ? "text-white shrink-0" : "text-gray-400 shrink-0"} />
+                    <span className="truncate">{tab.label}</span>
                     {tab.badge && (
                       <span
-                        className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                        className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded-full font-mono shrink-0 ${
                           isActive
                             ? "bg-white/25 text-white border border-white/30"
                             : "bg-white/10 text-gray-300 border border-white/10"
@@ -1983,16 +2355,16 @@ function ClientPortalContent() {
                 const nextPendingMilestone = milestones.find((m) => !m.completed);
 
                 return (
-                  <div className="p-6 sm:p-8 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-2xl space-y-6 relative overflow-hidden">
+                  <div className="p-4 sm:p-6 md:p-8 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-2xl space-y-5 sm:space-y-6 relative overflow-hidden">
                     {/* Glowing background accent */}
                     <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
 
                     {/* Top Header Row: Project Title, Tech Stack & Visual Status Tag */}
-                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-6 border-b border-white/10 relative z-10">
-                      <div className="space-y-2">
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-5 sm:pb-6 border-b border-white/10 relative z-10">
+                      <div className="space-y-2 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           {selectedProject.category && (
-                            <span className="text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 flex items-center gap-1.5">
+                            <span className="text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 flex items-center gap-1.5 shrink-0">
                               <Code2 size={12} className="text-indigo-400" />
                               <span>{selectedProject.category}</span>
                             </span>
@@ -2002,17 +2374,17 @@ function ClientPortalContent() {
                           </span>
                         </div>
 
-                        <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                        <h2 className="text-xl sm:text-2xl md:text-3xl font-black text-white tracking-tight break-words">
                           {selectedProject.title}
                         </h2>
 
-                        <p className="text-xs sm:text-sm text-gray-300 max-w-2xl leading-relaxed whitespace-pre-line">
+                        <p className="text-xs sm:text-sm text-gray-300 max-w-2xl leading-relaxed whitespace-pre-line break-words">
                           {selectedProject.description || "Desenvolvimento e sustentação de solução digital sob medida com arquitetura modular e boas práticas de UI/UX."}
                         </p>
                       </div>
 
                       {/* Visual Status Tag */}
-                      <div className="shrink-0 flex flex-col items-start sm:items-end gap-1">
+                      <div className="shrink-0 flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-2 pt-1 sm:pt-0">
                         <div
                           className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-2xl border font-bold text-xs shadow-md ${statusInfo.badgeClass}`}
                         >
@@ -2025,6 +2397,244 @@ function ClientPortalContent() {
                       </div>
                     </div>
 
+                    {/* Live Publication & Release Countdown Timer (Strictly bound to next_update_at & countdown_released) */}
+                    {(() => {
+                      const nextUpdateRaw = (() => {
+                        if (selectedProject?.next_update_at) return selectedProject.next_update_at;
+                        if (typeof window !== "undefined" && selectedProject) {
+                          const directId = localStorage.getItem(`portfolio_project_next_update_${selectedProject.id}`);
+                          if (directId) return directId;
+                          if (selectedProject.title) {
+                            const directTitle = localStorage.getItem(`portfolio_project_next_update_title_${selectedProject.title.toLowerCase().trim()}`);
+                            if (directTitle) return directTitle;
+                          }
+                          try {
+                            const raw = localStorage.getItem("portfolio_local_projects_v1");
+                            if (raw) {
+                              const projs: Project[] = JSON.parse(raw);
+                              const match = projs.find(
+                                (p) =>
+                                  p.id === selectedProject.id ||
+                                  (p.title &&
+                                    selectedProject.title &&
+                                    p.title.toLowerCase().trim() === selectedProject.title.toLowerCase().trim())
+                              );
+                              if (match?.next_update_at) return match.next_update_at;
+                            }
+                          } catch {}
+                        }
+                        return null;
+                      })();
+
+                      const isReleased = Boolean(
+                        selectedProject?.countdown_released !== false && (
+                          selectedProject?.countdown_released ||
+                          (typeof window !== "undefined" && (
+                            localStorage.getItem(`portfolio_project_countdown_released_${selectedProject?.id}`) === "true" ||
+                            (selectedProject?.title && localStorage.getItem(`portfolio_project_countdown_released_title_${selectedProject?.title.toLowerCase().trim()}`) === "true")
+                          ))
+                        )
+                      );
+
+                      const hasConfiguredDate = Boolean(nextUpdateRaw && !isNaN(new Date(nextUpdateRaw).getTime()));
+                      const targetTimestamp = hasConfiguredDate ? new Date(nextUpdateRaw!).getTime() : null;
+                      const diff = targetTimestamp ? targetTimestamp - currentPortalTimestamp : 0;
+                      const isPast = Boolean(targetTimestamp && diff <= 0);
+
+                      const days = Math.floor(Math.max(0, diff) / (1000 * 60 * 60 * 24));
+                      const hours = Math.floor((Math.max(0, diff) / (1000 * 60 * 60)) % 24);
+                      const minutes = Math.floor((Math.max(0, diff) / (1000 * 60)) % 60);
+                      const seconds = Math.floor((Math.max(0, diff) / 1000) % 60);
+
+                      const formattedTargetDate = targetTimestamp
+                        ? new Date(targetTimestamp).toLocaleString("pt-BR", {
+                            day: "2-digit",
+                            month: "long",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : null;
+
+                      const showActiveCountdown = hasConfiguredDate && isReleased && !isPast;
+
+                      return (
+                        <div className="p-4 sm:p-5 md:p-6 rounded-2xl sm:rounded-3xl bg-gradient-to-br from-purple-950/80 via-slate-900/90 to-indigo-950/90 border-2 border-purple-500/50 backdrop-blur-2xl shadow-2xl shadow-purple-950/60 space-y-4 relative overflow-hidden z-10">
+                          {/* Ambient glow accents */}
+                          <div className="absolute top-0 right-0 w-64 h-64 bg-purple-500/15 rounded-full blur-3xl pointer-events-none" />
+                          <div className="absolute bottom-0 left-0 w-64 h-64 bg-pink-500/15 rounded-full blur-3xl pointer-events-none" />
+
+                          {/* Top Row: Header & Status Badge */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3 relative z-10">
+                            <div className="flex items-center gap-3">
+                              <span className="p-2.5 rounded-2xl bg-gradient-to-br from-purple-500/30 to-pink-500/20 text-purple-200 border border-purple-400/40 flex items-center justify-center shrink-0 shadow-lg shadow-purple-950/40">
+                                <Clock size={20} className="text-purple-300 animate-pulse" />
+                              </span>
+                              <div>
+                                <h4 className="text-sm sm:text-base font-black text-white tracking-tight flex items-center gap-2">
+                                  <span>Próxima Publicação &amp; Release</span>
+                                  {showActiveCountdown && (
+                                    <span className="flex h-2.5 w-2.5 relative">
+                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                                    </span>
+                                  )}
+                                </h4>
+                                <p className="text-xs text-purple-200/80 font-medium">
+                                  {hasConfiguredDate ? (
+                                    isReleased ? (
+                                      <>
+                                        Data prevista agendada: <strong className="text-white font-semibold">{formattedTargetDate}</strong>
+                                      </>
+                                    ) : (
+                                      "Data em homologação interna pela desenvolvedora (aguardando liberação formal)."
+                                    )
+                                  ) : (
+                                    "Aguardando agendamento da próxima entrega pela desenvolvedora no painel."
+                                  )}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Status Pill */}
+                            <div className="shrink-0 self-start sm:self-auto">
+                              {!hasConfiguredDate ? (
+                                <span className="px-3.5 py-1.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-semibold flex items-center gap-1.5">
+                                  <Calendar size={13} className="text-purple-400" />
+                                  <span>Aguardando Agendamento</span>
+                                </span>
+                              ) : isPast ? (
+                                <span className="px-3.5 py-1.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-extrabold flex items-center gap-1.5 shadow-md">
+                                  <Sparkles size={13} className="text-emerald-400" />
+                                  <span>Data Atingida / Homologação</span>
+                                </span>
+                              ) : isReleased ? (
+                                <span className="px-3.5 py-1.5 rounded-xl bg-purple-500/25 border border-purple-400/40 text-purple-100 text-xs font-extrabold flex items-center gap-1.5 shadow-md shadow-purple-950/40">
+                                  <Rocket size={13} className="text-pink-400 animate-bounce" />
+                                  <span>Contagem Regressiva Ativa</span>
+                                </span>
+                              ) : (
+                                <span className="px-3.5 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-semibold flex items-center gap-1.5 shadow-md">
+                                  <AlertCircle size={13} className="text-amber-400" />
+                                  <span>Cronograma em Validação</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Digital Countdown Timer Modules (Always visible with 4 digital slots) */}
+                          <div className="grid grid-cols-4 gap-2 sm:gap-4 relative z-10 pt-1">
+                            {[
+                              { val: showActiveCountdown ? days : 0, label: "Dias", sub: "d" },
+                              { val: showActiveCountdown ? hours : 0, label: "Horas", sub: "h" },
+                              { val: showActiveCountdown ? minutes : 0, label: "Minutos", sub: "m" },
+                              { val: showActiveCountdown ? seconds : 0, label: "Segundos", sub: "s" },
+                            ].map((slot, idx) => (
+                              <div
+                                key={idx}
+                                className="p-3 sm:p-4 rounded-2xl bg-black/70 border border-purple-500/30 flex flex-col items-center justify-center text-center shadow-inner relative group hover:border-purple-400/60 transition-all hover:scale-[1.02]"
+                              >
+                                <span className="text-2xl sm:text-4xl md:text-5xl font-black font-mono tracking-tight text-transparent bg-clip-text bg-gradient-to-b from-white via-purple-100 to-purple-300 drop-shadow-sm">
+                                  {showActiveCountdown ? String(slot.val).padStart(2, "0") : (hasConfiguredDate && isPast ? "00" : "--")}
+                                </span>
+                                <span className="text-[9px] sm:text-[11px] font-black uppercase tracking-wider text-purple-300/90 mt-1 sm:mt-1.5">
+                                  {slot.label}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Bottom metadata note */}
+                          <div className="flex items-center justify-between gap-2 pt-1 text-[11px] text-gray-400 border-t border-white/5 relative z-10">
+                            <span className="flex items-center gap-1.5 truncate">
+                              <span className={`w-1.5 h-1.5 rounded-full ${showActiveCountdown ? "bg-emerald-400 animate-pulse" : "bg-indigo-400"}`} />
+                              <span>Sincronizado em tempo real com o painel administrativo</span>
+                            </span>
+                            <span className="font-mono text-purple-300/80 text-[10px] shrink-0">
+                              {showActiveCountdown ? "● Ao Vivo" : (hasConfiguredDate ? (isPast ? "Finalizado" : "Pendente Liberação") : "Aguardando Agendamento")}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Macro Phase Stepper: Régua de Ciclo de Vida */}
+                    {(() => {
+                      let currentStep = 3;
+                      if (selectedProject.status === "planejamento") currentStep = 1;
+                      else if (selectedProject.status === "design") currentStep = 2;
+                      else if (selectedProject.status === "desenvolvimento") currentStep = 3;
+                      else if (selectedProject.status === "testes") currentStep = 4;
+                      else if (selectedProject.status === "concluido" || selectedProject.progress === 100) currentStep = 5;
+
+                      const STEPS = [
+                        { num: 1, name: "Requisitos", icon: FileCode },
+                        { num: 2, name: "UI/UX & Design", icon: Palette },
+                        { num: 3, name: "Desenvolvimento", icon: Code2 },
+                        { num: 4, name: "Homologação", icon: ShieldCheck },
+                        { num: 5, name: "Lançamento", icon: Rocket },
+                      ];
+
+                      return (
+                        <div className="p-3 sm:p-4 rounded-2xl bg-black/40 border border-white/10 backdrop-blur-md relative z-10">
+                          <div className="flex items-center justify-between gap-2 mb-3">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+                              <Layers size={13} className="text-indigo-400" />
+                              <span>Ciclo de Vida do Projeto</span>
+                            </span>
+                            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-ping" />
+                              <span>Fase {currentStep} de 5: {STEPS[currentStep - 1].name}</span>
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
+                            {STEPS.map((st) => {
+                              const isDone = st.num < currentStep;
+                              const isCurrent = st.num === currentStep;
+                              const StepIcon = st.icon;
+
+                              return (
+                                <div
+                                  key={st.num}
+                                  className={`flex flex-col items-center text-center p-2 rounded-xl border transition-all ${
+                                    isCurrent
+                                      ? "bg-gradient-to-b from-indigo-950/90 to-purple-950/80 border-indigo-500/60 shadow-lg shadow-indigo-950/60 ring-1 ring-indigo-500/30"
+                                      : isDone
+                                      ? "bg-emerald-950/20 border-emerald-500/30"
+                                      : "bg-white/[0.02] border-white/5 opacity-50"
+                                  }`}
+                                >
+                                  <div
+                                    className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center mb-1 text-[10px] font-bold transition-all ${
+                                      isCurrent
+                                        ? "bg-indigo-500 text-white shadow-md shadow-indigo-500/50 ring-2 ring-indigo-400/40 animate-pulse"
+                                        : isDone
+                                        ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
+                                        : "bg-white/10 text-gray-400"
+                                    }`}
+                                  >
+                                    {isDone ? <Check size={12} /> : <StepIcon size={12} />}
+                                  </div>
+                                  <span
+                                    className={`text-[9px] sm:text-xs font-bold leading-tight truncate w-full ${
+                                      isCurrent
+                                        ? "text-indigo-200"
+                                        : isDone
+                                        ? "text-emerald-300"
+                                        : "text-gray-400"
+                                    }`}
+                                  >
+                                    {st.name}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     {/* Dual Progress Bars: 1. Progresso Geral (Cronograma/Meses) + 2. Progresso da Sprint Mensal (Checks) */}
                     {(() => {
                       const timelineProg = calculateTimelineProgress(selectedProject.start_date, selectedProject.deadline);
@@ -2033,19 +2643,19 @@ function ClientPortalContent() {
                       return (
                         <div className="space-y-3.5 relative z-10 my-1">
                           {/* 1. Progresso Geral do Cronograma */}
-                          <div className="p-4 rounded-2xl bg-indigo-950/30 border border-indigo-500/25 space-y-2.5 backdrop-blur-md">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div>
-                                <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                                  <Calendar size={14} className="text-indigo-400" />
+                          <div className="p-3.5 sm:p-4 rounded-2xl bg-indigo-950/30 border border-indigo-500/25 space-y-2.5 backdrop-blur-md">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-2">
+                              <div className="min-w-0">
+                                <span className="text-xs sm:text-sm font-bold text-white flex items-center gap-1.5 flex-wrap">
+                                  <Calendar size={14} className="text-indigo-400 shrink-0" />
                                   <span>1. Progresso Geral do Cronograma</span>
                                 </span>
-                                <span className="text-[11px] text-gray-400 block mt-0.5">
+                                <span className="text-[11px] text-gray-400 block mt-0.5 break-words">
                                   {timelineProg.detail}
                                 </span>
                               </div>
 
-                              <div className="flex items-baseline gap-1">
+                              <div className="flex items-baseline gap-1 shrink-0 self-start sm:self-auto">
                                 <span className="text-xl sm:text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-300 to-cyan-400 font-mono">
                                   {timelineProg.percent}%
                                 </span>
@@ -2054,7 +2664,7 @@ function ClientPortalContent() {
                             </div>
 
                             {/* Progress Bar 1 */}
-                            <div className="w-full h-3 bg-black/60 rounded-full overflow-hidden p-0.5 border border-white/10 shadow-inner">
+                            <div className="w-full h-2.5 sm:h-3 bg-black/60 rounded-full overflow-hidden p-0.5 border border-white/10 shadow-inner">
                               <motion.div
                                 initial={{ width: 0 }}
                                 animate={{ width: `${timelineProg.percent}%` }}
@@ -2067,19 +2677,19 @@ function ClientPortalContent() {
                           </div>
 
                           {/* 2. Progresso da Sprint Mensal (Checks & Entregas) */}
-                          <div className="p-4 rounded-2xl bg-purple-950/30 border border-purple-500/25 space-y-2.5 backdrop-blur-md">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div>
-                                <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                                  <CheckSquare size={14} className="text-purple-400" />
+                          <div className="p-3.5 sm:p-4 rounded-2xl bg-purple-950/30 border border-purple-500/25 space-y-2.5 backdrop-blur-md">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-2">
+                              <div className="min-w-0">
+                                <span className="text-xs sm:text-sm font-bold text-white flex items-center gap-1.5 flex-wrap">
+                                  <CheckSquare size={14} className="text-purple-400 shrink-0" />
                                   <span>2. Progresso da Sprint Mensal (Checks & Entregas)</span>
                                 </span>
-                                <span className="text-[11px] text-gray-400 block mt-0.5">
+                                <span className="text-[11px] text-gray-400 block mt-0.5 break-words">
                                   {sprintProg.detail}
                                 </span>
                               </div>
 
-                              <div className="flex items-baseline gap-1">
+                              <div className="flex items-baseline gap-1 shrink-0 self-start sm:self-auto">
                                 <span className="text-xl sm:text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-emerald-400 font-mono">
                                   {sprintProg.percent}%
                                 </span>
@@ -2088,7 +2698,7 @@ function ClientPortalContent() {
                             </div>
 
                             {/* Progress Bar 2 */}
-                            <div className="w-full h-3 bg-black/60 rounded-full overflow-hidden p-0.5 border border-white/10 shadow-inner">
+                            <div className="w-full h-2.5 sm:h-3 bg-black/60 rounded-full overflow-hidden p-0.5 border border-white/10 shadow-inner">
                               <motion.div
                                 initial={{ width: 0 }}
                                 animate={{ width: `${sprintProg.percent}%` }}
@@ -2104,43 +2714,43 @@ function ClientPortalContent() {
                     })()}
 
                     {/* Key Stats & Metadata Grid */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 border-t border-white/10 relative z-10">
-                      <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5">
-                        <span className="text-[10px] uppercase font-bold text-gray-400 flex items-center gap-1.5 mb-1">
-                          <Calendar size={12} className="text-indigo-400" /> Data de Início
+                    <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3.5 pt-4 border-t border-white/10 relative z-10">
+                      <div className="p-3 sm:p-3.5 rounded-2xl bg-white/[0.03] border border-white/5 flex flex-col justify-between min-w-0">
+                        <span className="text-[10px] sm:text-[11px] uppercase font-bold text-gray-400 flex items-center gap-1.5 mb-1 truncate">
+                          <Calendar size={12} className="text-indigo-400 shrink-0" /> Data de Início
                         </span>
-                        <p className="text-xs sm:text-sm font-bold text-white">
+                        <p className="text-xs sm:text-sm font-bold text-white truncate" title={selectedProject.start_date ? new Date(selectedProject.start_date).toLocaleDateString("pt-BR") : "A definir"}>
                           {selectedProject.start_date
                             ? new Date(selectedProject.start_date).toLocaleDateString("pt-BR")
                             : "A definir"}
                         </p>
                       </div>
 
-                      <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5">
-                        <span className="text-[10px] uppercase font-bold text-gray-400 flex items-center gap-1.5 mb-1">
-                          <Clock size={12} className="text-pink-400" /> Previsão de Entrega
+                      <div className="p-3 sm:p-3.5 rounded-2xl bg-white/[0.03] border border-white/5 flex flex-col justify-between min-w-0">
+                        <span className="text-[10px] sm:text-[11px] uppercase font-bold text-gray-400 flex items-center gap-1.5 mb-1 truncate">
+                          <Clock size={12} className="text-pink-400 shrink-0" /> Previsão de Entrega
                         </span>
-                        <p className="text-xs sm:text-sm font-bold text-white">
+                        <p className="text-xs sm:text-sm font-bold text-white truncate" title={selectedProject.deadline ? new Date(selectedProject.deadline).toLocaleDateString("pt-BR") : "Cronograma ativo"}>
                           {selectedProject.deadline
                             ? new Date(selectedProject.deadline).toLocaleDateString("pt-BR")
                             : "Cronograma ativo"}
                         </p>
                       </div>
 
-                      <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5">
-                        <span className="text-[10px] uppercase font-bold text-gray-400 flex items-center gap-1.5 mb-1">
-                          <ShieldCheck size={12} className="text-emerald-400" /> Garantia & Suporte
+                      <div className="p-3 sm:p-3.5 rounded-2xl bg-white/[0.03] border border-white/5 flex flex-col justify-between min-w-0">
+                        <span className="text-[10px] sm:text-[11px] uppercase font-bold text-gray-400 flex items-center gap-1.5 mb-1 truncate">
+                          <ShieldCheck size={12} className="text-emerald-400 shrink-0" /> Garantia & Suporte
                         </span>
-                        <p className="text-xs sm:text-sm font-bold text-emerald-300">
+                        <p className="text-xs sm:text-sm font-bold text-emerald-300 truncate" title="Inclusa (30 dias)">
                           Inclusa (30 dias)
                         </p>
                       </div>
 
-                      <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5">
-                        <span className="text-[10px] uppercase font-bold text-gray-400 flex items-center gap-1.5 mb-1">
-                          <Sparkles size={12} className="text-purple-400" /> Próxima Entrega
+                      <div className="p-3 sm:p-3.5 rounded-2xl bg-white/[0.03] border border-white/5 flex flex-col justify-between min-w-0">
+                        <span className="text-[10px] sm:text-[11px] uppercase font-bold text-gray-400 flex items-center gap-1.5 mb-1 truncate">
+                          <Sparkles size={12} className="text-purple-400 shrink-0" /> Próxima Entrega
                         </span>
-                        <p className="text-xs sm:text-sm font-bold text-purple-200 truncate" title={nextPendingMilestone?.title || "Fase Final"}>
+                        <p className="text-xs sm:text-sm font-bold text-purple-200 truncate" title={nextPendingMilestone?.title || (selectedProject.progress === 100 ? "Projeto Concluído" : "Homologação")}>
                           {nextPendingMilestone?.title || (selectedProject.progress === 100 ? "Projeto Concluído" : "Homologação")}
                         </p>
                       </div>
@@ -2149,18 +2759,95 @@ function ClientPortalContent() {
                 );
               })()}
 
+                  {/* Destaque: Foco Atual da Sprint & Status Operacional */}
+                  {(() => {
+                    const nextMilestone = milestones.find((m) => !m.completed) || milestones[0];
+                    const stagingLink = quickLinks.find((l) => l.category === "staging" || l.category === "production");
+
+                    if (!nextMilestone) return null;
+
+                    return (
+                      <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-indigo-950/40 via-purple-950/30 to-slate-900 border border-indigo-500/30 backdrop-blur-xl shadow-xl space-y-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 text-indigo-300 border border-indigo-500/30 flex items-center justify-center shrink-0 shadow-md">
+                              <Target size={18} />
+                            </div>
+                            <div>
+                              <span className="text-[10px] uppercase font-bold text-indigo-400 tracking-wider flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
+                                <span>Foco Ativo de Desenvolvimento</span>
+                              </span>
+                              <h4 className="text-sm sm:text-base font-bold text-white">
+                                {nextMilestone.title}
+                              </h4>
+                            </div>
+                          </div>
+
+                          {nextMilestone.due_date && (
+                            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-pink-500/10 text-pink-300 border border-pink-500/20 text-xs font-semibold self-start sm:self-auto">
+                              <Clock size={13} />
+                              <span>Previsão: {new Date(nextMilestone.due_date).toLocaleDateString("pt-BR")}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-center">
+                          <div className="sm:col-span-8 text-xs text-gray-300 space-y-1.5">
+                            <p className="leading-relaxed">
+                              {getMilestoneCleanDescription(nextMilestone) ||
+                                "Implementação de módulos sob medida, validação de regras de negócio e boas práticas de UI/UX."}
+                            </p>
+                            <div className="flex items-center gap-2 pt-1 text-[11px] text-emerald-300 font-medium">
+                              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                              <span>Ambiente em evolução constante sob supervisão da desenvolvedora.</span>
+                            </div>
+                          </div>
+
+                          <div className="sm:col-span-4 flex flex-col sm:flex-row sm:justify-end gap-2">
+                            {stagingLink ? (
+                              <a
+                                href={stagingLink.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-950/50 flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                              >
+                                <span>Testar em Staging</span>
+                                <ExternalLink size={13} />
+                              </a>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setActiveTab("milestones")}
+                                className="px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/15 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                              >
+                                <span>Ver Checklist Completo</span>
+                                <ArrowRight size={13} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {/* Hub de Acesso Rápido às Seções */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {/* Card Atalho: Etapas */}
-                    <div className="p-5 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl hover:border-indigo-500/30 transition-all flex flex-col justify-between gap-4">
+                    <div className="p-5 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl hover:border-indigo-500/30 transition-all flex flex-col justify-between gap-4 group">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center justify-center shrink-0">
+                        <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                           <ListTodo size={20} />
                         </div>
                         <div>
-                          <h4 className="text-sm font-bold text-white">Etapas & Entregas</h4>
+                          <div className="flex items-center gap-1.5">
+                            <h4 className="text-sm font-bold text-white">Etapas & Entregas</h4>
+                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300">
+                              {calculateSprintProgress(milestones).percent}%
+                            </span>
+                          </div>
                           <p className="text-xs text-gray-400">
-                            {milestones.filter((m) => m.completed).length} de {milestones.length} concluídas
+                            {milestones.filter((m) => m.completed).length} de {milestones.length} entregas concluídas
                           </p>
                         </div>
                       </div>
@@ -2175,32 +2862,46 @@ function ClientPortalContent() {
                     </div>
 
                     {/* Card Atalho: Financeiro */}
-                    <div className="p-5 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl hover:border-emerald-500/30 transition-all flex flex-col justify-between gap-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center shrink-0">
-                          <Receipt size={20} />
+                    {(() => {
+                      const finSummary = calculateFinancialSummary(financialData);
+                      const nextUnpaidInst = financialData?.installments?.find((i) => !i.paid_at);
+
+                      return (
+                        <div className="p-5 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl hover:border-emerald-500/30 transition-all flex flex-col justify-between gap-4 group">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                              <Receipt size={20} />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <h4 className="text-sm font-bold text-white">Financeiro & Recibos</h4>
+                                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300">
+                                  {finSummary.percentPaid}% pago
+                                </span>
+                              </div>
+                              <p className="text-xs text-gray-400 truncate">
+                                {nextUnpaidInst
+                                  ? `Próxima: ${formatBRL(nextUnpaidInst.amount)} (${nextUnpaidInst.due_date ? new Date(nextUnpaidInst.due_date).toLocaleDateString("pt-BR") : "A vencer"})`
+                                  : `${formatBRL(finSummary.totalPaid)} de ${formatBRL(finSummary.contractValue)}`}
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab("financial")}
+                            className="w-full py-2.5 px-3 rounded-xl bg-white/5 hover:bg-emerald-600/20 text-emerald-300 hover:text-white border border-emerald-500/20 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                          >
+                            <span>Ver Extrato & Quitação</span>
+                            <ArrowRight size={13} />
+                          </button>
                         </div>
-                        <div>
-                          <h4 className="text-sm font-bold text-white">Financeiro & Recibos</h4>
-                          <p className="text-xs text-gray-400">
-                            {formatBRL(calculateFinancialSummary(financialData).totalPaid)} de {formatBRL(calculateFinancialSummary(financialData).contractValue)}
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab("financial")}
-                        className="w-full py-2.5 px-3 rounded-xl bg-white/5 hover:bg-emerald-600/20 text-emerald-300 hover:text-white border border-emerald-500/20 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-                      >
-                        <span>Ver Extrato & Quitação</span>
-                        <ArrowRight size={13} />
-                      </button>
-                    </div>
+                      );
+                    })()}
 
                     {/* Card Atalho: Atualizações */}
-                    <div className="p-5 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl hover:border-purple-500/30 transition-all flex flex-col justify-between gap-4">
+                    <div className="p-5 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl hover:border-purple-500/30 transition-all flex flex-col justify-between gap-4 group">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-2xl bg-purple-500/10 text-purple-400 border border-purple-500/20 flex items-center justify-center shrink-0">
+                        <div className="w-10 h-10 rounded-2xl bg-purple-500/10 text-purple-400 border border-purple-500/20 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                           <Sparkles size={20} />
                         </div>
                         <div>
@@ -2221,9 +2922,9 @@ function ClientPortalContent() {
                     </div>
 
                     {/* Card Atalho: Documentos */}
-                    <div className="p-5 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl hover:border-pink-500/30 transition-all flex flex-col justify-between gap-4">
+                    <div className="p-5 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl hover:border-pink-500/30 transition-all flex flex-col justify-between gap-4 group">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-2xl bg-pink-500/10 text-pink-400 border border-pink-500/20 flex items-center justify-center shrink-0">
+                        <div className="w-10 h-10 rounded-2xl bg-pink-500/10 text-pink-400 border border-pink-500/20 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                           <FileText size={20} />
                         </div>
                         <div>
@@ -2245,7 +2946,7 @@ function ClientPortalContent() {
                   </div>
                 </div>
 
-                {/* Right Column (4 cols): Quick Links & Direct Support */}
+                {/* Right Column (4 cols): Quick Links, Recent Updates & Direct Support */}
                 <div className="lg:col-span-4 flex flex-col gap-6">
                   {/* Painel de Links Rápidos & Ambientes */}
               <div className="p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-4">
@@ -2348,6 +3049,60 @@ function ClientPortalContent() {
                 </div>
               </div>
 
+              {/* Feed: Últimas Atualizações do Projeto */}
+              {updates.length > 0 && (
+                <div className="p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                    <h3 className="text-sm font-bold uppercase tracking-wider text-white flex items-center gap-2">
+                      <Sparkles size={16} className="text-purple-400" />
+                      <span>Atualizações Recentes</span>
+                    </h3>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20">
+                      {updates.length} {updates.length === 1 ? "registro" : "registros"}
+                    </span>
+                  </div>
+
+                  <div className="space-y-3">
+                    {updates.slice(0, 2).map((up) => {
+                      const typeInfo = getUpdateTypeInfo(up.category);
+                      const IconComp = typeInfo.icon;
+
+                      return (
+                        <div
+                          key={up.id}
+                          className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5 hover:border-white/10 transition-colors space-y-2"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 ${typeInfo.badgeClass}`}>
+                              <IconComp size={10} />
+                              <span>{typeInfo.label}</span>
+                            </span>
+                            <span className="text-[10px] text-gray-500">
+                              {up.created_at ? new Date(up.created_at).toLocaleDateString("pt-BR") : ""}
+                            </span>
+                          </div>
+                          <h5 className="text-xs font-bold text-white truncate">
+                            {up.title}
+                          </h5>
+                          <p className="text-[11px] text-gray-400 line-clamp-2 leading-relaxed">
+                            {up.content}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("updates")}
+                    className="w-full py-2 px-3 rounded-xl bg-white/5 hover:bg-purple-600/20 text-purple-300 hover:text-white border border-purple-500/20 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <span>Ver Timeline Completa</span>
+                    <ArrowRight size={13} />
+                  </button>
+                </div>
+              )}
+
               {/* Quick Documents Card */}
               {documents.length > 0 && (
                 <div className="p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl">
@@ -2434,678 +3189,713 @@ function ClientPortalContent() {
             {/* 2. ABA: ETAPAS & ENTREGAS */}
             {activeTab === "milestones" && (
               <div className="w-full space-y-6">
-                {/* Card 4: Linha do Tempo e Acompanhamento de Entregas */}
               {(() => {
-                const completedMilestones = [...milestones].filter((m) => m.completed).reverse();
-                const upcomingMilestones = [...milestones].filter((m) => !m.completed);
-                const activeMilestones = [...milestones].filter((m) => !m.completed);
+                const completedMilestones = [...milestones].filter((m) => m.completed || getMilestoneStatus(m) === "concluido").reverse();
+                const upcomingMilestones = [...milestones].filter((m) => !m.completed && getMilestoneStatus(m) !== "concluido");
+                const currentActiveMilestone = milestones.find((m) => getMilestoneStatus(m) === "em_andamento") || upcomingMilestones[0];
+                const sprintProg = calculateSprintProgress(milestones);
+                const overallPercent = milestones.length > 0 ? Math.round((completedMilestones.length / milestones.length) * 100) : 0;
+                const stagingLink = quickLinks.find((l) => l.category === "staging" || l.category === "production");
+
+                const getScopeBadges = (title: string, stage?: string | null) => {
+                  const lower = `${title} ${stage || ""}`.toLowerCase();
+                  const badges: { label: string; icon: string }[] = [];
+                  if (lower.includes("aluno") || lower.includes("crm") || lower.includes("gestão") || lower.includes("usuario") || lower.includes("perfil")) {
+                    badges.push({ label: "Gestão & CRM", icon: "👥" });
+                  }
+                  if (lower.includes("plano") || lower.includes("pagamento") || lower.includes("financeiro") || lower.includes("checkout") || lower.includes("pix")) {
+                    badges.push({ label: "Financeiro & Pix", icon: "💳" });
+                  }
+                  if (lower.includes("treino") || lower.includes("frequência") || lower.includes("agenda") || lower.includes("turma")) {
+                    badges.push({ label: "Agenda & Treinos", icon: "📅" });
+                  }
+                  if (lower.includes("auth") || lower.includes("login") || lower.includes("segurança")) {
+                    badges.push({ label: "Autenticação", icon: "🔐" });
+                  }
+                  if (lower.includes("api") || lower.includes("backend") || lower.includes("banco") || lower.includes("supabase")) {
+                    badges.push({ label: "Backend & DB", icon: "⚡" });
+                  }
+                  if (lower.includes("ui") || lower.includes("ux") || lower.includes("design") || lower.includes("mobile") || lower.includes("app")) {
+                    badges.push({ label: "UI/UX & Mobile", icon: "📱" });
+                  }
+                  if (badges.length === 0) {
+                    badges.push({ label: stage || "Módulo Core", icon: "📦" });
+                  }
+                  return badges;
+                };
 
                 return (
-                  <div className="p-6 sm:p-8 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-2xl space-y-6 relative overflow-hidden">
-                    {/* Background glow */}
-                    <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-
-                    {/* Section Header */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-white/10 relative z-10">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 flex items-center gap-1.5">
-                            <Target size={12} className="text-indigo-400" />
-                            <span>Linha do Tempo & Entregas</span>
-                          </span>
-                          <span className="text-[10px] text-gray-400 bg-white/5 px-2 py-0.5 rounded-full border border-white/10">
-                            Passado • Presente • Futuro
-                          </span>
-                        </div>
-                        <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
-                          <ListTodo size={22} className="text-indigo-400" />
-                          <span>Acompanhamento de Entregas & Cronograma</span>
-                        </h3>
-                        <p className="text-xs sm:text-sm text-gray-300 mt-1">
-                          Acompanhe os prazos iminentes, as tarefas ativas na sprint e o histórico de entregas já homologadas.
-                        </p>
-                      </div>
-
-                      <div className="shrink-0 flex items-center gap-2">
-                        <span className="text-xs font-bold px-3 py-1.5 rounded-xl bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
-                          {completedMilestones.length} de {milestones.length || 0} marcos concluídos
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Review Feedback Banner Notification */}
-                    <AnimatePresence>
-                      {reviewFeedbackBanner && (
-                        <motion.div
-                          initial={{ opacity: 0, y: -10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -10 }}
-                          className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/80 to-indigo-950/80 border border-emerald-500/40 text-emerald-200 text-xs sm:text-sm font-semibold flex items-center gap-3 shadow-lg relative z-20"
-                        >
-                          <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
-                          <span>{reviewFeedbackBanner}</span>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-
-                    {/* Temporal Tab Switcher */}
-                    <div className="flex flex-wrap items-center gap-2 pb-2 relative z-10 border-b border-white/5">
-                      {[
-                        { key: "all", label: "🌟 Visão Completa", count: milestones.length },
-                        { key: "upcoming", label: "🚀 Próximas Entregas (Futuro)", count: upcomingMilestones.length },
-                        { key: "current", label: "⚡ Etapa Atual (Presente)", count: activeMilestones.length },
-                        { key: "history", label: "✅ Histórico de Entregas (Passado)", count: completedMilestones.length },
-                      ].map((tab) => (
-                        <button
-                          key={tab.key}
-                          onClick={() => setDeliverableTab(tab.key as any)}
-                          className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-2 ${
-                            deliverableTab === tab.key
-                              ? "bg-indigo-600 text-white border-indigo-500 shadow-md shadow-indigo-600/30"
-                              : "bg-white/5 text-gray-300 border-white/10 hover:border-white/20 hover:text-white"
-                          }`}
-                        >
-                          <span>{tab.label}</span>
-                          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/15">
-                            {tab.count}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* CONTENT SECTION 1: Próximas Entregas (Futuro) */}
-                    {(deliverableTab === "all" || deliverableTab === "upcoming") && (
-                      <div className="space-y-4 relative z-10">
+                  <div className="space-y-6">
+                    {/* Top Executive Mini-Dashboard (3 Stats Cards) */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {/* Card 1: Taxa de Conclusão Global */}
+                      <div className="p-5 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl flex flex-col justify-between gap-3 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
                         <div className="flex items-center justify-between">
-                          <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                            <Rocket size={16} className="text-pink-400" />
-                            <span>Próximas Entregas & Prazos Iminentes (Futuro)</span>
-                          </h4>
-                          <span className="text-[11px] text-pink-300 font-semibold">
-                            {upcomingMilestones.length} {upcomingMilestones.length === 1 ? "marco previsto" : "marcos previstos"}
+                          <span className="text-xs font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+                            <Target size={14} className="text-indigo-400" />
+                            <span>Conclusão Global</span>
+                          </span>
+                          <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+                            {overallPercent}%
                           </span>
                         </div>
-
-                        {upcomingMilestones.length === 0 ? (
-                          <div className="p-6 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 text-center text-xs text-emerald-300">
-                            🎉 Todas as entregas previstas do projeto foram finalizadas e homologadas!
+                        <div>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-2xl font-black text-white font-mono">
+                              {completedMilestones.length}
+                            </span>
+                            <span className="text-xs text-gray-400">de {milestones.length} marcos entregues</span>
                           </div>
-                        ) : (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {upcomingMilestones.map((m, idx) => {
-                              const dueDateObj = m.due_date ? new Date(m.due_date) : null;
-                              const isImminent = idx === 0;
-                              const fb = deliveryFeedbacks.find((item) => item.milestone_id === m.id);
-                              const cleanDesc = getMilestoneCleanDescription(m);
-                              const tasks = parseMilestoneTasks(m);
-                              const prog = getMilestoneProgress(m);
-
-                              return (
-                                <div
-                                  key={m.id}
-                                  className={`p-5 rounded-2xl border transition-all flex flex-col justify-between gap-3 relative overflow-hidden group ${
-                                    isImminent
-                                      ? "bg-gradient-to-br from-purple-950/30 via-slate-900 to-indigo-950/30 border-purple-500/40 shadow-xl"
-                                      : "bg-white/[0.02] border-white/10 hover:border-white/20"
-                                  }`}
-                                >
-                                  {isImminent && (
-                                    <div className="absolute top-0 right-0 px-3 py-1 bg-gradient-to-l from-purple-600 to-indigo-600 text-white font-bold text-[9px] uppercase tracking-wider rounded-bl-xl shadow-md flex items-center gap-1">
-                                      <Zap size={10} className="animate-pulse" />
-                                      <span>Próximo Marco Iminente</span>
-                                    </div>
-                                  )}
-
-                                  <div>
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <span className="text-[10px] uppercase font-mono font-bold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                                        Marco #{m.order_index}
-                                      </span>
-                                      {m.stage && (
-                                        <span className="text-[10px] font-semibold text-gray-400">
-                                          • {m.stage}
-                                        </span>
-                                      )}
-                                    </div>
-
-                                    <h5 className="text-sm sm:text-base font-bold text-white group-hover:text-indigo-300 transition-colors">
-                                      {m.title}
-                                    </h5>
-
-                                    {cleanDesc && (
-                                      <p className="text-xs text-gray-300 mt-1.5 leading-relaxed">
-                                        {cleanDesc}
-                                      </p>
-                                    )}
-
-                                    {/* Progress Bar in Deliverable Card */}
-                                    <div className="mt-3 p-2.5 rounded-xl bg-black/40 border border-white/5 space-y-1">
-                                      <div className="flex items-center justify-between text-[10px]">
-                                        <span className="text-gray-400">Conclusão do Marco</span>
-                                        <span className="text-emerald-400 font-mono font-bold">{prog}% Concluído</span>
-                                      </div>
-                                      <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-                                        <div
-                                          className="h-full bg-gradient-to-r from-teal-400 to-emerald-400 rounded-full transition-all duration-500"
-                                          style={{ width: `${prog}%` }}
-                                        />
-                                      </div>
-                                    </div>
-
-                                    {/* Tasks Checklist */}
-                                    {tasks.length > 0 && (
-                                      <div className="mt-3 pt-2.5 border-t border-white/5 space-y-1">
-                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
-                                          Itens inclusos:
-                                        </span>
-                                        <div className="flex flex-wrap gap-1.5">
-                                          {tasks.map((task) => (
-                                            <span
-                                              key={task.id}
-                                              className={`text-[10px] px-2 py-0.5 rounded-lg border flex items-center gap-1 ${
-                                                task.completed
-                                                  ? "bg-emerald-950/20 border-emerald-500/30 text-emerald-300"
-                                                  : "bg-black/40 border-white/10 text-gray-400"
-                                              }`}
-                                            >
-                                              {task.completed ? <Check size={10} className="text-emerald-400" /> : <Clock size={9} />}
-                                              <span>{task.text}</span>
-                                            </span>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  {/* Formal Validation & Feedback Buttons */}
-                                  {(() => {
-                                    if (fb) {
-                                      return (
-                                        <div className="pt-3 border-t border-white/10 flex flex-col gap-1.5">
-                                          <div className="flex items-center justify-between gap-2">
-                                            {fb.type === "approval" ? (
-                                              <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold flex items-center gap-1.5 shadow-sm">
-                                                <CheckCheck size={13} className="text-emerald-400" />
-                                                <span>Entrega Aprovada pelo Cliente</span>
-                                              </span>
-                                            ) : (
-                                              <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[11px] font-bold flex items-center gap-1.5 shadow-sm">
-                                                <AlertCircle size={13} className="text-amber-400" />
-                                                <span>Ajuste Solicitado</span>
-                                              </span>
-                                            )}
-                                            <button
-                                              type="button"
-                                              onClick={() => handleOpenReviewModal(m, fb.type)}
-                                              className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer underline"
-                                            >
-                                              Alterar Parecer
-                                            </button>
-                                          </div>
-                                          {fb.notes && (
-                                            <p className="text-[11px] text-gray-400 italic bg-black/30 px-2.5 py-1.5 rounded-lg border border-white/5 line-clamp-2">
-                                              "{fb.notes}"
-                                            </p>
-                                          )}
-                                        </div>
-                                      );
-                                    }
-                                    return (
-                                      <div className="pt-3 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                                        <span className="text-[11px] text-gray-400 font-semibold flex items-center gap-1">
-                                          <HelpCircle size={12} className="text-indigo-400" />
-                                          <span>Validação Formal:</span>
-                                        </span>
-                                        <div className="flex items-center gap-1.5">
-                                          <button
-                                            type="button"
-                                            onClick={() => handleOpenReviewModal(m, "approval")}
-                                            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-[11px] font-bold shadow-md shadow-emerald-900/30 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
-                                            title="Aprovar entrega desta etapa formalmente"
-                                          >
-                                            <CheckCheck size={13} />
-                                            <span>Aprovar Entrega</span>
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => handleOpenReviewModal(m, "change_request")}
-                                            className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
-                                            title="Solicitar correções ou ajustes pontuais"
-                                          >
-                                            <MessageSquare size={13} />
-                                            <span>Solicitar Ajuste</span>
-                                          </button>
-                                        </div>
-                                      </div>
-                                    );
-                                  })()}
-
-                                  <div className="pt-2 border-t border-white/5 flex items-center justify-between text-xs">
-                                    <div className="flex items-center gap-1.5 text-pink-300 font-semibold">
-                                      <Clock size={13} className="text-pink-400" />
-                                      <span>
-                                        {dueDateObj
-                                          ? `Previsão: ${dueDateObj.toLocaleDateString("pt-BR")}`
-                                          : "Cronograma ativo"}
-                                      </span>
-                                    </div>
-
-                                    <span className="text-[10px] text-gray-400 bg-white/5 px-2 py-0.5 rounded border border-white/10">
-                                      {isImminent ? "⚡ Em Desenvolvimento" : "🗓️ Agendado"}
-                                    </span>
-                                  </div>
-                                </div>
-                              );
-                            })}
+                          <div className="w-full h-2 bg-black/50 rounded-full overflow-hidden mt-2 border border-white/5">
+                            <div
+                              className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-400 rounded-full transition-all duration-700"
+                              style={{ width: `${overallPercent}%` }}
+                            />
                           </div>
-                        )}
+                        </div>
                       </div>
-                    )}
 
-                    {/* CONTENT SECTION 2: Etapa Atual (Presente) */}
-                    {(deliverableTab === "all" || deliverableTab === "current") && (
-                      <div className="p-5 sm:p-6 rounded-2xl bg-[#0e1224]/90 border border-indigo-500/30 space-y-5 relative z-10 shadow-lg">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
-                          <div>
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                              <span className="text-xs font-bold uppercase text-emerald-400 tracking-wider">
-                                Sprint Corrente & Etapas do Projeto
-                              </span>
-                            </div>
-                            <h4 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-                              <span>Fase {currentPhaseIndex} de 5:</span>
-                              <span className="text-indigo-300">
-                                {PHASES.find((p) => p.step === currentPhaseIndex)?.label || "Desenvolvimento Ativo"}
-                              </span>
-                            </h4>
+                      {/* Card 2: Checks & Sub-tarefas da Sprint */}
+                      <div className="p-5 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl flex flex-col justify-between gap-3 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-2xl pointer-events-none" />
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+                            <CheckSquare size={14} className="text-purple-400" />
+                            <span>Checks da Sprint</span>
+                          </span>
+                          <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                            {sprintProg.percent}%
+                          </span>
+                        </div>
+                        <div>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-2xl font-black text-white font-mono">
+                              {sprintProg.completedTasks}
+                            </span>
+                            <span className="text-xs text-gray-400">de {sprintProg.totalTasks} tarefas concluídas</span>
                           </div>
+                          <div className="w-full h-2 bg-black/50 rounded-full overflow-hidden mt-2 border border-white/5">
+                            <div
+                              className="h-full bg-gradient-to-r from-purple-500 via-pink-500 to-emerald-400 rounded-full transition-all duration-700"
+                              style={{ width: `${sprintProg.percent}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
 
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-gray-400">Desenvolvedora:</span>
-                            <span className="text-xs font-bold text-white px-2.5 py-1 rounded-xl bg-white/10 border border-white/10 flex items-center gap-1.5">
-                              <User size={12} className="text-indigo-400" />
-                              <span>Maira Reis</span>
+                      {/* Card 3: Foco Ativo Corrente */}
+                      <div className="p-5 rounded-3xl bg-gradient-to-br from-indigo-950/40 via-purple-950/30 to-slate-900 border border-indigo-500/30 backdrop-blur-xl shadow-xl flex flex-col justify-between gap-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold uppercase tracking-wider text-indigo-300 flex items-center gap-1.5">
+                            <Zap size={14} className="text-indigo-400 animate-pulse" />
+                            <span>Foco Corrente</span>
+                          </span>
+                          {currentActiveMilestone?.due_date && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-pink-500/15 text-pink-300 border border-pink-500/30">
+                              {new Date(currentActiveMilestone.due_date).toLocaleDateString("pt-BR")}
+                            </span>
+                          )}
+                        </div>
+                        <div>
+                          <h5 className="text-sm font-bold text-white truncate" title={currentActiveMilestone?.title || "Módulo Homologado"}>
+                            {currentActiveMilestone?.title || "Todos os módulos entregues"}
+                          </h5>
+                          <p className="text-[11px] text-gray-300 mt-1 truncate">
+                            {currentActiveMilestone?.stage || "Desenvolvimento em andamento"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Main Container */}
+                    <div className="p-6 sm:p-8 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-2xl space-y-6 relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+
+                      {/* Section Header */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-white/10 relative z-10">
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 flex items-center gap-1.5">
+                              <Target size={12} className="text-indigo-400" />
+                              <span>Linha do Tempo & Entregas</span>
+                            </span>
+                            <span className="text-[10px] text-gray-400 bg-white/5 px-2 py-0.5 rounded-full border border-white/10">
+                              Roadmap de Software & Homologação
                             </span>
                           </div>
+                          <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
+                            <ListTodo size={22} className="text-indigo-400" />
+                            <span>Acompanhamento de Entregas & Cronograma</span>
+                          </h3>
+                          <p className="text-xs sm:text-sm text-gray-300 mt-1">
+                            Acompanhe os prazos iminentes, as tarefas ativas na sprint e o histórico de entregas já homologadas.
+                          </p>
                         </div>
 
-                        {/* Sprint Tasks Checklist with Month Filter */}
-                        <div className="space-y-3">
-                          {/* Month Filter Bar */}
-                          {milestones.length > 0 && (() => {
-                            const monthMap = new Map<string, { key: string; label: string; count: number; completed: number }>();
-                            milestones.forEach((m) => {
-                              const key = getMilestoneMonthKey(m.due_date);
-                              const label = formatMonthKeyLabel(key);
-                              const isDone = m.completed || getMilestoneStatus(m) === "concluido";
-                              if (!monthMap.has(key)) {
-                                monthMap.set(key, { key, label, count: 0, completed: 0 });
-                              }
-                              const curr = monthMap.get(key)!;
-                              curr.count += 1;
-                              if (isDone) curr.completed += 1;
-                            });
+                        {/* View Mode Switcher (Cards vs Timeline) */}
+                        <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-black/50 border border-white/10 shrink-0 self-start sm:self-auto">
+                          <button
+                            type="button"
+                            onClick={() => setMilestoneViewMode("grid")}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                              milestoneViewMode === "grid"
+                                ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/40"
+                                : "text-gray-400 hover:text-white"
+                            }`}
+                            title="Visualizar em Cards em Grade"
+                          >
+                            <LayoutDashboard size={13} />
+                            <span>Grade</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setMilestoneViewMode("timeline")}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                              milestoneViewMode === "timeline"
+                                ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/40"
+                                : "text-gray-400 hover:text-white"
+                            }`}
+                            title="Visualizar em Linha do Tempo Conectada"
+                          >
+                            <History size={13} />
+                            <span>Roadmap</span>
+                          </button>
+                        </div>
+                      </div>
 
-                            const monthList = Array.from(monthMap.values()).sort((a, b) => {
-                              if (a.key === "sem_data") return 1;
-                              if (b.key === "sem_data") return -1;
-                              return a.key.localeCompare(b.key);
-                            });
+                      {/* Review Feedback Banner Notification */}
+                      <AnimatePresence>
+                        {reviewFeedbackBanner && (
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/80 to-indigo-950/80 border border-emerald-500/40 text-emerald-200 text-xs sm:text-sm font-semibold flex items-center gap-3 shadow-lg relative z-20"
+                          >
+                            <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
+                            <span>{reviewFeedbackBanner}</span>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
 
-                            if (monthList.length <= 1 && monthList[0]?.key === "sem_data") return null;
+                      {/* Unified Modern Control Bar */}
+                      {(() => {
+                        const inProgressCount = milestones.filter((m) => !m.completed && getMilestoneStatus(m) === "em_andamento").length || (currentActiveMilestone ? 1 : 0);
+                        const totalCount = milestones.length;
+                        const upcomingCount = upcomingMilestones.length;
+                        const completedCount = completedMilestones.length;
 
-                            return (
-                              <div className="p-3 rounded-2xl bg-black/40 border border-white/10 space-y-2">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
-                                    <Calendar size={13} className="text-indigo-400" />
-                                    <span>Filtrar por Mês (Prazo):</span>
-                                  </span>
-                                  {portalMilestoneMonthFilter !== "all" && (
+                        const monthMap = new Map<string, { key: string; label: string; count: number; completed: number }>();
+                        milestones.forEach((m) => {
+                          const key = getMilestoneMonthKey(m.due_date);
+                          const label = formatMonthKeyLabel(key);
+                          const isDone = m.completed || getMilestoneStatus(m) === "concluido";
+                          if (!monthMap.has(key)) {
+                            monthMap.set(key, { key, label, count: 0, completed: 0 });
+                          }
+                          const curr = monthMap.get(key)!;
+                          curr.count += 1;
+                          if (isDone) curr.completed += 1;
+                        });
+
+                        const monthList = Array.from(monthMap.values()).sort((a, b) => {
+                          if (a.key === "sem_data") return 1;
+                          if (b.key === "sem_data") return -1;
+                          return a.key.localeCompare(b.key);
+                        });
+
+                        const isAnyFilterActive = deliverableTab !== "all" || portalMilestoneMonthFilter !== "all" || milestoneSearchQuery.trim() !== "";
+
+                        return (
+                          <div className="p-2 sm:p-2.5 rounded-2xl bg-slate-950/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-2 relative z-10">
+                            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-2.5">
+                              
+                              {/* 1. Sleek Segmented Status Tabs (Single Track) */}
+                              <div className="flex items-center gap-1 p-1 rounded-xl bg-black/50 border border-white/5 overflow-x-auto no-scrollbar shrink-0">
+                                {[
+                                  { key: "all", label: "Todas", count: totalCount },
+                                  { key: "current", label: "Em Andamento", count: inProgressCount },
+                                  { key: "upcoming", label: "Próximas", count: upcomingCount },
+                                  { key: "history", label: "Homologadas", count: completedCount },
+                                ].map((tab) => {
+                                  const isActive = deliverableTab === tab.key;
+                                  return (
+                                    <button
+                                      key={tab.key}
+                                      type="button"
+                                      onClick={() => setDeliverableTab(tab.key as any)}
+                                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 flex items-center gap-1.5 cursor-pointer select-none whitespace-nowrap ${
+                                        isActive
+                                          ? "bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-500 text-white shadow-md shadow-indigo-600/40 border border-indigo-400/40 scale-[1.01]"
+                                          : "text-gray-400 hover:text-white hover:bg-white/5 border border-transparent"
+                                      }`}
+                                    >
+                                      <span>{tab.label}</span>
+                                      <span
+                                        className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold ${
+                                          isActive
+                                            ? "bg-white/20 text-white"
+                                            : "bg-white/10 text-gray-400"
+                                        }`}
+                                      >
+                                        {tab.count}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+
+                              {/* 2. Unified Controls Toolbar (Search, Month, Staging) */}
+                              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap justify-between xl:justify-end">
+                                
+                                {/* Search Input */}
+                                <div className="relative flex-1 sm:flex-initial">
+                                  <Search size={13} className="text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                  <input
+                                    type="text"
+                                    value={milestoneSearchQuery}
+                                    onChange={(e) => setMilestoneSearchQuery(e.target.value)}
+                                    placeholder="Buscar entrega ou tarefa..."
+                                    className="w-full sm:w-44 h-8.5 pl-7.5 pr-7 rounded-xl bg-black/40 hover:bg-black/60 focus:bg-black/80 border border-white/10 focus:border-indigo-500 text-xs text-white placeholder:text-gray-500 focus:outline-none transition-all"
+                                  />
+                                  {milestoneSearchQuery && (
                                     <button
                                       type="button"
-                                      onClick={() => setPortalMilestoneMonthFilter("all")}
-                                      className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer underline"
+                                      onClick={() => setMilestoneSearchQuery("")}
+                                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white p-0.5 rounded cursor-pointer"
                                     >
-                                      Ver todos
+                                      <X size={12} />
                                     </button>
                                   )}
                                 </div>
 
-                                <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
-                                  <button
-                                    type="button"
-                                    onClick={() => setPortalMilestoneMonthFilter("all")}
-                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-                                      portalMilestoneMonthFilter === "all"
-                                        ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30 border border-indigo-400"
-                                        : "bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 border border-white/10"
-                                    }`}
-                                  >
-                                    <ListTodo size={12} />
-                                    <span>Todas</span>
-                                    <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-black/40 text-gray-300 font-mono">
-                                      {milestones.length}
-                                    </span>
-                                  </button>
-
-                                  {monthList.map((mMonth) => {
-                                    const isSelected = portalMilestoneMonthFilter === mMonth.key;
-                                    return (
-                                      <button
-                                        key={mMonth.key}
-                                        type="button"
-                                        onClick={() => setPortalMilestoneMonthFilter(mMonth.key)}
-                                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-                                          isSelected
-                                            ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30 border border-emerald-400"
-                                            : "bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 border border-white/10"
-                                        }`}
-                                      >
-                                        <Calendar size={12} className={isSelected ? "text-white" : "text-emerald-400"} />
-                                        <span>{mMonth.label}</span>
-                                        <span
-                                          className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-                                            isSelected ? "bg-black/30 text-white" : "bg-black/40 text-emerald-400"
-                                          }`}
-                                        >
-                                          {mMonth.completed}/{mMonth.count}
-                                        </span>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            );
-                          })()}
-
-                          <div className="flex items-center justify-between text-xs font-semibold text-gray-400">
-                            <span>Etapas Cadastradas no Cronograma</span>
-                            <span>Status de Execução</span>
-                          </div>
-
-                          {milestones.length === 0 ? (
-                            <div className="p-6 rounded-2xl bg-black/40 border border-white/5 text-center space-y-1.5">
-                              <p className="text-xs text-gray-300 font-semibold">
-                                Nenhuma etapa técnica cadastrada no cronograma ainda.
-                              </p>
-                              <p className="text-[11px] text-gray-500">
-                                As tarefas e entregáveis detalhados da sprint aparecerão aqui assim que forem adicionados no painel.
-                              </p>
-                            </div>
-                          ) : (() => {
-                            const displayedMilestones = portalMilestoneMonthFilter === "all"
-                              ? milestones
-                              : milestones.filter((m) => getMilestoneMonthKey(m.due_date) === portalMilestoneMonthFilter);
-
-                            if (displayedMilestones.length === 0) {
-                              return (
-                                <div className="p-6 rounded-2xl bg-black/40 border border-white/5 text-center space-y-1.5">
-                                  <Calendar size={24} className="mx-auto text-gray-500" />
-                                  <p className="text-xs text-gray-300 font-semibold">
-                                    Nenhuma etapa cadastrada com prazo para este mês.
-                                  </p>
-                                  <button
-                                    type="button"
-                                    onClick={() => setPortalMilestoneMonthFilter("all")}
-                                    className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold underline cursor-pointer"
-                                  >
-                                    Ver todas as etapas
-                                  </button>
-                                </div>
-                              );
-                            }
-
-                            return (
-                              <div className="space-y-3">
-                                {displayedMilestones.map((m) => {
-                                  const status = getMilestoneStatus(m);
-                                  const cleanDesc = getMilestoneCleanDescription(m);
-                                  const tasks = parseMilestoneTasks(m);
-                                  const prog = getMilestoneProgress(m);
-                                  const isDone = status === "concluido" || prog === 100;
-                                  const isInProgress = status === "em_andamento" || (prog > 0 && !isDone);
-                                  const completedTasksCount = tasks.filter((t) => t.completed).length;
-
-                                  return (
-                                    <div
-                                      key={m.id}
-                                      className={`p-4 rounded-2xl border transition-all space-y-3 ${
-                                        isDone
-                                          ? "bg-emerald-950/15 border-emerald-500/25"
-                                          : isInProgress
-                                          ? "bg-[#0e142e]/90 border-indigo-500/30 shadow-md shadow-indigo-950/30"
-                                          : "bg-black/40 border-white/5"
+                                {/* Month Filter Selector */}
+                                {monthList.length > 0 && (
+                                  <div className="relative shrink-0">
+                                    <Calendar size={13} className="text-indigo-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                    <select
+                                      value={portalMilestoneMonthFilter}
+                                      onChange={(e) => setPortalMilestoneMonthFilter(e.target.value)}
+                                      className={`h-8.5 pl-7.5 pr-7 rounded-xl text-xs font-semibold border appearance-none cursor-pointer focus:outline-none transition-all ${
+                                        portalMilestoneMonthFilter !== "all"
+                                          ? "bg-indigo-950/90 border-indigo-500/50 text-indigo-200 shadow-sm"
+                                          : "bg-black/40 hover:bg-black/60 border-white/10 text-gray-300"
                                       }`}
                                     >
-                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                                      <div className="flex items-start gap-3">
-                                        <div
-                                          className={`w-5 h-5 rounded-md flex items-center justify-center text-xs shrink-0 mt-0.5 ${
-                                            isDone
-                                              ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                                              : isInProgress
-                                              ? "bg-indigo-500/20 text-indigo-400 border border-indigo-500/30"
-                                              : "bg-white/5 text-gray-400 border border-white/10"
-                                          }`}
-                                        >
-                                          {isDone ? (
-                                            <Check size={12} />
-                                          ) : (
-                                            <PlayCircle size={12} />
-                                          )}
-                                        </div>
+                                      <option value="all" className="bg-slate-900 text-white">Todos os Meses ({milestones.length})</option>
+                                      {monthList.map((mMonth) => (
+                                        <option key={mMonth.key} value={mMonth.key} className="bg-slate-900 text-white">
+                                          {mMonth.key === "sem_data" ? `Sem data (${mMonth.count})` : `${mMonth.label} (${mMonth.completed}/${mMonth.count})`}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <ChevronDown size={12} className="text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                  </div>
+                                )}
 
-                                        <div>
-                                          <div className="flex items-center gap-2 flex-wrap">
+                                {/* Staging Button */}
+                                {stagingLink && (
+                                  <a
+                                    href={stagingLink.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="h-8.5 px-3 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all shrink-0"
+                                  >
+                                    <Globe size={13} className="text-cyan-400" />
+                                    <span>Staging</span>
+                                    <ExternalLink size={11} />
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Active Filter Chips / Reset Bar */}
+                            {isAnyFilterActive && (
+                              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/5 text-[11px]">
+                                <div className="flex flex-wrap items-center gap-1.5 text-gray-400">
+                                  <span className="font-medium">Filtros ativos:</span>
+                                  {deliverableTab !== "all" && (
+                                    <span className="px-2 py-0.5 rounded-md bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 flex items-center gap-1">
+                                      <span>Status: {deliverableTab === "current" ? "Em Andamento" : deliverableTab === "upcoming" ? "Próximas" : "Homologadas"}</span>
+                                      <button type="button" onClick={() => setDeliverableTab("all")} className="hover:text-white cursor-pointer"><X size={10} /></button>
+                                    </span>
+                                  )}
+                                  {portalMilestoneMonthFilter !== "all" && (
+                                    <span className="px-2 py-0.5 rounded-md bg-purple-500/15 border border-purple-500/30 text-purple-300 flex items-center gap-1">
+                                      <span>Mês: {formatMonthKeyLabel(portalMilestoneMonthFilter)}</span>
+                                      <button type="button" onClick={() => setPortalMilestoneMonthFilter("all")} className="hover:text-white cursor-pointer"><X size={10} /></button>
+                                    </span>
+                                  )}
+                                  {milestoneSearchQuery.trim() !== "" && (
+                                    <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 flex items-center gap-1">
+                                      <span>Busca: "{milestoneSearchQuery}"</span>
+                                      <button type="button" onClick={() => setMilestoneSearchQuery("")} className="hover:text-white cursor-pointer"><X size={10} /></button>
+                                    </span>
+                                  )}
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDeliverableTab("all");
+                                    setPortalMilestoneMonthFilter("all");
+                                    setMilestoneSearchQuery("");
+                                  }}
+                                  className="text-gray-400 hover:text-white transition-colors flex items-center gap-1 cursor-pointer font-medium ml-auto"
+                                >
+                                  <RefreshCw size={11} />
+                                  <span>Limpar filtros</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {/* MAIN CONTENT AREA: Render Milestones (Grid vs Timeline) */}
+                      {(() => {
+                        let filtered = milestones;
+
+                        if (deliverableTab === "upcoming") {
+                          filtered = upcomingMilestones;
+                        } else if (deliverableTab === "current") {
+                          filtered = currentActiveMilestone ? [currentActiveMilestone] : upcomingMilestones.slice(0, 1);
+                        } else if (deliverableTab === "history") {
+                          filtered = completedMilestones;
+                        }
+
+                        if (portalMilestoneMonthFilter !== "all") {
+                          filtered = filtered.filter((m) => getMilestoneMonthKey(m.due_date) === portalMilestoneMonthFilter);
+                        }
+
+                        if (milestoneSearchQuery.trim()) {
+                          const q = milestoneSearchQuery.toLowerCase().trim();
+                          filtered = filtered.filter((m) => {
+                            const titleMatch = (m.title || "").toLowerCase().includes(q);
+                            const descMatch = (m.description || "").toLowerCase().includes(q);
+                            const stageMatch = (m.stage || "").toLowerCase().includes(q);
+                            const tasks = parseMilestoneTasks(m);
+                            const taskMatch = tasks.some((t) => t.text.toLowerCase().includes(q));
+                            return titleMatch || descMatch || stageMatch || taskMatch;
+                          });
+                        }
+
+                        if (filtered.length === 0) {
+                          return (
+                            <div className="p-8 rounded-2xl bg-black/40 border border-white/10 text-center space-y-2 relative z-10">
+                              <ListTodo size={28} className="mx-auto text-gray-500 mb-1" />
+                              <h5 className="text-sm font-bold text-white">Nenhuma entrega encontrada para este filtro</h5>
+                              <p className="text-xs text-gray-400">Tente alternar para a aba "Todas as Entregas" ou limpar seus critérios de busca.</p>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDeliverableTab("all");
+                                  setPortalMilestoneMonthFilter("all");
+                                  setMilestoneSearchQuery("");
+                                }}
+                                className="px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 mt-2"
+                              >
+                                <span>Restaurar Filtros</span>
+                                <RefreshCw size={12} />
+                              </button>
+                            </div>
+                          );
+                        }
+
+                        // 1. GRID VIEW MODE
+                        if (milestoneViewMode === "grid") {
+                          return (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 relative z-10">
+                              {filtered.map((m, idx) => {
+                                const status = getMilestoneStatus(m);
+                                const cleanDesc = getMilestoneCleanDescription(m);
+                                const tasks = parseMilestoneTasks(m);
+                                const prog = getMilestoneProgress(m);
+                                const isDone = status === "concluido" || prog === 100 || m.completed;
+                                const isInProgress = !isDone && (status === "em_andamento" || idx === 0);
+                                const dueDateObj = m.due_date ? new Date(m.due_date) : null;
+                                const fb = deliveryFeedbacks.find((item) => item.milestone_id === m.id);
+                                const isExpanded = expandedMilestones[m.id] ?? true;
+                                const scopeBadges = getScopeBadges(m.title, m.stage);
+                                const completedTasksCount = tasks.filter((t) => t.completed).length;
+
+                                return (
+                                  <div
+                                    key={m.id}
+                                    className={`p-5 rounded-3xl border transition-all flex flex-col justify-between gap-4 group relative overflow-hidden ${
+                                      isDone
+                                        ? "bg-emerald-950/15 border-emerald-500/30 hover:border-emerald-500/50"
+                                        : isInProgress
+                                        ? "bg-gradient-to-br from-indigo-950/40 via-slate-900 to-purple-950/30 border-indigo-500/50 shadow-xl shadow-indigo-950/40 ring-1 ring-indigo-500/20"
+                                        : "bg-white/[0.02] border-white/10 hover:border-white/20"
+                                    }`}
+                                  >
+                                    {/* Top Status & Badge */}
+                                    <div className="space-y-2.5">
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                                            Marco #{m.order_index}
+                                          </span>
+                                          {scopeBadges.map((badge, bIdx) => (
                                             <span
-                                              className={`text-xs sm:text-sm font-bold ${
-                                                isDone
-                                                  ? "text-gray-300 line-through"
-                                                  : "text-white"
-                                              }`}
+                                              key={bIdx}
+                                              className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white/5 text-gray-300 border border-white/10 flex items-center gap-1"
                                             >
-                                              {m.title}
+                                              <span>{badge.icon}</span>
+                                              <span>{badge.label}</span>
                                             </span>
-                                            {m.stage && (
-                                              <span className="text-[10px] text-gray-400">
-                                                ({m.stage})
-                                              </span>
-                                            )}
-                                          </div>
-                                          {cleanDesc && (
-                                            <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">
-                                              {cleanDesc}
-                                            </p>
-                                          )}
+                                          ))}
                                         </div>
-                                      </div>
 
-                                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
                                         <span
-                                          className={`text-[10px] font-bold px-2.5 py-0.5 rounded-md border whitespace-nowrap ${
+                                          className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border shrink-0 flex items-center gap-1 ${
                                             isDone
-                                              ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"
+                                              ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
                                               : isInProgress
-                                              ? "bg-indigo-500/10 text-indigo-300 border-indigo-500/20"
+                                              ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40 animate-pulse"
                                               : "bg-white/5 text-gray-400 border-white/10"
                                           }`}
                                         >
-                                          {isDone
-                                            ? "Concluído"
-                                            : isInProgress
-                                            ? "Em Andamento"
-                                            : "Pendente"}
+                                          <span
+                                            className={`w-1.5 h-1.5 rounded-full ${
+                                              isDone ? "bg-emerald-400" : isInProgress ? "bg-indigo-400" : "bg-gray-400"
+                                            }`}
+                                          />
+                                          <span>{isDone ? "Homologado" : isInProgress ? "Em Execução" : "Agendado"}</span>
                                         </span>
                                       </div>
+
+                                      <h4 className="text-base font-bold text-white group-hover:text-indigo-200 transition-colors">
+                                        {m.title}
+                                      </h4>
+
+                                      {cleanDesc && (
+                                        <p className="text-xs text-gray-300 leading-relaxed">
+                                          {cleanDesc}
+                                        </p>
+                                      )}
                                     </div>
 
-                                    {/* Milestone Progress Bar */}
-                                    <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5">
-                                      <div className="flex items-center justify-between text-[11px]">
-                                        <span className="text-gray-400 font-semibold">
-                                          Progresso da Etapa
-                                        </span>
-                                        <span
-                                          className={`font-mono font-bold ${
-                                            isDone
-                                              ? "text-emerald-400"
-                                              : isInProgress
-                                              ? "text-indigo-300"
-                                              : "text-gray-400"
-                                          }`}
-                                        >
-                                          {prog}% Concluído {tasks.length > 0 && `(${completedTasksCount}/${tasks.length} checks)`}
-                                        </span>
-                                      </div>
-                                      <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
-                                        <div
-                                          className={`h-full rounded-full transition-all duration-500 ${
-                                            isDone
-                                              ? "bg-gradient-to-r from-teal-400 to-emerald-400 shadow-sm shadow-emerald-500/30"
-                                              : isInProgress
-                                              ? "bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
-                                              : "bg-gray-700"
-                                          }`}
-                                          style={{ width: `${prog}%` }}
-                                        />
-                                      </div>
-                                    </div>
-
-                                    {/* Checklist Items */}
-                                    {tasks.length > 0 && (
-                                      <div className="space-y-1.5 pt-0.5">
-                                        <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block">
-                                          Itens de Execução desta Etapa:
-                                        </span>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                                          {tasks.map((task) => (
-                                            <div
-                                              key={task.id}
-                                              className={`px-2.5 py-1.5 rounded-xl border text-xs flex items-center gap-2 ${
-                                                task.completed
-                                                  ? "bg-emerald-950/20 border-emerald-500/20 text-emerald-300"
-                                                  : "bg-black/30 border-white/5 text-gray-300"
-                                              }`}
-                                            >
-                                              <div
-                                                className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[9px] shrink-0 ${
-                                                  task.completed
-                                                    ? "bg-emerald-500 text-white"
-                                                    : "bg-white/5 border border-white/20 text-transparent"
-                                                }`}
-                                              >
-                                                <Check size={9} />
-                                              </div>
-                                              <span
-                                                className={`text-[11px] leading-tight truncate ${
-                                                  task.completed
-                                                    ? "line-through text-gray-400"
-                                                    : "text-white"
-                                                }`}
-                                              >
-                                                {task.text}
-                                              </span>
-                                            </div>
-                                          ))}
+                                    {/* Progress Bar & Accordion Toggle */}
+                                    <div className="space-y-3 pt-2 border-t border-white/10">
+                                      <div className="space-y-1">
+                                        <div className="flex items-center justify-between text-[11px]">
+                                          <span className="text-gray-400 font-semibold flex items-center gap-1">
+                                            <ListTodo size={12} className="text-indigo-400" />
+                                            <span>Progresso da Entrega</span>
+                                          </span>
+                                          <span className="font-mono font-bold text-emerald-400">
+                                            {prog}% Concluído {tasks.length > 0 && `(${completedTasksCount}/${tasks.length})`}
+                                          </span>
+                                        </div>
+                                        <div className="w-full h-2 bg-black/60 rounded-full overflow-hidden border border-white/5">
+                                          <div
+                                            className={`h-full rounded-full transition-all duration-500 ${
+                                              isDone
+                                                ? "bg-gradient-to-r from-teal-400 to-emerald-400"
+                                                : "bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
+                                            }`}
+                                            style={{ width: `${prog}%` }}
+                                          />
                                         </div>
                                       </div>
-                                    )}
+
+                                      {/* Accordion Trigger for Tasks */}
+                                      {tasks.length > 0 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleMilestoneExpanded(m.id)}
+                                          className="w-full py-1.5 px-2.5 rounded-xl bg-white/[0.03] hover:bg-white/10 border border-white/10 text-[11px] font-semibold text-gray-300 hover:text-white flex items-center justify-between transition-all cursor-pointer"
+                                        >
+                                          <span>Checklist de Tarefas ({tasks.length} itens)</span>
+                                          {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                                        </button>
+                                      )}
+
+                                      {/* Accordion Content */}
+                                      <AnimatePresence>
+                                        {isExpanded && tasks.length > 0 && (
+                                          <motion.div
+                                            initial={{ opacity: 0, height: 0 }}
+                                            animate={{ opacity: 1, height: "auto" }}
+                                            exit={{ opacity: 0, height: 0 }}
+                                            className="space-y-1.5 overflow-hidden pt-1"
+                                          >
+                                            {tasks.map((task) => (
+                                              <div
+                                                key={task.id}
+                                                className={`p-2 rounded-xl border text-xs flex items-center gap-2 transition-colors ${
+                                                  task.completed
+                                                    ? "bg-emerald-950/20 border-emerald-500/20 text-emerald-300"
+                                                    : "bg-black/40 border-white/5 text-gray-300"
+                                                }`}
+                                              >
+                                                <div
+                                                  className={`w-4 h-4 rounded flex items-center justify-center text-[10px] shrink-0 ${
+                                                    task.completed
+                                                      ? "bg-emerald-500 text-white"
+                                                      : "bg-white/10 border border-white/20 text-transparent"
+                                                  }`}
+                                                >
+                                                  <Check size={10} />
+                                                </div>
+                                                <span
+                                                  className={`text-[11px] leading-tight break-words ${
+                                                    task.completed ? "line-through text-gray-400" : "text-white"
+                                                  }`}
+                                                >
+                                                  {task.text}
+                                                </span>
+                                              </div>
+                                            ))}
+                                          </motion.div>
+                                        )}
+                                      </AnimatePresence>
+                                    </div>
+
+                                    {/* Footer Info */}
+                                    <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs">
+                                      <div className="flex items-center gap-1.5 text-pink-300 font-semibold">
+                                        <Clock size={12} className="text-pink-400" />
+                                        <span>
+                                          {dueDateObj ? `Previsão: ${dueDateObj.toLocaleDateString("pt-BR")}` : "Cronograma Ativo"}
+                                        </span>
+                                      </div>
+
+                                      <span className="text-[10px] text-gray-400 bg-white/5 px-2.5 py-0.5 rounded-full border border-white/10">
+                                        {isDone ? "✅ Homologado" : isInProgress ? "⚡ Em Execução" : "🗓️ Agendado"}
+                                      </span>
+                                    </div>
                                   </div>
                                 );
                               })}
                             </div>
                           );
-                        })()}
-                      </div>
-                      </div>
-                    )}
+                        }
 
-                    {/* CONTENT SECTION 3: Histórico de Entregas (Passado) */}
-                    {(deliverableTab === "all" || deliverableTab === "history") && (
-                      <div className="space-y-4 relative z-10">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                            <History size={16} className="text-emerald-400" />
-                            <span>Histórico de Entregas Finalizadas & Validadas (Passado)</span>
-                          </h4>
-                          <span className="text-[11px] text-emerald-400 font-semibold">
-                            {completedMilestones.length} {completedMilestones.length === 1 ? "entrega validada" : "entregas validadas"}
-                          </span>
-                        </div>
+                        // 2. TIMELINE ROADMAP VIEW MODE
+                        return (
+                          <div className="relative z-10 space-y-6 pl-4 sm:pl-8 border-l-2 border-indigo-500/30 my-4">
+                            {filtered.map((m, idx) => {
+                              const status = getMilestoneStatus(m);
+                              const cleanDesc = getMilestoneCleanDescription(m);
+                              const tasks = parseMilestoneTasks(m);
+                              const prog = getMilestoneProgress(m);
+                              const isDone = status === "concluido" || prog === 100 || m.completed;
+                              const isInProgress = !isDone && (status === "em_andamento" || idx === 0);
+                              const dueDateObj = m.due_date ? new Date(m.due_date) : null;
+                              const scopeBadges = getScopeBadges(m.title, m.stage);
 
-                        {completedMilestones.length === 0 ? (
-                          <div className="p-6 rounded-2xl bg-white/[0.02] border border-white/5 text-center text-xs text-gray-400">
-                            Nenhum marco anterior concluído ainda. O projeto está iniciando a primeira sprint.
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            {completedMilestones.map((m) => (
-                              <div
-                                key={m.id}
-                                className="p-4 sm:p-5 rounded-2xl bg-emerald-950/10 border border-emerald-500/25 hover:border-emerald-500/40 transition-all flex flex-col sm:flex-row sm:items-start justify-between gap-4"
-                              >
-                                <div className="flex items-start gap-3.5">
-                                  <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0 mt-0.5">
-                                    <CheckCheck size={16} />
+                              return (
+                                <div key={m.id} className="relative group">
+                                  {/* Connector Node */}
+                                  <div
+                                    className={`absolute -left-[25px] sm:-left-[41px] top-4 w-6 h-6 sm:w-7 sm:h-7 rounded-full border-2 flex items-center justify-center text-xs shadow-lg transition-all ${
+                                      isDone
+                                        ? "bg-emerald-950 border-emerald-500 text-emerald-400 shadow-emerald-900/50"
+                                        : isInProgress
+                                        ? "bg-indigo-950 border-indigo-400 text-white shadow-indigo-900/60 ring-4 ring-indigo-500/20 animate-pulse"
+                                        : "bg-slate-900 border-gray-600 text-gray-500"
+                                    }`}
+                                  >
+                                    {isDone ? <Check size={12} /> : <span className="font-bold text-[10px]">{m.order_index}</span>}
                                   </div>
 
-                                  <div className="space-y-1">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                                        Marco #{m.order_index} Concluído
-                                      </span>
-                                      {m.stage && (
-                                        <span className="text-[10px] text-gray-400">
-                                          • {m.stage}
+                                  {/* Timeline Content Card */}
+                                  <div
+                                    className={`p-5 rounded-3xl border transition-all space-y-3.5 ${
+                                      isDone
+                                        ? "bg-emerald-950/15 border-emerald-500/30"
+                                        : isInProgress
+                                        ? "bg-gradient-to-br from-indigo-950/50 via-slate-900 to-purple-950/40 border-indigo-500/50 shadow-xl"
+                                        : "bg-white/[0.02] border-white/10"
+                                    }`}
+                                  >
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-white/10">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                                          Marco #{m.order_index}
                                         </span>
-                                      )}
+                                        {scopeBadges.map((badge, bIdx) => (
+                                          <span
+                                            key={bIdx}
+                                            className="text-[10px] font-bold px-2 py-0.5 rounded bg-white/5 text-gray-300 border border-white/10 flex items-center gap-1"
+                                          >
+                                            <span>{badge.icon}</span>
+                                            <span>{badge.label}</span>
+                                          </span>
+                                        ))}
+                                      </div>
+
+                                      <div className="flex items-center gap-2">
+                                        {dueDateObj && (
+                                          <span className="text-xs text-pink-300 font-semibold flex items-center gap-1">
+                                            <Clock size={12} />
+                                            <span>{dueDateObj.toLocaleDateString("pt-BR")}</span>
+                                          </span>
+                                        )}
+                                        <span
+                                          className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                                            isDone
+                                              ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                                              : isInProgress
+                                              ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40"
+                                              : "bg-white/5 text-gray-400 border-white/10"
+                                          }`}
+                                        >
+                                          {isDone ? "Homologado" : isInProgress ? "Em Desenvolvimento" : "Previsto"}
+                                        </span>
+                                      </div>
                                     </div>
 
-                                    <h5 className="text-sm sm:text-base font-bold text-white">
+                                    <h4 className="text-base font-bold text-white">
                                       {m.title}
-                                    </h5>
+                                    </h4>
 
-                                    {m.description && (
+                                    {cleanDesc && (
                                       <p className="text-xs text-gray-300 leading-relaxed">
-                                        {m.description}
+                                        {cleanDesc}
                                       </p>
                                     )}
 
-                                    {m.deliverables && m.deliverables.length > 0 && (
+                                    {/* Task badges */}
+                                    {tasks.length > 0 && (
                                       <div className="pt-2 flex flex-wrap gap-1.5">
-                                        {m.deliverables.map((del, dIdx) => (
+                                        {tasks.map((task) => (
                                           <span
-                                            key={dIdx}
-                                            className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 flex items-center gap-1"
+                                            key={task.id}
+                                            className={`text-[10px] px-2 py-0.5 rounded-lg border flex items-center gap-1 ${
+                                              task.completed
+                                                ? "bg-emerald-950/20 border-emerald-500/30 text-emerald-300 line-through"
+                                                : "bg-black/40 border-white/10 text-gray-300"
+                                            }`}
                                           >
-                                            <Check size={10} className="text-emerald-400" />
-                                            <span>{del}</span>
+                                            {task.completed ? <Check size={10} className="text-emerald-400" /> : <Clock size={9} />}
+                                            <span>{task.text}</span>
                                           </span>
                                         ))}
                                       </div>
                                     )}
+
+                                    {/* Action row */}
+                                    <div className="pt-2 border-t border-white/5 flex items-center justify-between text-xs">
+                                      <span className="text-[11px] text-gray-400 font-mono">
+                                        Progresso: <strong className="text-emerald-400">{prog}%</strong>
+                                      </span>
+                                      <span className="text-[10px] text-gray-400 bg-white/5 px-2.5 py-0.5 rounded-full border border-white/10">
+                                        {isDone ? "✅ Homologado" : isInProgress ? "⚡ Em Execução" : "🗓️ Agendado"}
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
-
-                                <div className="shrink-0 flex flex-col items-start sm:items-end gap-1.5 self-end sm:self-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-white/5 w-full sm:w-auto">
-                                  <span className="text-[11px] font-bold text-emerald-400 flex items-center gap-1">
-                                    <ShieldCheck size={13} />
-                                    <span>Homologado</span>
-                                  </span>
-                                  <span className="text-[10px] text-gray-400">
-                                    {m.completed_at
-                                      ? `Concluído em ${new Date(m.completed_at).toLocaleDateString("pt-BR")}`
-                                      : "Validado"}
-                                  </span>
-                                </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
-                        )}
-                      </div>
-                    )}
+                        );
+                      })()}
+                    </div>
                   </div>
                 );
               })()}
@@ -3161,20 +3951,20 @@ function ClientPortalContent() {
                       </div>
                     </div>
 
-                    {/* 3 Top Cards */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 relative z-10">
+                    {/* 4 Top Cards (Including Valor em Atraso) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 relative z-10">
                       {/* 1. Valor Total Contratado */}
-                      <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/10 hover:border-indigo-500/30 transition-all shadow-lg flex flex-col justify-between gap-3">
+                      <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.02] border border-white/10 hover:border-indigo-500/30 transition-all shadow-lg flex flex-col justify-between gap-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                          <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
                             Valor Total Contratado
                           </span>
-                          <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                            <DollarSign size={18} />
+                          <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                            <DollarSign size={16} />
                           </div>
                         </div>
                         <div>
-                          <p className="text-2xl sm:text-3xl font-black text-white tracking-tight font-mono">
+                          <p className="text-xl sm:text-2xl font-black text-white tracking-tight font-mono">
                             {formatBRL(finSummary.contractValue)}
                           </p>
                           <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-gray-400">
@@ -3185,38 +3975,75 @@ function ClientPortalContent() {
                       </div>
 
                       {/* 2. Valor Já Pago */}
-                      <div className="p-5 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 hover:border-emerald-500/50 transition-all shadow-lg flex flex-col justify-between gap-3">
+                      <div className="p-4 sm:p-5 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 hover:border-emerald-500/50 transition-all shadow-lg flex flex-col justify-between gap-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
+                          <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider">
                             Valor Já Pago
                           </span>
-                          <div className="p-2.5 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                            <CheckCircle2 size={18} />
+                          <div className="p-2 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                            <CheckCircle2 size={16} />
                           </div>
                         </div>
                         <div>
-                          <p className="text-2xl sm:text-3xl font-black text-emerald-400 tracking-tight font-mono">
+                          <p className="text-xl sm:text-2xl font-black text-emerald-400 tracking-tight font-mono">
                             {formatBRL(finSummary.totalPaid)}
                           </p>
                           <div className="mt-2 pt-2 border-t border-emerald-500/15 flex items-center justify-between text-[11px] text-emerald-300">
-                            <span>{finSummary.percentPaid}% do montante quitado</span>
+                            <span>{finSummary.percentPaid}% quitado</span>
                             <span className="font-bold">{finSummary.paidCount} de {finSummary.installmentsCount} pagas</span>
                           </div>
                         </div>
                       </div>
 
-                      {/* 3. Saldo Restante */}
-                      <div className="p-5 rounded-2xl bg-purple-950/20 border border-purple-500/30 hover:border-purple-500/50 transition-all shadow-lg flex flex-col justify-between gap-3">
+                      {/* 3. Valor em Atraso (Inadimplência / Atrasadas) */}
+                      <div
+                        onClick={() => finSummary.overdueCount > 0 && setFinanceStatusFilter("vencido")}
+                        className={`p-4 sm:p-5 rounded-2xl border transition-all shadow-lg flex flex-col justify-between gap-3 ${
+                          finSummary.overdueCount > 0
+                            ? "bg-rose-950/30 border-rose-500/40 hover:border-rose-500/60 shadow-rose-950/30 cursor-pointer"
+                            : "bg-rose-950/10 border-rose-500/20 hover:border-rose-500/30"
+                        }`}
+                      >
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-purple-300 uppercase tracking-wider">
-                            Saldo Restante
+                          <span className="text-[11px] font-bold text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
+                            {finSummary.overdueCount > 0 && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
+                            )}
+                            <span>Valor em Atraso</span>
                           </span>
-                          <div className="p-2.5 rounded-xl bg-purple-500/15 text-purple-400 border border-purple-500/30">
-                            <Clock size={18} />
+                          <div className="p-2 rounded-xl bg-rose-500/15 text-rose-400 border border-rose-500/30">
+                            <AlertCircle size={16} />
                           </div>
                         </div>
                         <div>
-                          <p className="text-2xl sm:text-3xl font-black text-purple-300 tracking-tight font-mono">
+                          <p className="text-xl sm:text-2xl font-black text-rose-400 tracking-tight font-mono">
+                            {formatBRL(finSummary.totalOverdue)}
+                          </p>
+                          <div className="mt-2 pt-2 border-t border-rose-500/20 flex items-center justify-between text-[11px] text-rose-300">
+                            <span>
+                              {finSummary.overdueCount > 0
+                                ? `⚠️ ${finSummary.overdueCount} ${finSummary.overdueCount === 1 ? "parcela atrasada" : "parcelas atrasadas"}`
+                                : "Zero parcelas em atraso"}
+                            </span>
+                            <span className="font-bold">
+                              {finSummary.overdueCount > 0 ? "Atrasada" : "Regularizada"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 4. Saldo Restante */}
+                      <div className="p-4 sm:p-5 rounded-2xl bg-purple-950/20 border border-purple-500/30 hover:border-purple-500/50 transition-all shadow-lg flex flex-col justify-between gap-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-purple-300 uppercase tracking-wider">
+                            Saldo Restante
+                          </span>
+                          <div className="p-2 rounded-xl bg-purple-500/15 text-purple-400 border border-purple-500/30">
+                            <Clock size={16} />
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-xl sm:text-2xl font-black text-purple-300 tracking-tight font-mono">
                             {formatBRL(finSummary.remainingBalance)}
                           </p>
                           <div className="mt-2 pt-2 border-t border-purple-500/15 flex items-center justify-between text-[11px] text-purple-300/80">
@@ -3248,6 +4075,65 @@ function ClientPortalContent() {
                       </div>
                     </div>
 
+                    {/* Dedicated Pix Payment Details Banner */}
+                    <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-black/60 border border-purple-500/30 relative z-10 shadow-xl space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2.5 border-b border-white/10">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-xl bg-purple-600/20 text-purple-300 border border-purple-500/30 flex items-center justify-center shrink-0">
+                            <QrCode size={16} className="text-purple-400" />
+                          </div>
+                          <div>
+                            <h4 className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
+                              <span>Dados Oficiais para Pagamento via Pix</span>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-500/40">
+                                ● Verificado
+                              </span>
+                            </h4>
+                            <p className="text-[11px] text-gray-400">
+                              Utilize a chave Pix abaixo para liquidação de qualquer parcela em aberto.
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={(e) => handleCopyPixKey(portalIssuerSettings.pixKey || "55.843.406/0001-28", e)}
+                          className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 border ${
+                            copiedPixKey
+                              ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-emerald-950/30"
+                              : "bg-white/5 hover:bg-white/10 text-purple-200 border-purple-500/30 hover:border-purple-400"
+                          }`}
+                        >
+                          {copiedPixKey ? (
+                            <>
+                              <Check size={14} className="text-emerald-400" />
+                              <span>Chave Copiada!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy size={14} />
+                              <span>Copiar Chave Pix</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                        <div className="p-2.5 rounded-xl bg-black/50 border border-white/5 space-y-0.5">
+                          <span className="text-[10px] text-gray-400 uppercase font-semibold">Chave Pix ({portalIssuerSettings.pixKeyType?.toUpperCase() || "CNPJ"})</span>
+                          <p className="font-mono font-bold text-white text-xs sm:text-sm break-all">{portalIssuerSettings.pixKey || "55.843.406/0001-28"}</p>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-black/50 border border-white/5 space-y-0.5">
+                          <span className="text-[10px] text-gray-400 uppercase font-semibold">Favorecido / Beneficiário</span>
+                          <p className="font-bold text-purple-200">{portalIssuerSettings.pixBeneficiary || "Maira Reis"}</p>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-black/50 border border-white/5 space-y-0.5">
+                          <span className="text-[10px] text-gray-400 uppercase font-semibold">Instituição Bancária</span>
+                          <p className="font-bold text-indigo-200">{portalIssuerSettings.bankName || "C6"}</p>
+                        </div>
+                      </div>
+                    </div>
+
                     {/* Filter Pills */}
                     <div className="flex flex-wrap items-center justify-between gap-3 pt-2 relative z-10">
                       <div className="flex flex-wrap items-center gap-1.5">
@@ -3257,16 +4143,17 @@ function ClientPortalContent() {
                           { key: "pago", label: `Quitadas (${finSummary.paidCount})` },
                           { key: "em_dia", label: `A Vencer (${allInstallments.filter((i) => getInstallmentStatus(i).status === "em_dia").length})` },
                           { key: "pendente", label: `Pendentes (${allInstallments.filter((i) => getInstallmentStatus(i).status === "pendente").length})` },
-                          ...(finSummary.totalOverdue > 0
-                            ? [{ key: "vencido", label: `Vencidas (${allInstallments.filter((i) => getInstallmentStatus(i).status === "vencido").length})` }]
-                            : []),
+                          { key: "vencido", label: `Atrasadas (${allInstallments.filter((i) => getInstallmentStatus(i).status === "vencido").length})` },
                         ].map((filter) => (
                           <button
                             key={filter.key}
+                            type="button"
                             onClick={() => setFinanceStatusFilter(filter.key as any)}
-                            className={`px-3 py-1 rounded-xl text-xs font-medium border transition-all ${
+                            className={`px-3 py-1 rounded-xl text-xs font-medium border transition-all cursor-pointer ${
                               financeStatusFilter === filter.key
-                                ? "bg-emerald-600 text-white border-emerald-500 shadow-sm shadow-emerald-600/30"
+                                ? filter.key === "vencido"
+                                  ? "bg-rose-600 text-white border-rose-500 shadow-sm shadow-rose-600/30"
+                                  : "bg-emerald-600 text-white border-emerald-500 shadow-sm shadow-emerald-600/30"
                                 : "bg-white/5 text-gray-400 border-white/10 hover:border-white/20 hover:text-white"
                             }`}
                           >
@@ -3402,7 +4289,7 @@ function ClientPortalContent() {
                                     </div>
                                   </td>
 
-                                  {/* 7. : Botão Baixar Recibo */}
+                                  {/* 7. : Botão Pagar Pix ou Baixar Recibo */}
                                   <td className="py-4 px-4 whitespace-nowrap text-right">
                                     {isPaid ? (
                                       <div className="flex items-center justify-end gap-1.5">
@@ -3425,9 +4312,17 @@ function ClientPortalContent() {
                                         </button>
                                       </div>
                                     ) : (
-                                      <span className="text-[11px] text-gray-500 italic">
-                                        Liberado após quitação
-                                      </span>
+                                      <div className="flex items-center justify-end gap-1.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenPixModal(inst)}
+                                          className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold border border-purple-400/40 flex items-center gap-1.5 transition-all shadow-md shadow-purple-950/40 cursor-pointer active:scale-95"
+                                          title="Pagar parcela via Pix Instantâneo"
+                                        >
+                                          <QrCode size={13} />
+                                          <span>Pagar via Pix</span>
+                                        </button>
+                                      </div>
                                     )}
                                   </td>
                                 </tr>
@@ -3523,9 +4418,16 @@ function ClientPortalContent() {
                                   </button>
                                 </div>
                               ) : (
-                                <p className="text-[11px] text-gray-500 italic text-center pt-1">
-                                  Recibo liberado após confirmação de pagamento
-                                </p>
+                                <div className="pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenPixModal(inst)}
+                                    className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold shadow-md shadow-purple-950/40 flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
+                                  >
+                                    <QrCode size={15} />
+                                    <span>Pagar via Pix Instantâneo</span>
+                                  </button>
+                                </div>
                               )}
                             </div>
                           );
@@ -3973,38 +4875,6 @@ function ClientPortalContent() {
                         <span>Conversar no WhatsApp</span>
                         <ExternalLink size={13} className="opacity-70" />
                       </a>
-
-                      {/* E-mail Support Box with Copy */}
-                      <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-black/40 border border-white/10">
-                        <div className="flex items-center gap-2 overflow-hidden text-xs">
-                          <Mail size={15} className="text-indigo-400 shrink-0" />
-                          <span className="text-gray-300 truncate font-mono text-[11px]">
-                            contato@mairareis.dev
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={(e) => handleCopyEmail("contato@mairareis.dev", e)}
-                            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-colors text-xs flex items-center gap-1 cursor-pointer"
-                            title="Copiar e-mail de suporte"
-                          >
-                            {copiedEmail ? (
-                              <Check size={12} className="text-emerald-400" />
-                            ) : (
-                              <Copy size={12} />
-                            )}
-                            <span className="text-[10px]">{copiedEmail ? "Copiado!" : "Copiar"}</span>
-                          </button>
-                          <a
-                            href="mailto:contato@mairareis.dev?subject=Suporte%20Portal%20do%20Cliente"
-                            className="p-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 transition-colors text-xs"
-                            title="Enviar e-mail direto"
-                          >
-                            <ExternalLink size={12} />
-                          </a>
-                        </div>
-                      </div>
                     </div>
                   </div>
 
@@ -4166,20 +5036,9 @@ function ClientPortalContent() {
                 <span>Conversar no WhatsApp</span>
               </a>
 
-              {/* Email & Schedule Snapshot */}
+              {/* Schedule Snapshot */}
               <div className="p-3 rounded-2xl bg-black/40 border border-white/5 space-y-1.5 text-[11px] text-gray-300">
                 <div className="flex items-center justify-between text-gray-400">
-                  <span>E-mail Oficial:</span>
-                  <button
-                    type="button"
-                    onClick={(e) => handleCopyEmail("contato@mairareis.dev", e)}
-                    className="text-indigo-300 hover:text-white font-mono flex items-center gap-1 cursor-pointer"
-                  >
-                    <span>contato@mairareis.dev</span>
-                    <Copy size={10} />
-                  </button>
-                </div>
-                <div className="flex items-center justify-between text-gray-400 pt-1 border-t border-white/5">
                   <span>Atendimento:</span>
                   <span className="text-white font-semibold">Seg a Sex, 09h às 18h</span>
                 </div>
@@ -4783,6 +5642,162 @@ function ClientPortalContent() {
                     <span>Imprimir / PDF (A4)</span>
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal de Pagamento via Pix Instantâneo */}
+      <AnimatePresence>
+        {pixPaymentModalOpen && activePayingInstallment && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ duration: 0.2 }}
+              className="relative w-full max-w-lg rounded-3xl bg-[#0b0f19] border border-purple-500/30 shadow-2xl shadow-purple-950/50 overflow-hidden flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="p-4 sm:p-6 bg-gradient-to-r from-purple-950/60 via-indigo-950/40 to-[#0b0f19] border-b border-white/10 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-purple-600/20 text-purple-400 border border-purple-500/30 flex items-center justify-center shrink-0">
+                    <QrCode size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                      <span>Pagamento via Pix Instantâneo</span>
+                    </h3>
+                    <p className="text-xs text-purple-200/80">
+                      Parcela #{activePayingInstallment.installment_number}: {activePayingInstallment.title}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setPixPaymentModalOpen(false)}
+                  className="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/15 text-gray-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-4 sm:p-6 space-y-4 max-h-[75vh] overflow-y-auto custom-scrollbar">
+                {/* Amount Highlight */}
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-purple-950/30 to-indigo-950/20 border border-purple-500/20 flex items-center justify-between">
+                  <div>
+                    <span className="text-[11px] text-gray-400 uppercase font-semibold block">Valor a Pagar</span>
+                    <span className="text-2xl sm:text-3xl font-black text-white font-mono">
+                      {formatBRL(activePayingInstallment.amount)}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[11px] text-gray-400 uppercase font-semibold block">Vencimento</span>
+                    <span className="text-xs sm:text-sm font-bold text-purple-200">
+                      {activePayingInstallment.due_date
+                        ? new Date(activePayingInstallment.due_date).toLocaleDateString("pt-BR")
+                        : "Imediato"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Pix Key Copy Box */}
+                <div className="p-4 rounded-2xl bg-black/60 border border-purple-500/30 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-purple-300 flex items-center gap-1.5">
+                      <QrCode size={14} />
+                      <span>Chave Pix Oficial ({portalIssuerSettings.pixKeyType?.toUpperCase() || "CNPJ"})</span>
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 font-bold">
+                      Copia e Cola
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 p-2.5 rounded-xl bg-white/[0.03] border border-white/10">
+                    <p className="font-mono text-xs sm:text-sm font-bold text-white break-all flex-1 select-all">
+                      {portalIssuerSettings.pixKey || "55.843.406/0001-28"}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={(e) => handleCopyPixKey(portalIssuerSettings.pixKey || "55.843.406/0001-28", e)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 border ${
+                        copiedPixKey
+                          ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                          : "bg-purple-600 hover:bg-purple-500 text-white border-purple-400/40"
+                      }`}
+                    >
+                      {copiedPixKey ? (
+                        <>
+                          <Check size={13} />
+                          <span>Copiado!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy size={13} />
+                          <span>Copiar</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Bank & Beneficiary Details */}
+                <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5 space-y-2 text-xs">
+                  <div className="flex items-center justify-between text-gray-400">
+                    <span>Beneficiário / Favorecido:</span>
+                    <span className="font-bold text-white">{portalIssuerSettings.pixBeneficiary || "Maira Reis"}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-gray-400">
+                    <span>Instituição Bancária:</span>
+                    <span className="font-bold text-indigo-300">{portalIssuerSettings.bankName || "C6"}</span>
+                  </div>
+                  {portalIssuerSettings.bankAgency && (
+                    <div className="flex items-center justify-between text-gray-400">
+                      <span>Agência / Conta:</span>
+                      <span className="font-mono text-gray-300">
+                        {portalIssuerSettings.bankAgency} {portalIssuerSettings.bankAccount ? `/ ${portalIssuerSettings.bankAccount}` : ""}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Instructions */}
+                <div className="p-3 rounded-xl bg-purple-950/20 border border-purple-500/20 text-[11px] text-gray-300 space-y-1">
+                  <p className="font-semibold text-purple-200">Como efetuar o pagamento:</p>
+                  <ol className="list-decimal list-inside space-y-0.5 text-gray-400">
+                    <li>Copie a chave Pix acima e cole no aplicativo do seu banco.</li>
+                    <li>Confira o nome do beneficiário (<strong>{portalIssuerSettings.pixBeneficiary || "Maira Reis"}</strong>).</li>
+                    <li>Após transferir, envie o comprovante pelo botão abaixo para emissão do recibo.</li>
+                  </ol>
+                </div>
+              </div>
+
+              {/* Modal Footer Actions */}
+              <div className="p-4 sm:p-5 bg-black/40 border-t border-white/10 flex flex-col sm:flex-row items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={(e) => handleCopyPixKey(portalIssuerSettings.pixKey || "55.843.406/0001-28", e)}
+                  className="w-full sm:flex-1 py-2.5 px-4 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                >
+                  <Copy size={14} />
+                  <span>{copiedPixKey ? "Chave Copiada" : "Copiar Chave"}</span>
+                </button>
+
+                <a
+                  href={`https://wa.me/553598030543?text=${encodeURIComponent(
+                    `Olá Maira! Realizei o pagamento via Pix da parcela #${activePayingInstallment.installment_number} (${formatBRL(activePayingInstallment.amount)}) referente ao projeto "${selectedProject?.title || "Projeto"}". Segue comprovante em anexo:`
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full sm:flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-950/40 flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-95"
+                >
+                  <MessageSquare size={14} />
+                  <span>Enviar Comprovante</span>
+                </a>
               </div>
             </motion.div>
           </div>

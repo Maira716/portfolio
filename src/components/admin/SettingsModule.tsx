@@ -91,7 +91,7 @@ export function SettingsModule({
   const [issuer, setIssuer] = useState<IssuerSettings>({
     companyName: "Maira Reis - Desenvolvimento & UI/UX Design",
     tradingName: "Maira Reis Dev",
-    documentNumber: "",
+    documentNumber: "55.843.406/0001-28",
     email: "mairareis2017@gmail.com",
     phone: "553598030543",
     address: "Atendimento Remoto / Brasil",
@@ -99,10 +99,10 @@ export function SettingsModule({
     state: "MG",
     website: "https://mairareis.dev",
     roleTitle: "Engenheira de Software & UI/UX Designer",
-    pixKeyType: "email",
-    pixKey: "mairareis2017@gmail.com",
+    pixKeyType: "cnpj",
+    pixKey: "55.843.406/0001-28",
     pixBeneficiary: "Maira Reis",
-    bankName: "Nubank / Inter",
+    bankName: "C6",
     bankAgency: "0001",
     bankAccount: "",
   });
@@ -129,26 +129,67 @@ export function SettingsModule({
   const [pingStatus, setPingStatus] = useState<"idle" | "testing" | "online" | "error">("idle");
   const [pingLatency, setPingLatency] = useState<number | null>(null);
 
-  // Load from LocalStorage
+  // Load from API and LocalStorage
   useEffect(() => {
-    try {
-      const savedIssuer = localStorage.getItem("portfolio_admin_issuer_settings_v1");
-      if (savedIssuer) setIssuer(JSON.parse(savedIssuer));
+    const loadSettings = async () => {
+      try {
+        const res = await fetch("/api/admin/settings", { cache: "no-store" });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.issuer && json.issuer.pixKey) {
+            setIssuer(json.issuer);
+            try {
+              localStorage.setItem("portfolio_admin_issuer_settings_v1", JSON.stringify(json.issuer));
+            } catch {}
+          }
+        }
+      } catch (err) {
+        console.warn("Could not load issuer settings from API:", err);
+      }
 
-      const savedAutomations = localStorage.getItem("portfolio_admin_automations_settings_v1");
-      if (savedAutomations) setAutomations(JSON.parse(savedAutomations));
+      try {
+        const savedIssuer = localStorage.getItem("portfolio_admin_issuer_settings_v1");
+        if (savedIssuer) {
+          const parsed = JSON.parse(savedIssuer);
+          setIssuer((prev) => ({ ...prev, ...parsed }));
+        }
 
-      const saved2FA = localStorage.getItem("portfolio_admin_2fa_enabled");
-      if (saved2FA) setTwoFactorActive(saved2FA === "true");
-    } catch {}
+        const savedAutomations = localStorage.getItem("portfolio_admin_automations_settings_v1");
+        if (savedAutomations) setAutomations(JSON.parse(savedAutomations));
+
+        const saved2FA = localStorage.getItem("portfolio_admin_2fa_enabled");
+        if (saved2FA) setTwoFactorActive(saved2FA === "true");
+      } catch {}
+    };
+
+    loadSettings();
   }, []);
 
   // Save Issuer
-  const handleSaveIssuer = (e: React.FormEvent) => {
+  const handleSaveIssuer = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       localStorage.setItem("portfolio_admin_issuer_settings_v1", JSON.stringify(issuer));
-      showToast("Dados do emitente e faturamento salvos com sucesso!", "success");
+
+      try {
+        await fetch("/api/admin/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(issuer),
+        });
+      } catch (apiErr) {
+        console.warn("Could not save settings to server store:", apiErr);
+      }
+
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("portfolio_settings_updated", {
+            detail: issuer,
+          })
+        );
+      }
+
+      showToast("Dados do emitente e chave Pix salvos com sucesso!", "success");
     } catch {
       showToast("Erro ao salvar dados localmente.", "error");
     }

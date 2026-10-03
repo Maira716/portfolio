@@ -43,23 +43,46 @@ export async function GET(req: NextRequest) {
       if (data && Array.isArray(data)) dbProjects = data;
     } catch (e) {}
 
-    // Also get from serverStore
+    // Also get from serverStore (authoritative for countdown fields).
+    // Admins (incl. "client view" impersonation, which sends the admin's own id) must see every project.
     const portalData = readPortalData();
-    let serverProjects = effectiveIsAdmin && !effectiveClientId
+    const serverProjects = effectiveIsAdmin
       ? portalData.projects
       : getProjectsForClient(effectiveClientId, effectiveClientEmail);
 
-    const projectMap = new Map<string, any>();
-    for (const sp of serverProjects) {
-      projectMap.set(sp.id, sp);
-    }
-    for (const dp of dbProjects) {
-      projectMap.set(dp.id, dp);
+    const normTitle = (t?: string | null) => (t || "").toLowerCase().trim();
+    const serverById = new Map<string, any>();
+    const serverByTitle = new Map<string, any>();
+    for (const sp of portalData.projects) {
+      serverById.set(sp.id, sp);
+      if (sp.title) serverByTitle.set(normTitle(sp.title), sp);
     }
 
-    return NextResponse.json({
-      projects: Array.from(projectMap.values()),
-    });
+    const result = new Map<string, any>();
+    const consumedServerIds = new Set<string>();
+
+    for (const dp of dbProjects) {
+      const existing = serverById.get(dp.id) || serverByTitle.get(normTitle(dp.title));
+      if (existing) consumedServerIds.add(existing.id);
+      result.set(dp.id, {
+        ...existing,
+        ...dp,
+        // Server store wins for countdown data; Supabase rows may lack these columns.
+        next_update_at: existing ? existing.next_update_at ?? null : dp.next_update_at ?? null,
+        countdown_released: existing ? Boolean(existing.countdown_released) : Boolean(dp.countdown_released),
+      });
+    }
+
+    for (const sp of serverProjects) {
+      if (!consumedServerIds.has(sp.id) && !result.has(sp.id)) {
+        result.set(sp.id, { ...sp, countdown_released: Boolean(sp.countdown_released) });
+      }
+    }
+
+    return NextResponse.json(
+      { projects: Array.from(result.values()) },
+      { headers: { "Cache-Control": "no-store" } }
+    );
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

@@ -31,18 +31,20 @@ type ViewMode = "login" | "forgot" | "reset";
  * Reusable utility to prevent Open Redirect vulnerabilities.
  * Ensures the target starts with the expected prefix, does not start with //, and contains no protocols or backslashes.
  */
-function sanitizeRedirectUrl(url: string | null | undefined, allowedPrefix: "/admin" | "/portal"): string {
-  if (!url) return allowedPrefix;
+function sanitizeRedirectUrl(url: string | null | undefined, defaultFallback: "/admin" | "/portal", isAdmin = false): string {
+  if (!url) return defaultFallback;
   const clean = url.trim();
+  const isValidAdmin = clean.startsWith("/admin");
+  const isValidPortal = clean.startsWith("/portal");
   if (
-    clean.startsWith(allowedPrefix) &&
+    (isAdmin ? (isValidAdmin || isValidPortal) : isValidPortal) &&
     !clean.startsWith("//") &&
     !clean.includes("://") &&
     !clean.includes("\\")
   ) {
     return clean;
   }
-  return allowedPrefix;
+  return defaultFallback;
 }
 
 function LoginForm() {
@@ -94,10 +96,11 @@ function LoginForm() {
   useEffect(() => {
     if (!authLoading && user && profile) {
       const redirectParam = searchParams.get("redirect");
-      if (profile.role === "admin") {
-        window.location.href = sanitizeRedirectUrl(redirectParam, "/admin");
+      const isAdmin = profile.role === "admin";
+      if (isAdmin) {
+        window.location.href = sanitizeRedirectUrl(redirectParam, "/admin", true);
       } else {
-        window.location.href = sanitizeRedirectUrl(redirectParam, "/portal");
+        window.location.href = sanitizeRedirectUrl(redirectParam, "/portal", false);
       }
     }
   }, [user, profile, authLoading, searchParams]);
@@ -152,9 +155,9 @@ function LoginForm() {
       const redirectParam = searchParams.get("redirect");
 
       if (role === "admin") {
-        window.location.href = sanitizeRedirectUrl(redirectParam, "/admin");
+        window.location.href = sanitizeRedirectUrl(redirectParam, "/admin", true);
       } else {
-        window.location.href = sanitizeRedirectUrl(redirectParam, "/portal");
+        window.location.href = sanitizeRedirectUrl(redirectParam, "/portal", false);
       }
     } catch (err: any) {
       setErrorMsg(err.message || "Ocorreu um erro inesperado.");

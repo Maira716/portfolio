@@ -33,15 +33,37 @@ export interface ReceiptData {
 }
 
 export const DEFAULT_AGENCY_DATA = {
-  name: "Maira Reis da Silva",
-  tradeName: "Maira Reis - Desenvolvimento de Software & UI/UX",
-  document: "48.291.802/0001-94",
-  email: "contato@mairareis.dev",
-  phone: "+55 (11) 98765-4321",
-  city: "São Paulo",
-  state: "SP",
-  role: "Engenheira de Software & Arquiteta de Soluções Digitais",
+  name: "Maira Reis",
+  tradeName: "Maira Reis - Desenvolvimento & UI/UX Design",
+  document: "55.843.406/0001-28",
+  email: "mairareis2017@gmail.com",
+  phone: "+55 (35) 9803-0543",
+  city: "Pouso Alegre",
+  state: "MG",
+  role: "Engenheira de Software & UI/UX Designer",
 };
+
+export function getAgencyData(): typeof DEFAULT_AGENCY_DATA {
+  if (typeof window !== "undefined") {
+    try {
+      const saved = localStorage.getItem("portfolio_admin_issuer_settings_v1");
+      if (saved) {
+        const p = JSON.parse(saved);
+        return {
+          name: p.pixBeneficiary || p.companyName || DEFAULT_AGENCY_DATA.name,
+          tradeName: p.tradingName || p.companyName || DEFAULT_AGENCY_DATA.tradeName,
+          document: p.documentNumber || p.pixKey || DEFAULT_AGENCY_DATA.document,
+          email: p.email || DEFAULT_AGENCY_DATA.email,
+          phone: p.phone || DEFAULT_AGENCY_DATA.phone,
+          city: p.city || DEFAULT_AGENCY_DATA.city,
+          state: p.state || DEFAULT_AGENCY_DATA.state,
+          role: p.roleTitle || DEFAULT_AGENCY_DATA.role,
+        };
+      }
+    } catch {}
+  }
+  return DEFAULT_AGENCY_DATA;
+}
 
 /**
  * Converts a positive number to Portuguese currency words (e.g. 5800 -> "cinco mil e oitocentos reais")

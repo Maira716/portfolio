@@ -10,7 +10,7 @@ const securityHeaders = [
       "img-src 'self' data: blob: https://images.unsplash.com https://*.supabase.co https://avatar.vercel.sh",
       "font-src 'self' data: https://fonts.gstatic.com",
       "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.resend.com https://vitals.vercel-insights.com",
-      "frame-ancestors 'none'",
+      "frame-ancestors 'self'",
       "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",
@@ -30,7 +30,7 @@ const securityHeaders = [
   },
   {
     key: "X-Frame-Options",
-    value: "DENY",
+    value: "SAMEORIGIN",
   },
   {
     key: "X-Content-Type-Options",
