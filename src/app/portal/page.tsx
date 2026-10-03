@@ -1801,7 +1801,7 @@ function ClientPortalContent() {
           </div>
 
           <div className="flex items-center gap-3 sm:gap-4">
-            {profile?.role === "admin" && (
+            {(profile?.role === "admin" || (user?.email && ["mairareis2017@gmail.com", "maira.reis.ti@gmail.com", "admin@mairareis.dev"].includes(user.email.toLowerCase().trim()))) && (
               <Link
                 href="/admin"
                 className="px-3.5 py-1.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 text-xs font-semibold border border-purple-500/30 transition-all flex items-center gap-1.5"
@@ -1819,7 +1819,9 @@ function ClientPortalContent() {
                 <span className="text-xs font-semibold text-white leading-tight">
                   {profile?.full_name || user?.email?.split("@")[0]}
                 </span>
-                <span className="text-[10px] text-emerald-400">Cliente Autorizado</span>
+                <span className={`text-[10px] ${profile?.role === "admin" || (user?.email && ["mairareis2017@gmail.com", "maira.reis.ti@gmail.com", "admin@mairareis.dev"].includes(user.email.toLowerCase().trim())) ? "text-purple-400 font-semibold" : "text-emerald-400"}`}>
+                  {profile?.role === "admin" || (user?.email && ["mairareis2017@gmail.com", "maira.reis.ti@gmail.com", "admin@mairareis.dev"].includes(user.email.toLowerCase().trim())) ? "Administrador" : "Cliente Autorizado"}
+                </span>
               </div>
             </div>
 

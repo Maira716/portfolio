@@ -77,9 +77,17 @@ export async function middleware(request: NextRequest) {
           return NextResponse.redirect(blockedUrl);
         }
 
-        // 4. If accessing /admin, require role === 'admin'
+        const isAdminUser =
+          profile?.role === "admin" ||
+          (user.email && (
+            user.email.toLowerCase() === "mairareis2017@gmail.com" ||
+            user.email.toLowerCase() === "maira.reis.ti@gmail.com" ||
+            user.email.toLowerCase() === "admin@mairareis.dev"
+          ));
+
+        // 4. If accessing /admin, require admin role or admin email
         if (isAdminRoute) {
-          if (profile?.role !== "admin") {
+          if (!isAdminUser) {
             // If logged in as client, redirect to client portal
             return NextResponse.redirect(new URL("/portal", request.url));
           }

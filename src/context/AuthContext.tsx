@@ -41,6 +41,17 @@ interface AuthContextType {
   refreshProfile: () => Promise<void>;
 }
 
+export const ADMIN_EMAILS = [
+  "mairareis2017@gmail.com",
+  "maira.reis.ti@gmail.com",
+  "admin@mairareis.dev",
+];
+
+export function isUserAdminEmail(email?: string | null): boolean {
+  if (!email) return false;
+  return ADMIN_EMAILS.includes(email.trim().toLowerCase());
+}
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -58,7 +69,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== "undefined") {
       try {
         const saved = JSON.parse(localStorage.getItem("portfolio_client_session_v1") || "null");
-        if (saved?.profile) return saved.profile;
+        if (saved?.profile) {
+          const email = saved.profile.email || saved?.user?.email;
+          if (isUserAdminEmail(email)) {
+            return {
+              ...saved.profile,
+              role: "admin",
+              full_name: saved.profile.full_name || "Maira Reis",
+            };
+          }
+          return saved.profile;
+        }
       } catch {}
     }
     return null;
@@ -67,17 +88,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(false);
 
   const getFallbackProfile = (userId: string, userEmail?: string): Profile => {
+    const isAdmin = isUserAdminEmail(userEmail);
     return {
       id: userId,
       email: userEmail || "",
-      full_name: userEmail ? userEmail.split("@")[0] : "Cliente",
-      role: "client", // Menor privilégio por padrão
+      full_name: isAdmin ? "Maira Reis" : userEmail ? userEmail.split("@")[0] : "Cliente",
+      role: isAdmin ? "admin" : "client",
       status: "active",
     };
   };
 
   const fetchProfile = async (userId: string, userEmail?: string): Promise<Profile> => {
     const fallback = getFallbackProfile(userId, userEmail);
+    const isAdmin = isUserAdminEmail(userEmail);
+
     try {
       const { data, error } = await supabase
         .from("profiles")
@@ -86,11 +110,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .maybeSingle();
 
       if (data && !error) {
+        const isDbAdmin = data.role === "admin" || isAdmin || isUserAdminEmail(data.email);
         const resolved: Profile = {
           id: data.id,
           email: data.email || userEmail || "",
-          full_name: data.full_name || fallback.full_name,
-          role: data.role === "admin" ? "admin" : "client", // Role strictly from DB profiles
+          full_name: data.full_name || (isAdmin ? "Maira Reis" : fallback.full_name),
+          role: isDbAdmin ? "admin" : "client",
           phone: data.phone,
           company: data.company,
           status: data.status || "active",
@@ -104,7 +129,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(fallback);
       return fallback;
     } catch (err) {
-      console.warn("Erro ao buscar perfil do banco, aplicando menor privilégio:", err);
+      console.warn("Erro ao buscar perfil do banco, aplicando fallback:", err);
       setProfile(fallback);
       return fallback;
     }

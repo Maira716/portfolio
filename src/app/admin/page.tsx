@@ -2294,14 +2294,29 @@ export default function AdminDashboardPage() {
     if (!authLoading && !user) {
       router.push("/login?redirect=/admin");
     } else if (user && profile) {
-      if (profile.role !== "admin") {
+      const isAdmin =
+        profile.role === "admin" ||
+        (user.email &&
+          [
+            "mairareis2017@gmail.com",
+            "maira.reis.ti@gmail.com",
+            "admin@mairareis.dev",
+          ].includes(user.email.toLowerCase().trim())) ||
+        (profile.email &&
+          [
+            "mairareis2017@gmail.com",
+            "maira.reis.ti@gmail.com",
+            "admin@mairareis.dev",
+          ].includes(profile.email.toLowerCase().trim()));
+
+      if (!isAdmin) {
         router.push("/portal");
       } else if (!hasInitialFetched.current) {
         hasInitialFetched.current = true;
         fetchData();
       }
     }
-  }, [user?.id, profile?.role, authLoading, router]);
+  }, [user?.id, user?.email, profile?.role, profile?.email, authLoading, router]);
 
   // Handle Project Create / Update
   const handleOpenProjectModal = (proj?: Project) => {
