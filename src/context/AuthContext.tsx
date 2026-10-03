@@ -246,7 +246,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return { user: apiData.user, profile: resolvedProfile, error: null };
         }
 
-        if (apiData.error && !apiData.error.toLowerCase().includes("não encontrado")) {
+        if (apiData.error) {
           return { user: null, profile: null, error: new Error(apiData.error) };
         }
       } catch (apiErr) {
