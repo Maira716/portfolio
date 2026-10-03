@@ -1951,19 +1951,24 @@ export default function AdminDashboardPage() {
         }
       }
 
-      // Final safety deduplication by title + client_id
+      // Final safety deduplication strictly by title
       const finalProjectsList: Project[] = [];
       const seenKey = new Set<string>();
       for (const p of Array.from(mergedMap.values())) {
-        const key = `${p.title.trim().toLowerCase()}__${p.client_id || "none"}`;
+        const key = p.title.trim().toLowerCase();
         if (!seenKey.has(key)) {
           seenKey.add(key);
           finalProjectsList.push(p);
-        } else if (pData.some((dp) => dp.id === p.id)) {
-          // If this is a DB record, make sure it is preferred
-          const idx = finalProjectsList.findIndex((item) => `${item.title.trim().toLowerCase()}__${item.client_id || "none"}` === key);
-          if (idx !== -1 && !pData.some((dp) => dp.id === finalProjectsList[idx].id)) {
-            finalProjectsList[idx] = p;
+        } else {
+          // If duplicate found, replace with the one that has richer configuration (e.g. deadline / start_date / db record)
+          const idx = finalProjectsList.findIndex((item) => item.title.trim().toLowerCase() === key);
+          if (idx !== -1) {
+            const existing = finalProjectsList[idx];
+            const pHasDates = Boolean(p.start_date || p.deadline);
+            const existingHasDates = Boolean(existing.start_date || existing.deadline);
+            if (!existingHasDates && pHasDates) {
+              finalProjectsList[idx] = p;
+            }
           }
         }
       }

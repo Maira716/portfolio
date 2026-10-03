@@ -204,240 +204,13 @@ const DEFAULT_DATA: PortalData = {
       created_at: new Date().toISOString(),
     },
   ],
-  projects: [
-    {
-      id: "proj-avantt-01",
-      client_id: "client-gabriel-01",
-      client_email: "gabrielmonteiropersonalswim@gmail.com",
-      client_name: "Gabriel",
-      title: "AVANTT",
-      description: "Aplicativo mobile e sistema integrado",
-      status: "desenvolvimento",
-      progress: 35,
-      start_date: "2026-09-01",
-      deadline: "2026-12-15",
-      preview_url: "https://staging.avantt.app",
-      figma_url: "https://figma.com/@avantt-app-preview",
-      repo_url: "https://github.com/avantt-project",
-      category: "Mobile App (React Native)",
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ],
-  updates: {
-    "proj-avantt-01": [
-      {
-        id: "upd-01",
-        project_id: "proj-avantt-01",
-        title: "Desenvolvimento dos Módulos Principais",
-        content: "Estrutura do aplicativo mobile configurada, fluxo de autenticação e navegação concluídos com sucesso.",
-        category: "update",
-        created_at: new Date().toISOString(),
-      },
-    ],
-  },
-  milestones: {
-    "proj-avantt-01": [
-      {
-        id: "mile-01",
-        project_id: "proj-avantt-01",
-        title: "Sprint 1: UI/UX & Protótipo Navegável",
-        description: "Definição visual, arquitetura da informação e telas no Figma.",
-        due_date: "2026-09-20",
-        order_index: 1,
-        completed: true,
-        completed_at: "2026-09-20T18:00:00.000Z",
-        stage: "Planejamento",
-        tasks: [
-          { id: "t1", text: "Wireframes e arquitetura", completed: true },
-          { id: "t2", text: "Design System e componentes", completed: true },
-          { id: "t3", text: "Validação visual com o cliente", completed: true },
-        ],
-      },
-      {
-        id: "mile-02",
-        project_id: "proj-avantt-01",
-        title: "Sprint 2: Estrutura Base & Autenticação",
-        description: "Setup do projeto React Native, autenticação e rotas principais.",
-        due_date: "2026-10-15",
-        order_index: 2,
-        completed: false,
-        stage: "Desenvolvimento",
-        tasks: [
-          { id: "t4", text: "Configuração do ambiente e navegação", completed: true },
-          { id: "t5", text: "Módulo de login e perfil de usuário", completed: true },
-          { id: "t6", text: "Integração inicial com API e banco", completed: false },
-        ],
-      },
-      {
-        id: "mile-03",
-        project_id: "proj-avantt-01",
-        title: "Sprint 3: Funcionalidades Core & Dashboard",
-        description: "Implementação das telas principais do sistema.",
-        due_date: "2026-11-10",
-        order_index: 3,
-        completed: false,
-        stage: "Desenvolvimento",
-        tasks: [
-          { id: "t7", text: "Listagens e filtros de dados", completed: false },
-          { id: "t8", text: "Fluxos de cadastro e edição", completed: false },
-        ],
-      },
-      {
-        id: "mile-04",
-        project_id: "proj-avantt-01",
-        title: "Sprint 4: Testes de QA & Homologação",
-        description: "Geração de APK de teste e validação de funcionalidades.",
-        due_date: "2026-11-30",
-        order_index: 4,
-        completed: false,
-        stage: "Testes",
-        tasks: [
-          { id: "t9", text: "Testes em dispositivos reais", completed: false },
-          { id: "t10", text: "Ajustes e refinamentos finais", completed: false },
-        ],
-      },
-      {
-        id: "mile-05",
-        project_id: "proj-avantt-01",
-        title: "Sprint 5: Lançamento & Publicação nas Lojas",
-        description: "Publicação do app na Google Play Store e Apple App Store.",
-        due_date: "2026-12-15",
-        order_index: 5,
-        completed: false,
-        stage: "Lançamento",
-        tasks: [
-          { id: "t11", text: "Build de produção e assinatura", completed: false },
-          { id: "t12", text: "Submissão para aprovação", completed: false },
-        ],
-      },
-    ],
-  },
-  quickLinks: {
-    "proj-avantt-01": [
-      {
-        id: "link-figma-01",
-        project_id: "proj-avantt-01",
-        label: "Protótipo Figma",
-        url: "https://figma.com/@avantt-app-preview",
-        category: "figma",
-        description: "Design UI/UX do aplicativo",
-        is_active: true,
-      },
-      {
-        id: "link-staging-01",
-        project_id: "proj-avantt-01",
-        label: "Ambiente de Testes / Staging",
-        url: "https://staging.avantt.app",
-        category: "staging",
-        description: "Versão de homologação do app",
-        is_active: true,
-      },
-    ],
-  },
-  finances: {
-    "proj-avantt-01": {
-      project_id: "proj-avantt-01",
-      total_contract_value: 15000,
-      notes: "Contrato de Desenvolvimento Mobile React Native com pagamento parcelado em 3x.",
-      installments: [
-        {
-          id: "inst-01",
-          project_id: "proj-avantt-01",
-          installment_number: 1,
-          title: "Entrada / Kick-off do Projeto",
-          amount: 5000,
-          due_date: "2026-09-05",
-          paid_at: "2026-09-05T14:30:00.000Z",
-          payment_method: "pix",
-          receipt_url: "AUT-SHA256-AVAN-INST01-REC",
-          notes: "Comprovante de quitação validado pela administração.",
-        },
-        {
-          id: "inst-02",
-          project_id: "proj-avantt-01",
-          installment_number: 2,
-          title: "Entrega do Protótipo & Módulos Core",
-          amount: 5000,
-          due_date: "2026-10-25",
-          paid_at: null,
-          payment_method: "pix",
-          notes: "Parcela intermediária de desenvolvimento.",
-        },
-        {
-          id: "inst-03",
-          project_id: "proj-avantt-01",
-          installment_number: 3,
-          title: "Homologação Final & Publicação nas Lojas",
-          amount: 5000,
-          due_date: "2026-12-15",
-          paid_at: null,
-          payment_method: "pix",
-          notes: "Parcela final vinculada ao lançamento do app.",
-        },
-      ],
-    },
-  },
-  documents: {
-    "proj-avantt-01": [
-      {
-        id: "doc-contrato-01",
-        project_id: "proj-avantt-01",
-        title: "Contrato de Prestação de Serviços e Desenvolvimento de Software",
-        filename: "contrato_prestacao_servicos_avantt.pdf",
-        category: "contrato",
-        visibility: "client",
-        file_url: "/docs/contrato-avantt.pdf",
-        file_size_bytes: 348576,
-        file_size_formatted: "340 KB",
-        mime_type: "application/pdf",
-        uploaded_at: "2026-09-01T10:00:00.000Z",
-        notes: "Contrato assinado digitalmente com validade jurídica.",
-      },
-      {
-        id: "doc-proposta-01",
-        project_id: "proj-avantt-01",
-        title: "Proposta Comercial, Escopo Técnico & Cronograma de Sprints",
-        filename: "proposta_comercial_escopo_avantt.pdf",
-        category: "proposta",
-        visibility: "client",
-        file_url: "/docs/proposta-avantt.pdf",
-        file_size_bytes: 524288,
-        file_size_formatted: "512 KB",
-        mime_type: "application/pdf",
-        uploaded_at: "2026-09-01T10:30:00.000Z",
-        notes: "Especificação detalhada das 5 sprints e entregáveis.",
-      },
-      {
-        id: "doc-nda-01",
-        project_id: "proj-avantt-01",
-        title: "Termo de Confidencialidade e Sigilo (NDA)",
-        filename: "termo_nda_confidencialidade_avantt.pdf",
-        category: "nda",
-        visibility: "client",
-        file_url: "/docs/nda-avantt.pdf",
-        file_size_bytes: 215040,
-        file_size_formatted: "210 KB",
-        mime_type: "application/pdf",
-        uploaded_at: "2026-09-01T11:00:00.000Z",
-        notes: "Proteção de propriedade intelectual e código-fonte.",
-      },
-    ],
-  },
-  notifications: [
-    {
-      id: "notif-01",
-      client_id: "client-gabriel-01",
-      client_email: "gabrielmonteiropersonalswim@gmail.com",
-      project_id: "proj-avantt-01",
-      project_title: "AVANTT",
-      title: "🎉 Bem-vindo ao Portal do Cliente!",
-      message: "Seu ambiente exclusivo para acompanhar o projeto AVANTT está ativo.",
-      type: "update",
-      read: false,
-      created_at: new Date().toISOString(),
-    },
-  ],
+  projects: [],
+  updates: {},
+  milestones: {},
+  quickLinks: {},
+  notifications: [],
+  finances: {},
+  documents: {},
   proposals: [],
 };
 
@@ -471,12 +244,14 @@ export function readPortalData(): PortalData {
     const parsed = JSON.parse(raw);
     
     if (!parsed.clients || !Array.isArray(parsed.clients)) parsed.clients = DEFAULT_DATA.clients;
-    if (!parsed.projects || !Array.isArray(parsed.projects)) parsed.projects = DEFAULT_DATA.projects;
-    if (!parsed.updates || typeof parsed.updates !== "object") parsed.updates = DEFAULT_DATA.updates;
+    if (!parsed.projects || !Array.isArray(parsed.projects)) parsed.projects = [];
+    if (!parsed.updates || typeof parsed.updates !== "object") parsed.updates = {};
     if (!parsed.notifications || !Array.isArray(parsed.notifications)) parsed.notifications = [];
     if (!parsed.finances || typeof parsed.finances !== "object") parsed.finances = {};
     if (!parsed.documents || typeof parsed.documents !== "object") parsed.documents = {};
     if (!parsed.proposals || !Array.isArray(parsed.proposals)) parsed.proposals = [];
+    if (!parsed.milestones || typeof parsed.milestones !== "object") parsed.milestones = {};
+    if (!parsed.quickLinks || typeof parsed.quickLinks !== "object") parsed.quickLinks = {};
 
     // Ensure registered clients are present
     for (const defClient of DEFAULT_DATA.clients) {
@@ -484,11 +259,18 @@ export function readPortalData(): PortalData {
         parsed.clients.push(defClient);
       }
     }
-    for (const defProj of DEFAULT_DATA.projects) {
-      if (!parsed.projects.some((p: any) => p.title === defProj.title && p.client_email?.toLowerCase() === defProj.client_email?.toLowerCase())) {
-        parsed.projects.push(defProj);
+
+    // Deduplicate projects strictly by title + client
+    const uniqueProjects: StoredProject[] = [];
+    const seenProj = new Set<string>();
+    for (const p of parsed.projects) {
+      const key = `${(p.title || "").trim().toLowerCase()}`;
+      if (!seenProj.has(key)) {
+        seenProj.add(key);
+        uniqueProjects.push(p);
       }
     }
+    parsed.projects = uniqueProjects;
 
     memoryCache = parsed;
     return parsed;
