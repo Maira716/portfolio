@@ -133,6 +133,31 @@ export interface StoredCommercialProposal {
   createdAt: string;
 }
 
+export interface StoredMilestone {
+  id: string;
+  project_id: string;
+  title: string;
+  description: string | null;
+  due_date: string | null;
+  order_index?: number;
+  completed: boolean;
+  completed_at?: string | null;
+  stage?: string | null;
+  progress?: number;
+  tasks?: { id: string; text: string; completed: boolean }[];
+}
+
+export interface StoredQuickLink {
+  id: string;
+  project_id: string;
+  label: string;
+  url: string;
+  category: "figma" | "staging" | "docs" | "github" | "api" | "production" | "video" | "outro";
+  description?: string | null;
+  is_active: boolean;
+  created_at?: string;
+}
+
 export interface PortalData {
   clients: StoredClient[];
   projects: StoredProject[];
@@ -141,6 +166,8 @@ export interface PortalData {
   finances?: Record<string, StoredProjectFinancialData>;
   documents?: Record<string, StoredProjectDocument[]>;
   proposals?: StoredCommercialProposal[];
+  milestones?: Record<string, StoredMilestone[]>;
+  quickLinks?: Record<string, StoredQuickLink[]>;
 }
 
 let memoryCache: PortalData | null = null;
@@ -186,12 +213,12 @@ const DEFAULT_DATA: PortalData = {
       title: "AVANTT",
       description: "Aplicativo mobile e sistema integrado",
       status: "desenvolvimento",
-      progress: 33,
-      start_date: null,
-      deadline: null,
-      preview_url: null,
-      figma_url: null,
-      repo_url: null,
+      progress: 35,
+      start_date: "2026-09-01",
+      deadline: "2026-12-15",
+      preview_url: "https://staging.avantt.app",
+      figma_url: "https://figma.com/@avantt-app-preview",
+      repo_url: "https://github.com/avantt-project",
       category: "Mobile App (React Native)",
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -200,12 +227,111 @@ const DEFAULT_DATA: PortalData = {
   updates: {
     "proj-avantt-01": [
       {
-        "id": "upd-01",
-        "project_id": "proj-avantt-01",
-        "title": "Início do Desenvolvimento dos Módulos Principais",
-        "content": "Estrutura do aplicativo configurada e telas iniciais em andamento.",
-        "category": "update",
-        "created_at": new Date().toISOString(),
+        id: "upd-01",
+        project_id: "proj-avantt-01",
+        title: "Desenvolvimento dos Módulos Principais",
+        content: "Estrutura do aplicativo mobile configurada, fluxo de autenticação e navegação concluídos com sucesso.",
+        category: "update",
+        created_at: new Date().toISOString(),
+      },
+    ],
+  },
+  milestones: {
+    "proj-avantt-01": [
+      {
+        id: "mile-01",
+        project_id: "proj-avantt-01",
+        title: "Sprint 1: UI/UX & Protótipo Navegável",
+        description: "Definição visual, arquitetura da informação e telas no Figma.",
+        due_date: "2026-09-20",
+        order_index: 1,
+        completed: true,
+        completed_at: "2026-09-20T18:00:00.000Z",
+        stage: "Planejamento",
+        tasks: [
+          { id: "t1", text: "Wireframes e arquitetura", completed: true },
+          { id: "t2", text: "Design System e componentes", completed: true },
+          { id: "t3", text: "Validação visual com o cliente", completed: true },
+        ],
+      },
+      {
+        id: "mile-02",
+        project_id: "proj-avantt-01",
+        title: "Sprint 2: Estrutura Base & Autenticação",
+        description: "Setup do projeto React Native, autenticação e rotas principais.",
+        due_date: "2026-10-15",
+        order_index: 2,
+        completed: false,
+        stage: "Desenvolvimento",
+        tasks: [
+          { id: "t4", text: "Configuração do ambiente e navegação", completed: true },
+          { id: "t5", text: "Módulo de login e perfil de usuário", completed: true },
+          { id: "t6", text: "Integração inicial com API e banco", completed: false },
+        ],
+      },
+      {
+        id: "mile-03",
+        project_id: "proj-avantt-01",
+        title: "Sprint 3: Funcionalidades Core & Dashboard",
+        description: "Implementação das telas principais do sistema.",
+        due_date: "2026-11-10",
+        order_index: 3,
+        completed: false,
+        stage: "Desenvolvimento",
+        tasks: [
+          { id: "t7", text: "Listagens e filtros de dados", completed: false },
+          { id: "t8", text: "Fluxos de cadastro e edição", completed: false },
+        ],
+      },
+      {
+        id: "mile-04",
+        project_id: "proj-avantt-01",
+        title: "Sprint 4: Testes de QA & Homologação",
+        description: "Geração de APK de teste e validação de funcionalidades.",
+        due_date: "2026-11-30",
+        order_index: 4,
+        completed: false,
+        stage: "Testes",
+        tasks: [
+          { id: "t9", text: "Testes em dispositivos reais", completed: false },
+          { id: "t10", text: "Ajustes e refinamentos finais", completed: false },
+        ],
+      },
+      {
+        id: "mile-05",
+        project_id: "proj-avantt-01",
+        title: "Sprint 5: Lançamento & Publicação nas Lojas",
+        description: "Publicação do app na Google Play Store e Apple App Store.",
+        due_date: "2026-12-15",
+        order_index: 5,
+        completed: false,
+        stage: "Lançamento",
+        tasks: [
+          { id: "t11", text: "Build de produção e assinatura", completed: false },
+          { id: "t12", text: "Submissão para aprovação", completed: false },
+        ],
+      },
+    ],
+  },
+  quickLinks: {
+    "proj-avantt-01": [
+      {
+        id: "link-figma-01",
+        project_id: "proj-avantt-01",
+        label: "Protótipo Figma",
+        url: "https://figma.com/@avantt-app-preview",
+        category: "figma",
+        description: "Design UI/UX do aplicativo",
+        is_active: true,
+      },
+      {
+        id: "link-staging-01",
+        project_id: "proj-avantt-01",
+        label: "Ambiente de Testes / Staging",
+        url: "https://staging.avantt.app",
+        category: "staging",
+        description: "Versão de homologação do app",
+        is_active: true,
       },
     ],
   },
@@ -587,6 +713,72 @@ export function saveAllStoredProposals(
   data.proposals = proposals;
   writePortalData(data);
   return proposals;
+}
+
+// Project Milestones Store
+export function getMilestonesForProject(projectId: string): StoredMilestone[] {
+  const data = readPortalData();
+  return data.milestones?.[projectId] || [];
+}
+
+export function getAllMilestones(): Record<string, StoredMilestone[]> {
+  const data = readPortalData();
+  return data.milestones || {};
+}
+
+export function saveMilestonesForProject(
+  projectId: string,
+  milestonesList: StoredMilestone[]
+): StoredMilestone[] {
+  const data = readPortalData();
+  if (!data.milestones) {
+    data.milestones = {};
+  }
+  data.milestones[projectId] = milestonesList;
+  writePortalData(data);
+  return milestonesList;
+}
+
+export function saveAllMilestones(
+  milestonesMap: Record<string, StoredMilestone[]>
+): Record<string, StoredMilestone[]> {
+  const data = readPortalData();
+  data.milestones = { ...(data.milestones || {}), ...milestonesMap };
+  writePortalData(data);
+  return data.milestones;
+}
+
+// Project Quick Links Store
+export function getQuickLinksForProject(projectId: string): StoredQuickLink[] {
+  const data = readPortalData();
+  return data.quickLinks?.[projectId] || [];
+}
+
+export function getAllQuickLinks(): Record<string, StoredQuickLink[]> {
+  const data = readPortalData();
+  return data.quickLinks || {};
+}
+
+export function saveQuickLinksForProject(
+  projectId: string,
+  linksList: StoredQuickLink[]
+): StoredQuickLink[] {
+  const data = readPortalData();
+  if (!data.quickLinks) {
+    data.quickLinks = {};
+  }
+  data.quickLinks[projectId] = linksList;
+  writePortalData(data);
+  return linksList;
+}
+
+export function saveAllQuickLinks(
+  linksMap: Record<string, StoredQuickLink[]>
+): Record<string, StoredQuickLink[]> {
+  const data = readPortalData();
+  data.quickLinks = { ...(data.quickLinks || {}), ...linksMap };
+  writePortalData(data);
+  return data.quickLinks;
 }
 
 

@@ -2697,6 +2697,15 @@ export default function AdminDashboardPage() {
             localStorage.setItem("portfolio_admin_milestones_v1", JSON.stringify(parsed));
           } catch (e) {}
         }
+
+        try {
+          fetch("/api/portal/milestones", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ projectId: selectedProject.id, milestones: updatedMilestonesList }),
+          }).catch(() => {});
+        } catch (e) {}
+
         return updatedMilestonesList;
       });
 

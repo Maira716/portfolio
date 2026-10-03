@@ -1486,18 +1486,32 @@ function ClientPortalContent() {
       // Load milestones strictly for this project
       let milestonesList: Milestone[] = [];
       try {
-        const { data: mData } = await supabase
-          .from("project_milestones")
-          .select("*")
-          .eq("project_id", projectId)
-          .order("order_index", { ascending: true });
-
-        if (mData && mData.length > 0) {
-          milestonesList = mData as Milestone[];
+        const mRes = await fetch(`/api/portal/milestones?projectId=${encodeURIComponent(projectId)}`);
+        if (mRes.ok) {
+          const mJson = await mRes.json();
+          if (mJson.milestones && Array.isArray(mJson.milestones)) {
+            milestonesList = mJson.milestones;
+          }
         }
-      } catch (e) {}
+      } catch (mApiErr) {
+        console.warn("Could not fetch milestones from API:", mApiErr);
+      }
 
-      // If no milestones found in Supabase, check localStorage for this specific project ID
+      if (milestonesList.length === 0) {
+        try {
+          const { data: mData } = await supabase
+            .from("project_milestones")
+            .select("*")
+            .eq("project_id", projectId)
+            .order("order_index", { ascending: true });
+
+          if (mData && mData.length > 0) {
+            milestonesList = mData as Milestone[];
+          }
+        } catch (e) {}
+      }
+
+      // If no milestones found in Supabase/API, check localStorage for this specific project ID
       if (milestonesList.length === 0) {
         try {
           const rawM = typeof window !== "undefined" ? localStorage.getItem("portfolio_admin_milestones_v1") : null;
@@ -1561,30 +1575,44 @@ function ClientPortalContent() {
 
       setUpdates(projectUpdatesList);
 
-      // Load Quick Links strictly for this project
+      // Load Quick Links strictly for this project from server API + localStorage + project URLs
       let projectLinksList: ProjectQuickLink[] = [];
       try {
-        const rawLinks =
-          typeof window !== "undefined"
-            ? localStorage.getItem("portfolio_admin_quick_links_v1")
-            : null;
-        if (rawLinks) {
-          const parsed = JSON.parse(rawLinks);
-          if (parsed && typeof parsed === "object") {
-            if (Array.isArray(parsed[projectId])) {
-              projectLinksList = parsed[projectId].filter(
-                (l: ProjectQuickLink) => l.is_active !== false && l.url && l.url.trim() !== ""
-              );
-            } else if (Array.isArray(parsed)) {
-              projectLinksList = parsed.filter(
-                (l: ProjectQuickLink) =>
-                  l.project_id === projectId && l.is_active !== false && l.url && l.url.trim() !== ""
-              );
-            }
+        const linkRes = await fetch(`/api/portal/quick-links?projectId=${encodeURIComponent(projectId)}`);
+        if (linkRes.ok) {
+          const linkJson = await linkRes.json();
+          if (linkJson.quickLinks && Array.isArray(linkJson.quickLinks)) {
+            projectLinksList = linkJson.quickLinks;
           }
         }
-      } catch (e) {
-        console.error("Error reading quick links from localStorage:", e);
+      } catch (linkErr) {
+        console.warn("Could not fetch quick links from API:", linkErr);
+      }
+
+      if (projectLinksList.length === 0) {
+        try {
+          const rawLinks =
+            typeof window !== "undefined"
+              ? localStorage.getItem("portfolio_admin_quick_links_v1")
+              : null;
+          if (rawLinks) {
+            const parsed = JSON.parse(rawLinks);
+            if (parsed && typeof parsed === "object") {
+              if (Array.isArray(parsed[projectId])) {
+                projectLinksList = parsed[projectId].filter(
+                  (l: ProjectQuickLink) => l.is_active !== false && l.url && l.url.trim() !== ""
+                );
+              } else if (Array.isArray(parsed)) {
+                projectLinksList = parsed.filter(
+                  (l: ProjectQuickLink) =>
+                    l.project_id === projectId && l.is_active !== false && l.url && l.url.trim() !== ""
+                );
+              }
+            }
+          }
+        } catch (e) {
+          console.error("Error reading quick links from localStorage:", e);
+        }
       }
 
       const activeProj =
