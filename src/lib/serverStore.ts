@@ -153,51 +153,9 @@ function getDataFilePath(): string {
 }
 
 const DEFAULT_DATA: PortalData = {
-  clients: [
-    {
-      id: "client-gabriel-01",
-      email: "gabrielmonteiopersonalswim@gmail.com",
-      full_name: "Gabriel Monteiro",
-      password: "Cliente@123",
-      phone: null,
-      company: null,
-      status: "active",
-      role: "client",
-      created_at: new Date().toISOString(),
-    },
-  ],
-  projects: [
-    {
-      id: "proj-avantt-01",
-      client_id: "client-gabriel-01",
-      client_email: "gabrielmonteiopersonalswim@gmail.com",
-      client_name: "Gabriel Monteiro",
-      title: "AVANTT",
-      description: "Aplicativo mobile e sistema integrado",
-      status: "desenvolvimento",
-      progress: 33,
-      start_date: null,
-      deadline: null,
-      preview_url: null,
-      figma_url: null,
-      repo_url: null,
-      category: "Mobile App (React Native)",
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ],
-  updates: {
-    "proj-avantt-01": [
-      {
-        "id": "upd-01",
-        "project_id": "proj-avantt-01",
-        "title": "Início do Desenvolvimento dos Módulos Principais",
-        "content": "Estrutura do aplicativo configurada e telas iniciais em andamento.",
-        "category": "update",
-        "created_at": new Date().toISOString(),
-      },
-    ],
-  },
+  clients: [],
+  projects: [],
+  updates: {},
   notifications: [],
   finances: {},
   documents: {},
@@ -233,21 +191,13 @@ export function readPortalData(): PortalData {
     const raw = fs.readFileSync(filePath, "utf8");
     const parsed = JSON.parse(raw);
     
-    if (!parsed.clients || !Array.isArray(parsed.clients)) parsed.clients = DEFAULT_DATA.clients;
-    if (!parsed.projects || !Array.isArray(parsed.projects)) parsed.projects = DEFAULT_DATA.projects;
-    if (!parsed.updates || typeof parsed.updates !== "object") parsed.updates = DEFAULT_DATA.updates;
+    if (!parsed.clients || !Array.isArray(parsed.clients)) parsed.clients = [];
+    if (!parsed.projects || !Array.isArray(parsed.projects)) parsed.projects = [];
+    if (!parsed.updates || typeof parsed.updates !== "object") parsed.updates = {};
     if (!parsed.notifications || !Array.isArray(parsed.notifications)) parsed.notifications = [];
     if (!parsed.finances || typeof parsed.finances !== "object") parsed.finances = {};
     if (!parsed.documents || typeof parsed.documents !== "object") parsed.documents = {};
     if (!parsed.proposals || !Array.isArray(parsed.proposals)) parsed.proposals = [];
-
-    // Ensure Gabriel's exact registered client record is present
-    if (!parsed.clients.some((c: any) => c.email?.toLowerCase() === "gabrielmonteiopersonalswim@gmail.com")) {
-      parsed.clients.unshift(DEFAULT_DATA.clients[0]);
-    }
-    if (!parsed.projects.some((p: any) => p.client_email?.toLowerCase() === "gabrielmonteiopersonalswim@gmail.com")) {
-      parsed.projects.unshift(DEFAULT_DATA.projects[0]);
-    }
 
     memoryCache = parsed;
     return parsed;
