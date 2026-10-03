@@ -120,6 +120,7 @@ import { BroadcastModule } from "@/components/admin/BroadcastModule";
 import { ReportsModule } from "@/components/admin/ReportsModule";
 import { ProposalsModule } from "@/components/admin/ProposalsModule";
 import { KanbanModule } from "@/components/admin/KanbanModule";
+import { SettingsModule } from "@/components/admin/SettingsModule";
 
 export type ProjectStatus =
   | "planejamento"
@@ -7510,27 +7511,11 @@ export default function AdminDashboardPage() {
           )}
 
           {activeTab === "settings" && (
-            <div className="p-6 sm:p-7 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-6">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Settings size={18} className="text-gray-400" />
-                <span>Configurações do Sistema</span>
-              </h3>
-
-              <div className="space-y-4 max-w-xl">
-                <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5">
-                  <h4 className="text-sm font-bold text-white">Banco de Dados Supabase</h4>
-                  <p className="text-xs text-gray-400 mt-0.5">Conexão ativa com PostgreSQL e autenticação em tempo real.</p>
-                  <span className="inline-block mt-2 text-[10px] px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold">
-                    ● Status: Online e Operacional
-                  </span>
-                </div>
-
-                <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5">
-                  <h4 className="text-sm font-bold text-white">Notificações WhatsApp</h4>
-                  <p className="text-xs text-gray-400 mt-0.5">Mensagens de feedback e dúvidas do portal encaminhadas para o seu número.</p>
-                </div>
-              </div>
-            </div>
+            <SettingsModule
+              projects={projects}
+              clients={clients}
+              onRefreshData={fetchData}
+            />
           )}
         </main>
       </div>
