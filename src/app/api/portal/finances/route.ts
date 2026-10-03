@@ -35,7 +35,14 @@ export async function GET(req: NextRequest) {
     if (!isAdmin && !devBypass && user) {
       const portalData = readPortalData();
       const project = portalData.projects.find((p) => p.id === projectId);
-      if (project && project.client_id !== user.id && project.client_email?.toLowerCase() !== user.email.toLowerCase()) {
+      const userEmail = (user.email || "").toLowerCase().trim();
+      const userId = (user.id || "").toLowerCase().trim();
+      const isOwner =
+        (userId && project?.client_id?.toLowerCase() === userId) ||
+        (userEmail && project?.client_id?.toLowerCase() === userEmail) ||
+        (userEmail && project?.client_email?.toLowerCase() === userEmail);
+
+      if (project && !isOwner) {
         return NextResponse.json({ error: "Acesso não autorizado a este projeto." }, { status: 403 });
       }
     }
