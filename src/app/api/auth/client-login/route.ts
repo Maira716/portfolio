@@ -83,7 +83,8 @@ export async function POST(req: NextRequest) {
 
     const isDefaultPasswordMatch =
       cleanPassword === DEFAULT_CLIENT_PASSWORD ||
-      cleanPassword.toLowerCase() === DEFAULT_CLIENT_PASSWORD.toLowerCase();
+      cleanPassword.toLowerCase() === "cliente@123" ||
+      cleanPassword.toLowerCase() === "cliente123";
 
     // Helper to generate a standardized client session response
     const buildSuccessResponse = (

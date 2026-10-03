@@ -17,6 +17,7 @@ export interface StoredProject {
   id: string;
   client_id: string;
   client_email?: string;
+  client_name?: string;
   title: string;
   description: string | null;
   status: "planejamento" | "design" | "desenvolvimento" | "testes" | "concluido" | "pausado";
@@ -142,12 +143,61 @@ export interface PortalData {
   proposals?: StoredCommercialProposal[];
 }
 
-const DATA_FILE_PATH = path.join(process.cwd(), "src", "data", "portal-data.json");
+let memoryCache: PortalData | null = null;
+
+function getDataFilePath(): string {
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    return path.join("/tmp", "portal-data.json");
+  }
+  return path.join(process.cwd(), "src", "data", "portal-data.json");
+}
 
 const DEFAULT_DATA: PortalData = {
-  clients: [],
-  projects: [],
-  updates: {},
+  clients: [
+    {
+      id: "client-gabriel-01",
+      email: "gabrielmonteiopersonalswim@gmail.com",
+      full_name: "Gabriel",
+      password: "Cliente@123",
+      phone: null,
+      company: null,
+      status: "active",
+      role: "client",
+      created_at: new Date().toISOString(),
+    },
+  ],
+  projects: [
+    {
+      id: "proj-avantt-01",
+      client_id: "client-gabriel-01",
+      client_email: "gabrielmonteiopersonalswim@gmail.com",
+      client_name: "Gabriel",
+      title: "AVANTT",
+      description: "Aplicativo mobile e sistema integrado",
+      status: "desenvolvimento",
+      progress: 33,
+      start_date: null,
+      deadline: null,
+      preview_url: null,
+      figma_url: null,
+      repo_url: null,
+      category: "Mobile App (React Native)",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ],
+  updates: {
+    "proj-avantt-01": [
+      {
+        "id": "upd-01",
+        "project_id": "proj-avantt-01",
+        "title": "Início do Desenvolvimento dos Módulos Principais",
+        "content": "Estrutura do aplicativo configurada e telas iniciais em andamento.",
+        "category": "update",
+        "created_at": new Date().toISOString(),
+      },
+    ],
+  },
   notifications: [],
   finances: {},
   documents: {},
@@ -155,43 +205,67 @@ const DEFAULT_DATA: PortalData = {
 };
 
 function ensureDirectoryExists(filePath: string) {
-  const dir = path.dirname(filePath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+  try {
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+  } catch (err) {
+    // Ignore directory creation error in read-only environments
   }
 }
 
 export function readPortalData(): PortalData {
+  if (memoryCache) {
+    return memoryCache;
+  }
+
+  const filePath = getDataFilePath();
   try {
-    ensureDirectoryExists(DATA_FILE_PATH);
-    if (!fs.existsSync(DATA_FILE_PATH)) {
-      fs.writeFileSync(DATA_FILE_PATH, JSON.stringify(DEFAULT_DATA, null, 2), "utf8");
-      return DEFAULT_DATA;
+    ensureDirectoryExists(filePath);
+    if (!fs.existsSync(filePath)) {
+      try {
+        fs.writeFileSync(filePath, JSON.stringify(DEFAULT_DATA, null, 2), "utf8");
+      } catch {}
+      memoryCache = JSON.parse(JSON.stringify(DEFAULT_DATA));
+      return memoryCache!;
     }
-    const raw = fs.readFileSync(DATA_FILE_PATH, "utf8");
+    const raw = fs.readFileSync(filePath, "utf8");
     const parsed = JSON.parse(raw);
     
-    if (!parsed.clients || !Array.isArray(parsed.clients)) parsed.clients = [];
-    if (!parsed.projects || !Array.isArray(parsed.projects)) parsed.projects = [];
-    if (!parsed.updates || typeof parsed.updates !== "object") parsed.updates = {};
+    if (!parsed.clients || !Array.isArray(parsed.clients)) parsed.clients = DEFAULT_DATA.clients;
+    if (!parsed.projects || !Array.isArray(parsed.projects)) parsed.projects = DEFAULT_DATA.projects;
+    if (!parsed.updates || typeof parsed.updates !== "object") parsed.updates = DEFAULT_DATA.updates;
     if (!parsed.notifications || !Array.isArray(parsed.notifications)) parsed.notifications = [];
     if (!parsed.finances || typeof parsed.finances !== "object") parsed.finances = {};
     if (!parsed.documents || typeof parsed.documents !== "object") parsed.documents = {};
     if (!parsed.proposals || !Array.isArray(parsed.proposals)) parsed.proposals = [];
 
+    // Ensure Gabriel is always in clients list if not present
+    if (!parsed.clients.some((c: any) => c.email?.toLowerCase() === "gabrielmonteiopersonalswim@gmail.com")) {
+      parsed.clients.unshift(DEFAULT_DATA.clients[0]);
+    }
+    if (!parsed.projects.some((p: any) => p.title === "AVANTT")) {
+      parsed.projects.unshift(DEFAULT_DATA.projects[0]);
+    }
+
+    memoryCache = parsed;
     return parsed;
   } catch (err) {
-    console.error("Error reading portal-data.json:", err);
-    return DEFAULT_DATA;
+    console.error("Error reading portal-data.json, using in-memory store:", err);
+    memoryCache = JSON.parse(JSON.stringify(DEFAULT_DATA));
+    return memoryCache!;
   }
 }
 
 export function writePortalData(data: PortalData): void {
+  memoryCache = data;
+  const filePath = getDataFilePath();
   try {
-    ensureDirectoryExists(DATA_FILE_PATH);
-    fs.writeFileSync(DATA_FILE_PATH, JSON.stringify(data, null, 2), "utf8");
+    ensureDirectoryExists(filePath);
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
   } catch (err) {
-    console.error("Error writing portal-data.json:", err);
+    // In serverless read-only environments, memoryCache guarantees data is kept in-memory
   }
 }
 
