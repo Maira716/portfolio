@@ -27,6 +27,24 @@ import { useAuth } from "@/context/AuthContext";
 
 type ViewMode = "login" | "forgot" | "reset";
 
+/**
+ * Reusable utility to prevent Open Redirect vulnerabilities.
+ * Ensures the target starts with the expected prefix, does not start with //, and contains no protocols or backslashes.
+ */
+function sanitizeRedirectUrl(url: string | null | undefined, allowedPrefix: "/admin" | "/portal"): string {
+  if (!url) return allowedPrefix;
+  const clean = url.trim();
+  if (
+    clean.startsWith(allowedPrefix) &&
+    !clean.startsWith("//") &&
+    !clean.includes("://") &&
+    !clean.includes("\\")
+  ) {
+    return clean;
+  }
+  return allowedPrefix;
+}
+
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -72,23 +90,14 @@ function LoginForm() {
     }
   }, [searchParams]);
 
-  // Redirect if already logged in according to role
+  // Redirect if already logged in according to role strictly from database profile
   useEffect(() => {
     if (!authLoading && user && profile) {
       const redirectParam = searchParams.get("redirect");
       if (profile.role === "admin") {
-        if (redirectParam && redirectParam.startsWith("/admin")) {
-          router.push(redirectParam);
-        } else {
-          router.push("/admin");
-        }
+        router.push(sanitizeRedirectUrl(redirectParam, "/admin"));
       } else {
-        // Client role is strictly restricted to /portal
-        if (redirectParam && redirectParam.startsWith("/portal")) {
-          router.push(redirectParam);
-        } else {
-          router.push("/portal");
-        }
+        router.push(sanitizeRedirectUrl(redirectParam, "/portal"));
       }
     }
   }, [user, profile, authLoading, router, searchParams]);
@@ -138,24 +147,14 @@ function LoginForm() {
       setFailedAttempts(0);
       setLockoutSeconds(0);
 
-      // Determine target route immediately and redirect
-      const role =
-        signedInProfile?.role ||
-        (cleanEmail === "mairareis2017@gmail.com" || cleanEmail === "admin@mairareis.com.br" ? "admin" : "client");
+      // Determine target route strictly from loaded profile role (least privilege fallback to /portal)
+      const role = signedInProfile?.role === "admin" ? "admin" : "client";
       const redirectParam = searchParams.get("redirect");
 
       if (role === "admin") {
-        if (redirectParam && redirectParam.startsWith("/admin")) {
-          router.push(redirectParam);
-        } else {
-          router.push("/admin");
-        }
+        router.push(sanitizeRedirectUrl(redirectParam, "/admin"));
       } else {
-        if (redirectParam && redirectParam.startsWith("/portal")) {
-          router.push(redirectParam);
-        } else {
-          router.push("/portal");
-        }
+        router.push(sanitizeRedirectUrl(redirectParam, "/portal"));
       }
     } catch (err: any) {
       setErrorMsg(err.message || "Ocorreu um erro inesperado.");

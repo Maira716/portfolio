@@ -6,8 +6,8 @@ export async function middleware(request: NextRequest) {
     request,
   });
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
     return supabaseResponse;
@@ -32,11 +32,53 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  try {
-    // Refresh auth session token in cookies
-    await supabase.auth.getUser();
-  } catch {
-    // Ignore error in middleware to allow client-side hydration
+  const pathname = request.nextUrl.pathname;
+
+  // Protect /admin and /portal routes on server
+  const isAdminRoute = pathname.startsWith("/admin");
+  const isPortalRoute = pathname.startsWith("/portal");
+
+  if (isAdminRoute || isPortalRoute) {
+    try {
+      // 1. Validate token strictly on the server using getUser()
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        const loginUrl = new URL("/login", request.url);
+        loginUrl.searchParams.set("redirect", pathname);
+        return NextResponse.redirect(loginUrl);
+      }
+
+      // 2. Query user profile from database to determine role and status
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role, status")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      // 3. Block access if user is suspended/blocked
+      if (profile?.status === "blocked") {
+        const blockedUrl = new URL("/login", request.url);
+        blockedUrl.searchParams.set("error", "blocked");
+        return NextResponse.redirect(blockedUrl);
+      }
+
+      // 4. If accessing /admin, require role === 'admin'
+      if (isAdminRoute) {
+        if (profile?.role !== "admin") {
+          // If logged in as client, redirect to client portal
+          return NextResponse.redirect(new URL("/portal", request.url));
+        }
+      }
+    } catch {
+      // In case of unexpected server error on protected route, redirect to login
+      const loginUrl = new URL("/login", request.url);
+      loginUrl.searchParams.set("redirect", pathname);
+      return NextResponse.redirect(loginUrl);
+    }
   }
 
   return supabaseResponse;

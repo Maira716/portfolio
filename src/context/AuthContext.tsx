@@ -48,19 +48,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const ADMIN_EMAILS = [
-    "mairareis2017@gmail.com",
-    "admin@mairareis.com.br",
-  ];
-
   const getFallbackProfile = (userId: string, userEmail?: string): Profile => {
-    const emailLower = (userEmail || "").trim().toLowerCase();
-    const isAdmin = ADMIN_EMAILS.includes(emailLower);
     return {
       id: userId,
       email: userEmail || "",
-      full_name: isAdmin ? "Maira Reis" : (userEmail?.split("@")[0] || "Cliente"),
-      role: isAdmin ? "admin" : "client",
+      full_name: userEmail ? userEmail.split("@")[0] : "Cliente",
+      role: "client", // Menor privilégio por padrão
       status: "active",
     };
   };
@@ -70,36 +63,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const { data, error } = await supabase
         .from("profiles")
-        .select("*")
+        .select("id, email, full_name, role, phone, company, status, avatar_url, created_at")
         .eq("id", userId)
         .maybeSingle();
 
-      if (data) {
-        const resolved = data as Profile;
+      if (data && !error) {
+        const resolved: Profile = {
+          id: data.id,
+          email: data.email || userEmail || "",
+          full_name: data.full_name || fallback.full_name,
+          role: data.role === "admin" ? "admin" : "client", // Role strictly from DB profiles
+          phone: data.phone,
+          company: data.company,
+          status: data.status || "active",
+          avatar_url: data.avatar_url,
+          created_at: data.created_at,
+        };
         setProfile(resolved);
         return resolved;
-      }
-
-      // Try inserting if not found in database
-      try {
-        const { data: created } = await supabase
-          .from("profiles")
-          .upsert([fallback])
-          .select()
-          .maybeSingle();
-        if (created) {
-          const resolved = created as Profile;
-          setProfile(resolved);
-          return resolved;
-        }
-      } catch (insertErr) {
-        console.warn("Could not insert profile in database, using local fallback:", insertErr);
       }
 
       setProfile(fallback);
       return fallback;
     } catch (err) {
-      console.warn("Error fetching profile, using local fallback:", err);
+      console.warn("Erro ao buscar perfil do banco, aplicando menor privilégio:", err);
       setProfile(fallback);
       return fallback;
     }
