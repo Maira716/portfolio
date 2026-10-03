@@ -147,12 +147,12 @@ export async function POST(req: NextRequest) {
     if (storedClient) {
       if (storedClient.status === "blocked") {
         return NextResponse.json(
-          { error: "Acesso bloqueado. Este perfil foi suspenso temporariamente pela administração. Entre em contato com a Maira Reis para reativação." },
+          { error: "Acesso bloqueado. Este perfil foi suspenso temporariamente pela administração. Entre em contato para reativação." },
           { status: 403 }
         );
       }
 
-      // Check password with verifyPassword or system default client password fallback
+      // Strict password verification: check stored password or default initial client password
       const validPass =
         isDefaultPasswordMatch ||
         Boolean(storedClient.password && verifyPassword(cleanPassword, storedClient.password));
@@ -160,13 +160,13 @@ export async function POST(req: NextRequest) {
       if (!validPass) {
         return NextResponse.json(
           {
-            error: `Senha incorreta para ${storedClient.full_name || cleanEmail}. A senha padrão inicial cadastrada é "Cliente@123" (com 'C' maiúsculo e '@'). Se alterou sua senha, utilize a nova senha ou clique em 'Esqueceu a senha?'.`,
+            error: "Senha incorreta para o e-mail informado. Verifique suas credenciais de acesso.",
           },
           { status: 401 }
         );
       }
 
-      // If logging in with default password, ensure it is stored
+      // If logging in with default password and password not yet hashed/stored, persist it
       if (isDefaultPasswordMatch && !storedClient.password) {
         storedClient.password = DEFAULT_CLIENT_PASSWORD;
         saveClient(storedClient);
@@ -189,7 +189,7 @@ export async function POST(req: NextRequest) {
       if (profileRecord) {
         if (profileRecord.status === "blocked") {
           return NextResponse.json(
-            { error: "Acesso bloqueado. Este perfil foi suspenso temporariamente pela administração. Entre em contato com a Maira Reis para reativação." },
+            { error: "Acesso bloqueado. Este perfil foi suspenso temporariamente pela administração. Entre em contato para reativação." },
             { status: 403 }
           );
         }
@@ -215,7 +215,7 @@ export async function POST(req: NextRequest) {
         } else {
           return NextResponse.json(
             {
-              error: `Senha incorreta para ${profileRecord.full_name || cleanEmail}. A senha padrão inicial é "Cliente@123". Se você alterou sua senha anteriormente, utilize a senha cadastrada ou recupere o acesso.`,
+              error: "Senha incorreta para o e-mail informado. Verifique suas credenciais de acesso.",
             },
             { status: 401 }
           );
@@ -225,25 +225,10 @@ export async function POST(req: NextRequest) {
       console.warn("DB profile lookup failed:", dbErr);
     }
 
-    // 5. If using standard default client password (e.g. registered in Admin/Projects), grant client access
-    if (isDefaultPasswordMatch) {
-      const emailPrefix = cleanEmail.split("@")[0];
-      const derivedName = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1);
-
-      const newClient = saveClient({
-        email: cleanEmail,
-        full_name: derivedName,
-        password: cleanPassword,
-        role: "client",
-        status: "active",
-      });
-
-      return buildSuccessResponse(newClient);
-    }
-
+    // 5. Strict rejection for unregistered emails (no auto-registration for arbitrary emails)
     return NextResponse.json(
       {
-        error: `O e-mail "${cleanEmail}" não foi encontrado nos cadastros de clientes ou a senha informada não confere. Certifique-se de usar a senha padrão "Cliente@123" ou verifique se o e-mail possui alguma letra digitada incorretamente.`,
+        error: `O e-mail "${cleanEmail}" não está cadastrado no sistema. Verifique a digitação exata ou solicite seu cadastro à administração.`,
       },
       { status: 401 }
     );
