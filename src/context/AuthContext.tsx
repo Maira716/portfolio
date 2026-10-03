@@ -110,8 +110,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               setUser(saved.user);
               setProfile(saved.profile);
             } else {
-              setUser(null);
-              setProfile(null);
+              const match = document.cookie.match(/portfolio_client_session=([^;]+)/);
+              if (match) {
+                const cookieSession = JSON.parse(decodeURIComponent(match[1]));
+                if (cookieSession?.id && cookieSession?.email) {
+                  const clientUser = {
+                    id: cookieSession.id,
+                    email: cookieSession.email,
+                    user_metadata: { full_name: cookieSession.name || "Cliente", role: "client" },
+                  } as any;
+                  const clientProfile = {
+                    id: cookieSession.id,
+                    email: cookieSession.email,
+                    full_name: cookieSession.name || "Cliente",
+                    role: "client" as const,
+                    status: "active" as const,
+                  };
+                  setUser(clientUser);
+                  setProfile(clientProfile);
+                  localStorage.setItem("portfolio_client_session_v1", JSON.stringify({ user: clientUser, profile: clientProfile }));
+                }
+              } else {
+                setUser(null);
+                setProfile(null);
+              }
             }
           } catch (e) {
             setUser(null);
@@ -138,7 +160,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (saved?.user && saved?.profile) {
             setUser(saved.user);
             setProfile(saved.profile);
+            setLoading(false);
             return;
+          }
+          const match = document.cookie.match(/portfolio_client_session=([^;]+)/);
+          if (match) {
+            try {
+              const cookieSession = JSON.parse(decodeURIComponent(match[1]));
+              if (cookieSession?.id && cookieSession?.email) {
+                const clientUser = {
+                  id: cookieSession.id,
+                  email: cookieSession.email,
+                  user_metadata: { full_name: cookieSession.name || "Cliente", role: "client" },
+                } as any;
+                const clientProfile = {
+                  id: cookieSession.id,
+                  email: cookieSession.email,
+                  full_name: cookieSession.name || "Cliente",
+                  role: "client" as const,
+                  status: "active" as const,
+                };
+                setUser(clientUser);
+                setProfile(clientProfile);
+                setLoading(false);
+                return;
+              }
+            } catch {}
           }
         }
         setUser(null);

@@ -95,12 +95,12 @@ function LoginForm() {
     if (!authLoading && user && profile) {
       const redirectParam = searchParams.get("redirect");
       if (profile.role === "admin") {
-        router.push(sanitizeRedirectUrl(redirectParam, "/admin"));
+        window.location.href = sanitizeRedirectUrl(redirectParam, "/admin");
       } else {
-        router.push(sanitizeRedirectUrl(redirectParam, "/portal"));
+        window.location.href = sanitizeRedirectUrl(redirectParam, "/portal");
       }
     }
-  }, [user, profile, authLoading, router, searchParams]);
+  }, [user, profile, authLoading, searchParams]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -152,17 +152,13 @@ function LoginForm() {
       const redirectParam = searchParams.get("redirect");
 
       if (role === "admin") {
-        router.push(sanitizeRedirectUrl(redirectParam, "/admin"));
+        window.location.href = sanitizeRedirectUrl(redirectParam, "/admin");
       } else {
-        router.push(sanitizeRedirectUrl(redirectParam, "/portal"));
+        window.location.href = sanitizeRedirectUrl(redirectParam, "/portal");
       }
     } catch (err: any) {
       setErrorMsg(err.message || "Ocorreu um erro inesperado.");
       setLoading(false);
-    } finally {
-      setTimeout(() => {
-        setLoading(false);
-      }, 2500);
     }
   };
 
