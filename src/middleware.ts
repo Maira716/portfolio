@@ -46,32 +46,49 @@ export async function middleware(request: NextRequest) {
         error: authError,
       } = await supabase.auth.getUser();
 
-      if (authError || !user) {
+      const clientCookie = request.cookies.get("portfolio_client_session")?.value;
+      let parsedClient: { id?: string; email?: string; role?: string } | null = null;
+      if (clientCookie) {
+        try {
+          parsedClient = JSON.parse(clientCookie);
+        } catch {}
+      }
+
+      const activeUser = user || (parsedClient ? { id: parsedClient.id || "client", email: parsedClient.email } : null);
+
+      if (!activeUser) {
         const loginUrl = new URL("/login", request.url);
         loginUrl.searchParams.set("redirect", pathname);
         return NextResponse.redirect(loginUrl);
       }
 
-      // 2. Query user profile from database to determine role and status
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role, status")
-        .eq("id", user.id)
-        .maybeSingle();
+      // 2. Query user profile from database to determine role and status (if Supabase user exists)
+      if (user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role, status")
+          .eq("id", user.id)
+          .maybeSingle();
 
-      // 3. Block access if user is suspended/blocked
-      if (profile?.status === "blocked") {
-        const blockedUrl = new URL("/login", request.url);
-        blockedUrl.searchParams.set("error", "blocked");
-        return NextResponse.redirect(blockedUrl);
-      }
-
-      // 4. If accessing /admin, require role === 'admin'
-      if (isAdminRoute) {
-        if (profile?.role !== "admin") {
-          // If logged in as client, redirect to client portal
-          return NextResponse.redirect(new URL("/portal", request.url));
+        // 3. Block access if user is suspended/blocked
+        if (profile?.status === "blocked") {
+          const blockedUrl = new URL("/login", request.url);
+          blockedUrl.searchParams.set("error", "blocked");
+          return NextResponse.redirect(blockedUrl);
         }
+
+        // 4. If accessing /admin, require role === 'admin'
+        if (isAdminRoute) {
+          if (profile?.role !== "admin") {
+            // If logged in as client, redirect to client portal
+            return NextResponse.redirect(new URL("/portal", request.url));
+          }
+        }
+      } else if (isAdminRoute) {
+        // Non-supabase or client-only session cannot access /admin
+        const loginUrl = new URL("/login", request.url);
+        loginUrl.searchParams.set("redirect", pathname);
+        return NextResponse.redirect(loginUrl);
       }
     } catch {
       // In case of unexpected server error on protected route, redirect to login

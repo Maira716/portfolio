@@ -273,6 +273,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     if (typeof window !== "undefined") {
       localStorage.removeItem("portfolio_client_session_v1");
+      document.cookie = "portfolio_client_session=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT;";
     }
     try {
       await supabase.auth.signOut();

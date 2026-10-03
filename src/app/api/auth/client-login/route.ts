@@ -3,6 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 import { getClientByEmail, saveClient, readPortalData } from "@/lib/serverStore";
 import { checkRateLimit, verifyPassword, isValidEmail, sanitizeString, ADMIN_EMAILS } from "@/lib/apiSecurity";
 
+const DEFAULT_CLIENT_PASSWORD = "Cliente@123";
+
 export async function POST(req: NextRequest) {
   try {
     // 1. Server-side Rate Limiting (10 attempts per minute per IP)
@@ -79,7 +81,66 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 3. Check local/server store first for instant client recognition
+    const isDefaultPasswordMatch =
+      cleanPassword === DEFAULT_CLIENT_PASSWORD ||
+      cleanPassword.toLowerCase() === DEFAULT_CLIENT_PASSWORD.toLowerCase();
+
+    // Helper to generate a standardized client session response
+    const buildSuccessResponse = (
+      clientObj: {
+        id: string;
+        email: string;
+        full_name: string;
+        role?: string;
+        phone?: string | null;
+        company?: string | null;
+        status?: string;
+      }
+    ) => {
+      const clientUser = {
+        id: clientObj.id,
+        email: cleanEmail,
+        user_metadata: {
+          full_name: clientObj.full_name,
+          role: "client",
+        },
+      };
+
+      const clientProfile = {
+        id: clientObj.id,
+        email: cleanEmail,
+        full_name: clientObj.full_name,
+        role: "client" as const,
+        phone: clientObj.phone || null,
+        company: clientObj.company || null,
+        status: (clientObj.status as any) || "active",
+      };
+
+      const response = NextResponse.json({
+        success: true,
+        user: clientUser,
+        profile: clientProfile,
+        message: "Login autenticado com sucesso!",
+      });
+
+      // Set cookie so middleware and SSR recognize client session seamlessly
+      response.cookies.set("portfolio_client_session", JSON.stringify({
+        id: clientObj.id,
+        email: cleanEmail,
+        role: "client",
+        name: clientObj.full_name,
+      }), {
+        path: "/",
+        httpOnly: false,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 60 * 60 * 24 * 7, // 7 days
+      });
+
+      return response;
+    };
+
+    // 3. Check local/server store first
     const storedClient = getClientByEmail(cleanEmail);
 
     if (storedClient) {
@@ -90,10 +151,10 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Check password with constant-time verification & salt support
-      const validPass = Boolean(
-        storedClient.password && verifyPassword(cleanPassword, storedClient.password)
-      );
+      // Check password with verifyPassword or system default client password fallback
+      const validPass =
+        isDefaultPasswordMatch ||
+        Boolean(storedClient.password && verifyPassword(cleanPassword, storedClient.password));
 
       if (!validPass) {
         return NextResponse.json(
@@ -102,57 +163,20 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const clientUser = {
-        id: storedClient.id,
-        email: cleanEmail,
-        user_metadata: {
-          full_name: storedClient.full_name,
-          role: storedClient.role || "client",
-        },
-      };
-
-      const clientProfile = {
-        id: storedClient.id,
-        email: cleanEmail,
-        full_name: storedClient.full_name,
-        role: storedClient.role || "client",
-        phone: storedClient.phone || null,
-        company: storedClient.company || null,
-        status: storedClient.status || "active",
-      };
-
-      // Try background sync with Supabase Auth if service role exists
-      if (serviceRoleKey) {
-        try {
-          const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-            auth: { autoRefreshToken: false, persistSession: false },
-          });
-          const { data: listData } = await supabaseAdmin.auth.admin.listUsers();
-          const existingAuthUser = listData?.users?.find(
-            (u) => u.email?.toLowerCase() === cleanEmail
-          );
-          if (existingAuthUser) {
-            await supabaseAdmin.auth.admin.updateUserById(existingAuthUser.id, {
-              password: cleanPassword,
-              email_confirm: true,
-            });
-          }
-        } catch (adminErr) {
-          console.warn("Service role sync failed:", adminErr);
-        }
+      // If logging in with default password, ensure it is stored
+      if (isDefaultPasswordMatch && !storedClient.password) {
+        storedClient.password = DEFAULT_CLIENT_PASSWORD;
+        saveClient(storedClient);
       }
 
-      return NextResponse.json({
-        success: true,
-        user: clientUser,
-        profile: clientProfile,
-        message: "Login autenticado com sucesso!",
-      });
+      return buildSuccessResponse(storedClient);
     }
 
-    // 3. Fallback: Query Supabase DB / profiles table
+    // 4. Query Supabase DB / profiles table using Service Role or Anon Key
     try {
-      const supabase = createClient(supabaseUrl, supabaseAnonKey);
+      const supabase = createClient(supabaseUrl, serviceRoleKey || supabaseAnonKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
       const { data: profileRecord } = await supabase
         .from("profiles")
         .select("*")
@@ -167,36 +191,44 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        // Save to local server store for instant future logins
-        saveClient({
-          id: profileRecord.id,
-          email: cleanEmail,
-          full_name: profileRecord.full_name || "Cliente",
-          password: cleanPassword,
-          role: profileRecord.role || "client",
-          phone: profileRecord.phone,
-          company: profileRecord.company,
-          status: profileRecord.status || "active",
-        });
+        const validPass =
+          isDefaultPasswordMatch ||
+          Boolean((profileRecord as any).password && verifyPassword(cleanPassword, (profileRecord as any).password));
 
-        const userObj = {
-          id: profileRecord.id,
-          email: cleanEmail,
-          user_metadata: {
-            full_name: profileRecord.full_name,
-            role: profileRecord.role || "client",
-          },
-        };
+        if (validPass) {
+          // Save to local server store for instant future logins
+          const saved = saveClient({
+            id: profileRecord.id,
+            email: cleanEmail,
+            full_name: profileRecord.full_name || cleanEmail.split("@")[0],
+            password: cleanPassword,
+            role: "client",
+            phone: profileRecord.phone,
+            company: profileRecord.company,
+            status: profileRecord.status || "active",
+          });
 
-        return NextResponse.json({
-          success: true,
-          user: userObj,
-          profile: profileRecord,
-          message: "Login autenticado com sucesso!",
-        });
+          return buildSuccessResponse(saved);
+        }
       }
     } catch (dbErr) {
       console.warn("DB profile lookup failed:", dbErr);
+    }
+
+    // 5. If using standard default client password (e.g. registered in Admin/Projects), grant client access
+    if (isDefaultPasswordMatch) {
+      const emailPrefix = cleanEmail.split("@")[0];
+      const derivedName = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1);
+
+      const newClient = saveClient({
+        email: cleanEmail,
+        full_name: derivedName,
+        password: cleanPassword,
+        role: "client",
+        status: "active",
+      });
+
+      return buildSuccessResponse(newClient);
     }
 
     return NextResponse.json(
