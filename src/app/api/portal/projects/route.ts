@@ -30,8 +30,14 @@ export async function GET(req: NextRequest) {
     try {
       const supabase = createClient(supabaseUrl, supabaseAnonKey);
       let query = supabase.from("projects").select("*").order("created_at", { ascending: false });
-      if (!effectiveIsAdmin && effectiveClientId) {
-        query = query.eq("client_id", effectiveClientId);
+      if (!effectiveIsAdmin && (effectiveClientId || effectiveClientEmail)) {
+        if (effectiveClientId && effectiveClientEmail) {
+          query = query.or(`client_id.eq.${effectiveClientId},client_id.eq.${effectiveClientEmail},client_email.eq.${effectiveClientEmail}`);
+        } else if (effectiveClientId) {
+          query = query.eq("client_id", effectiveClientId);
+        } else if (effectiveClientEmail) {
+          query = query.or(`client_id.eq.${effectiveClientEmail},client_email.eq.${effectiveClientEmail}`);
+        }
       }
       const { data } = await query;
       if (data && Array.isArray(data)) dbProjects = data;

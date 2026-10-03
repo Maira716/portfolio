@@ -1336,7 +1336,10 @@ function ClientPortalContent() {
           .order("created_at", { ascending: false });
 
         if (profile && profile.role !== "admin") {
-          query = query.eq("client_id", user.id);
+          const userEmail = user.email || "";
+          query = userEmail
+            ? query.or(`client_id.eq.${user.id},client_id.eq.${userEmail},client_email.eq.${userEmail}`)
+            : query.eq("client_id", user.id);
         }
 
         const { data: projData, error: projError } = await query;
