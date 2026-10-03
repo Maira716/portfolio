@@ -156,8 +156,19 @@ const DEFAULT_DATA: PortalData = {
   clients: [
     {
       id: "client-gabriel-01",
+      email: "gabrielmonteiropersonalswim@gmail.com",
+      full_name: "Gabriel Monteiro",
+      password: "Cliente@123",
+      phone: null,
+      company: null,
+      status: "active",
+      role: "client",
+      created_at: new Date().toISOString(),
+    },
+    {
+      id: "client-gabriel-02",
       email: "gabrielmonteiopersonalswim@gmail.com",
-      full_name: "Gabriel",
+      full_name: "Gabriel Monteiro",
       password: "Cliente@123",
       phone: null,
       company: null,
@@ -170,8 +181,26 @@ const DEFAULT_DATA: PortalData = {
     {
       id: "proj-avantt-01",
       client_id: "client-gabriel-01",
+      client_email: "gabrielmonteiropersonalswim@gmail.com",
+      client_name: "Gabriel Monteiro",
+      title: "AVANTT",
+      description: "Aplicativo mobile e sistema integrado",
+      status: "desenvolvimento",
+      progress: 33,
+      start_date: null,
+      deadline: null,
+      preview_url: null,
+      figma_url: null,
+      repo_url: null,
+      category: "Mobile App (React Native)",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: "proj-avantt-02",
+      client_id: "client-gabriel-02",
       client_email: "gabrielmonteiopersonalswim@gmail.com",
-      client_name: "Gabriel",
+      client_name: "Gabriel Monteiro",
       title: "AVANTT",
       description: "Aplicativo mobile e sistema integrado",
       status: "desenvolvimento",
@@ -191,6 +220,16 @@ const DEFAULT_DATA: PortalData = {
       {
         "id": "upd-01",
         "project_id": "proj-avantt-01",
+        "title": "Início do Desenvolvimento dos Módulos Principais",
+        "content": "Estrutura do aplicativo configurada e telas iniciais em andamento.",
+        "category": "update",
+        "created_at": new Date().toISOString(),
+      },
+    ],
+    "proj-avantt-02": [
+      {
+        "id": "upd-02",
+        "project_id": "proj-avantt-02",
         "title": "Início do Desenvolvimento dos Módulos Principais",
         "content": "Estrutura do aplicativo configurada e telas iniciais em andamento.",
         "category": "update",
@@ -241,12 +280,16 @@ export function readPortalData(): PortalData {
     if (!parsed.documents || typeof parsed.documents !== "object") parsed.documents = {};
     if (!parsed.proposals || !Array.isArray(parsed.proposals)) parsed.proposals = [];
 
-    // Ensure Gabriel is always in clients list if not present
-    if (!parsed.clients.some((c: any) => c.email?.toLowerCase() === "gabrielmonteiopersonalswim@gmail.com")) {
-      parsed.clients.unshift(DEFAULT_DATA.clients[0]);
+    // Ensure both spellings of Gabriel's email are present
+    for (const defaultClient of DEFAULT_DATA.clients) {
+      if (!parsed.clients.some((c: any) => c.email?.toLowerCase() === defaultClient.email.toLowerCase())) {
+        parsed.clients.unshift(defaultClient);
+      }
     }
-    if (!parsed.projects.some((p: any) => p.title === "AVANTT")) {
-      parsed.projects.unshift(DEFAULT_DATA.projects[0]);
+    for (const defaultProj of DEFAULT_DATA.projects) {
+      if (!parsed.projects.some((p: any) => p.client_email?.toLowerCase() === defaultProj.client_email?.toLowerCase())) {
+        parsed.projects.unshift(defaultProj);
+      }
     }
 
     memoryCache = parsed;

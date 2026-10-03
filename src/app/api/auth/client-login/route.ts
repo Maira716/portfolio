@@ -147,7 +147,7 @@ export async function POST(req: NextRequest) {
     if (storedClient) {
       if (storedClient.status === "blocked") {
         return NextResponse.json(
-          { error: "Acesso bloqueado. Entre em contato com a administração para reativar seu cadastro." },
+          { error: "Acesso bloqueado. Este perfil foi suspenso temporariamente pela administração. Entre em contato com a Maira Reis para reativação." },
           { status: 403 }
         );
       }
@@ -159,7 +159,9 @@ export async function POST(req: NextRequest) {
 
       if (!validPass) {
         return NextResponse.json(
-          { error: "E-mail ou senha incorretos. Verifique suas credenciais." },
+          {
+            error: `Senha incorreta para ${storedClient.full_name || cleanEmail}. A senha padrão inicial cadastrada é "Cliente@123" (com 'C' maiúsculo e '@'). Se alterou sua senha, utilize a nova senha ou clique em 'Esqueceu a senha?'.`,
+          },
           { status: 401 }
         );
       }
@@ -187,7 +189,7 @@ export async function POST(req: NextRequest) {
       if (profileRecord) {
         if (profileRecord.status === "blocked") {
           return NextResponse.json(
-            { error: "Acesso bloqueado. Entre em contato com a administração para reativar seu cadastro." },
+            { error: "Acesso bloqueado. Este perfil foi suspenso temporariamente pela administração. Entre em contato com a Maira Reis para reativação." },
             { status: 403 }
           );
         }
@@ -210,6 +212,13 @@ export async function POST(req: NextRequest) {
           });
 
           return buildSuccessResponse(saved);
+        } else {
+          return NextResponse.json(
+            {
+              error: `Senha incorreta para ${profileRecord.full_name || cleanEmail}. A senha padrão inicial é "Cliente@123". Se você alterou sua senha anteriormente, utilize a senha cadastrada ou recupere o acesso.`,
+            },
+            { status: 401 }
+          );
         }
       }
     } catch (dbErr) {
@@ -233,7 +242,9 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json(
-      { error: "E-mail ou senha incorretos. Verifique suas credenciais ou solicite seu cadastro." },
+      {
+        error: `O e-mail "${cleanEmail}" não foi encontrado nos cadastros de clientes ou a senha informada não confere. Certifique-se de usar a senha padrão "Cliente@123" ou verifique se o e-mail possui alguma letra digitada incorretamente.`,
+      },
       { status: 401 }
     );
   } catch (err: any) {
