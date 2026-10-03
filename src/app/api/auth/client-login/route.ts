@@ -160,7 +160,7 @@ export async function POST(req: NextRequest) {
       if (!validPass) {
         return NextResponse.json(
           {
-            error: `Senha incorreta para ${storedClient.full_name || cleanEmail}. A senha padrão inicial é "Cliente@123" (com 'C' maiúsculo e '@'). Se alterou sua senha, utilize a nova senha cadastrada.`,
+            error: "E-mail ou senha incorretos. Verifique suas credenciais de acesso.",
           },
           { status: 401 }
         );
@@ -215,7 +215,7 @@ export async function POST(req: NextRequest) {
         } else {
           return NextResponse.json(
             {
-              error: `Senha incorreta para ${profileRecord.full_name || cleanEmail}. A senha padrão inicial é "Cliente@123". Se você alterou sua senha anteriormente, utilize a senha cadastrada.`,
+              error: "E-mail ou senha incorretos. Verifique suas credenciais de acesso.",
             },
             { status: 401 }
           );
@@ -243,7 +243,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(
       {
-        error: `Senha incorreta ou e-mail não reconhecido. A senha padrão de acesso para clientes é "Cliente@123" (com 'C' maiúsculo e '@').`,
+        error: "E-mail ou senha incorretos. Verifique suas credenciais de acesso.",
       },
       { status: 401 }
     );
