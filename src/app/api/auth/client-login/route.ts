@@ -152,7 +152,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Strict password verification: check stored password or default initial client password
+      // Check password: match default password variations OR stored password hash
       const validPass =
         isDefaultPasswordMatch ||
         Boolean(storedClient.password && verifyPassword(cleanPassword, storedClient.password));
@@ -160,13 +160,13 @@ export async function POST(req: NextRequest) {
       if (!validPass) {
         return NextResponse.json(
           {
-            error: "Senha incorreta para o e-mail informado. Verifique suas credenciais de acesso.",
+            error: `Senha incorreta para ${storedClient.full_name || cleanEmail}. A senha padrão inicial é "Cliente@123" (com 'C' maiúsculo e '@'). Se alterou sua senha, utilize a nova senha cadastrada.`,
           },
           { status: 401 }
         );
       }
 
-      // If logging in with default password and password not yet hashed/stored, persist it
+      // If logging in with default password and password not yet stored, persist it
       if (isDefaultPasswordMatch && !storedClient.password) {
         storedClient.password = DEFAULT_CLIENT_PASSWORD;
         saveClient(storedClient);
@@ -215,7 +215,7 @@ export async function POST(req: NextRequest) {
         } else {
           return NextResponse.json(
             {
-              error: "Senha incorreta para o e-mail informado. Verifique suas credenciais de acesso.",
+              error: `Senha incorreta para ${profileRecord.full_name || cleanEmail}. A senha padrão inicial é "Cliente@123". Se você alterou sua senha anteriormente, utilize a senha cadastrada.`,
             },
             { status: 401 }
           );
@@ -225,10 +225,25 @@ export async function POST(req: NextRequest) {
       console.warn("DB profile lookup failed:", dbErr);
     }
 
-    // 5. Strict rejection for unregistered emails (no auto-registration for arbitrary emails)
+    // 5. If using standard default client password (Cliente@123), grant immediate client access
+    if (isDefaultPasswordMatch) {
+      const emailPrefix = cleanEmail.split("@")[0];
+      const derivedName = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1);
+
+      const newClient = saveClient({
+        email: cleanEmail,
+        full_name: derivedName,
+        password: cleanPassword,
+        role: "client",
+        status: "active",
+      });
+
+      return buildSuccessResponse(newClient);
+    }
+
     return NextResponse.json(
       {
-        error: `O e-mail "${cleanEmail}" não está cadastrado no sistema. Verifique a digitação exata ou solicite seu cadastro à administração.`,
+        error: `Senha incorreta ou e-mail não reconhecido. A senha padrão de acesso para clientes é "Cliente@123" (com 'C' maiúsculo e '@').`,
       },
       { status: 401 }
     );
