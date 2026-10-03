@@ -44,9 +44,27 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = JSON.parse(localStorage.getItem("portfolio_client_session_v1") || "null");
+        if (saved?.user) return saved.user;
+      } catch {}
+    }
+    return null;
+  });
+
+  const [profile, setProfile] = useState<Profile | null>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = JSON.parse(localStorage.getItem("portfolio_client_session_v1") || "null");
+        if (saved?.profile) return saved.profile;
+      } catch {}
+    }
+    return null;
+  });
+
+  const [loading, setLoading] = useState(false);
 
   const getFallbackProfile = (userId: string, userEmail?: string): Profile => {
     return {
@@ -95,13 +113,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let isMounted = true;
 
-    // 1. Get initial session
+    // 1. Get initial Supabase session
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!isMounted) return;
       if (session?.user) {
         setUser(session.user);
         await fetchProfile(session.user.id, session.user.email);
-        setLoading(false);
       } else {
         if (typeof window !== "undefined") {
           try {
@@ -109,39 +126,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (saved?.user && saved?.profile) {
               setUser(saved.user);
               setProfile(saved.profile);
-            } else {
-              const match = document.cookie.match(/portfolio_client_session=([^;]+)/);
-              if (match) {
-                const cookieSession = JSON.parse(decodeURIComponent(match[1]));
-                if (cookieSession?.id && cookieSession?.email) {
-                  const clientUser = {
-                    id: cookieSession.id,
-                    email: cookieSession.email,
-                    user_metadata: { full_name: cookieSession.name || "Cliente", role: "client" },
-                  } as any;
-                  const clientProfile = {
-                    id: cookieSession.id,
-                    email: cookieSession.email,
-                    full_name: cookieSession.name || "Cliente",
-                    role: "client" as const,
-                    status: "active" as const,
-                  };
-                  setUser(clientUser);
-                  setProfile(clientProfile);
-                  localStorage.setItem("portfolio_client_session_v1", JSON.stringify({ user: clientUser, profile: clientProfile }));
-                }
-              } else {
-                setUser(null);
-                setProfile(null);
-              }
             }
-          } catch (e) {
-            setUser(null);
-            setProfile(null);
-          }
+          } catch (e) {}
         }
-        setLoading(false);
       }
+      setLoading(false);
     }).catch(() => {
       if (isMounted) setLoading(false);
     });
@@ -149,49 +138,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // 2. Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!isMounted) return;
       if (session?.user) {
         setUser(session.user);
         await fetchProfile(session.user.id, session.user.email);
+        setLoading(false);
+      } else if (event === "SIGNED_OUT") {
+        if (typeof window !== "undefined") {
+          const hasSaved = localStorage.getItem("portfolio_client_session_v1");
+          if (!hasSaved) {
+            setUser(null);
+            setProfile(null);
+          }
+        }
+        setLoading(false);
       } else {
         if (typeof window !== "undefined") {
           const saved = JSON.parse(localStorage.getItem("portfolio_client_session_v1") || "null");
           if (saved?.user && saved?.profile) {
             setUser(saved.user);
             setProfile(saved.profile);
-            setLoading(false);
-            return;
-          }
-          const match = document.cookie.match(/portfolio_client_session=([^;]+)/);
-          if (match) {
-            try {
-              const cookieSession = JSON.parse(decodeURIComponent(match[1]));
-              if (cookieSession?.id && cookieSession?.email) {
-                const clientUser = {
-                  id: cookieSession.id,
-                  email: cookieSession.email,
-                  user_metadata: { full_name: cookieSession.name || "Cliente", role: "client" },
-                } as any;
-                const clientProfile = {
-                  id: cookieSession.id,
-                  email: cookieSession.email,
-                  full_name: cookieSession.name || "Cliente",
-                  role: "client" as const,
-                  status: "active" as const,
-                };
-                setUser(clientUser);
-                setProfile(clientProfile);
-                setLoading(false);
-                return;
-              }
-            } catch {}
           }
         }
-        setUser(null);
-        setProfile(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return () => {
@@ -204,25 +175,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const trimmedEmail = email.trim().toLowerCase();
 
-      // 1. Standard Supabase Auth attempt
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: trimmedEmail,
-        password,
-      });
-
-      if (!error && data.user) {
-        setUser(data.user);
-        const resolvedProfile = await fetchProfile(data.user.id, data.user.email);
-        if (typeof window !== "undefined") {
-          localStorage.setItem(
-            "portfolio_client_session_v1",
-            JSON.stringify({ user: data.user, profile: resolvedProfile })
-          );
-        }
-        return { user: data.user, profile: resolvedProfile, error: null };
-      }
-
-      // 2. Resilient Backend Client Login Fallback
+      // 1. Prioritize unified client login endpoint (fast, works server-side, validates default password)
       try {
         const res = await fetch("/api/auth/client-login", {
           method: "POST",
@@ -250,14 +203,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return { user: null, profile: null, error: new Error(apiData.error) };
         }
       } catch (apiErr) {
-        console.warn("Client login API fallback failed:", apiErr);
+        console.warn("Client login API failed:", apiErr);
       }
 
-      // 3. Fallback: If both Supabase and Backend check returned error, reject login
+      // 2. Standard Supabase Auth attempt fallback
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: trimmedEmail,
+        password,
+      });
+
+      if (!error && data.user) {
+        setUser(data.user);
+        const resolvedProfile = await fetchProfile(data.user.id, data.user.email);
+        if (typeof window !== "undefined") {
+          localStorage.setItem(
+            "portfolio_client_session_v1",
+            JSON.stringify({ user: data.user, profile: resolvedProfile })
+          );
+        }
+        return { user: data.user, profile: resolvedProfile, error: null };
+      }
+
       return {
         user: null,
         profile: null,
-        error: error || new Error("E-mail ou senha incorretos. Verifique suas credenciais."),
+        error: error || new Error("E-mail ou senha incorretos. Verifique suas credenciais de acesso."),
       };
     } catch (err: any) {
       return { user: null, profile: null, error: err };
