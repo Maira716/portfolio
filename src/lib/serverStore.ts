@@ -204,6 +204,17 @@ function getDataFilePath(): string {
 const DEFAULT_DATA: PortalData = {
   clients: [
     {
+      id: "admin-maira-01",
+      email: "mairareis2017@gmail.com",
+      full_name: "Maira Reis",
+      password: "Admin@123",
+      phone: "553598030543",
+      company: "Maira Reis Dev",
+      status: "active",
+      role: "admin",
+      created_at: new Date().toISOString(),
+    },
+    {
       id: "client-gabriel-01",
       email: "gabrielmonteiropersonalswim@gmail.com",
       full_name: "Gabriel",

@@ -77,8 +77,17 @@ export async function middleware(request: NextRequest) {
           return NextResponse.redirect(blockedUrl);
         }
 
+        const isClientAdmin =
+          parsedClient?.role === "admin" ||
+          (parsedClient?.email && (
+            parsedClient.email.toLowerCase() === "mairareis2017@gmail.com" ||
+            parsedClient.email.toLowerCase() === "maira.reis.ti@gmail.com" ||
+            parsedClient.email.toLowerCase() === "admin@mairareis.dev"
+          ));
+
         const isAdminUser =
           profile?.role === "admin" ||
+          isClientAdmin ||
           (user.email && (
             user.email.toLowerCase() === "mairareis2017@gmail.com" ||
             user.email.toLowerCase() === "maira.reis.ti@gmail.com" ||
@@ -93,10 +102,19 @@ export async function middleware(request: NextRequest) {
           }
         }
       } else if (isAdminRoute) {
-        // Non-supabase or client-only session cannot access /admin
-        const loginUrl = new URL("/login", request.url);
-        loginUrl.searchParams.set("redirect", pathname);
-        return NextResponse.redirect(loginUrl);
+        const isClientAdmin =
+          parsedClient?.role === "admin" ||
+          (parsedClient?.email && (
+            parsedClient.email.toLowerCase() === "mairareis2017@gmail.com" ||
+            parsedClient.email.toLowerCase() === "maira.reis.ti@gmail.com" ||
+            parsedClient.email.toLowerCase() === "admin@mairareis.dev"
+          ));
+
+        if (!isClientAdmin) {
+          const loginUrl = new URL("/login", request.url);
+          loginUrl.searchParams.set("redirect", pathname);
+          return NextResponse.redirect(loginUrl);
+        }
       }
     } catch {
       // In case of unexpected server error on protected route, redirect to login

@@ -96,7 +96,11 @@ function LoginForm() {
   useEffect(() => {
     if (!authLoading && user && profile) {
       const redirectParam = searchParams.get("redirect");
-      const isAdmin = profile.role === "admin";
+      const adminEmails = ["mairareis2017@gmail.com", "maira.reis.ti@gmail.com", "admin@mairareis.dev"];
+      const isAdmin =
+        profile.role === "admin" ||
+        (profile.email && adminEmails.includes(profile.email.toLowerCase().trim())) ||
+        (user.email && adminEmails.includes(user.email.toLowerCase().trim()));
       if (isAdmin) {
         window.location.href = sanitizeRedirectUrl(redirectParam, "/admin", true);
       } else {
@@ -151,7 +155,11 @@ function LoginForm() {
       setLockoutSeconds(0);
 
       // Determine target route strictly from loaded profile role (least privilege fallback to /portal)
-      const role = signedInProfile?.role === "admin" ? "admin" : "client";
+      const adminEmails = ["mairareis2017@gmail.com", "maira.reis.ti@gmail.com", "admin@mairareis.dev"];
+      const isAdmin =
+        signedInProfile?.role === "admin" ||
+        adminEmails.includes(cleanEmail);
+      const role = isAdmin ? "admin" : "client";
       const redirectParam = searchParams.get("redirect");
 
       if (role === "admin") {
