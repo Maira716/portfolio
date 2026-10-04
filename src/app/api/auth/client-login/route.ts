@@ -225,25 +225,10 @@ export async function POST(req: NextRequest) {
       console.warn("DB profile lookup failed:", dbErr);
     }
 
-    // 5. If using standard default client password (Cliente@123), grant immediate client access
-    if (isDefaultPasswordMatch) {
-      const emailPrefix = cleanEmail.split("@")[0];
-      const derivedName = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1);
-
-      const newClient = saveClient({
-        email: cleanEmail,
-        full_name: derivedName,
-        password: cleanPassword,
-        role: "client",
-        status: "active",
-      });
-
-      return buildSuccessResponse(newClient);
-    }
-
+    // 5. Account not found in server store or database
     return NextResponse.json(
       {
-        error: "E-mail ou senha incorretos. Verifique suas credenciais de acesso.",
+        error: "E-mail não cadastrado ou credenciais incorretas. Entre em contato com a administração.",
       },
       { status: 401 }
     );

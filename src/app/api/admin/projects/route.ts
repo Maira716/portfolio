@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { saveProject, readPortalData } from "@/lib/serverStore";
+import { requireAdminAuth } from "@/lib/apiSecurity";
 
 export async function POST(req: Request) {
   try {
+    const auth = await requireAdminAuth(req);
+    if (!auth.authorized && auth.errorResponse) {
+      return auth.errorResponse;
+    }
+
     const body = await req.json();
     const { title, client_id, client_email } = body;
 

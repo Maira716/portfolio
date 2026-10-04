@@ -6,9 +6,15 @@ import {
   saveAllStoredProposals,
   StoredCommercialProposal,
 } from "@/lib/serverStore";
+import { requireAdminAuth, checkRateLimit } from "@/lib/apiSecurity";
 
 export async function GET(req: NextRequest) {
   try {
+    const rateLimit = checkRateLimit(req, 60, 60 * 1000);
+    if (!rateLimit.allowed) {
+      return NextResponse.json({ error: "Limite de requisições excedido." }, { status: 429 });
+    }
+
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 
@@ -30,6 +36,11 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireAdminAuth(req);
+    if (!auth.authorized && auth.errorResponse) {
+      return auth.errorResponse;
+    }
+
     const body = await req.json();
 
     if (Array.isArray(body)) {

@@ -113,13 +113,26 @@ export async function getAuthenticatedUser(req: Request | NextRequest): Promise<
     } catch {}
   }
 
-  // 2. Check Supabase Cookies from NextRequest
-  if (supabaseUrl && supabaseAnonKey && "cookies" in req) {
+  // 2. Check Supabase Cookies
+  if (supabaseUrl && supabaseAnonKey) {
     try {
-      const nextReq = req as NextRequest;
+      const hasCookiesMethod = "cookies" in req && typeof (req as any).cookies?.getAll === "function";
+      const cookieHeader = req.headers.get("cookie") || "";
+
+      const getCookiesList = () => {
+        if (hasCookiesMethod) {
+          return (req as NextRequest).cookies.getAll();
+        }
+        // Parse standard Cookie header
+        return cookieHeader.split(";").map((c) => {
+          const [rawName, ...rawVal] = c.trim().split("=");
+          return { name: rawName, value: rawVal.join("=") };
+        });
+      };
+
       const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
         cookies: {
-          getAll: () => nextReq.cookies.getAll(),
+          getAll: getCookiesList,
           setAll: () => {},
         },
       });
@@ -142,6 +155,41 @@ export async function getAuthenticatedUser(req: Request | NextRequest): Promise<
 }
 
 /**
+ * Middleware/Guard for admin API endpoints
+ */
+export async function requireAdminAuth(req: Request | NextRequest): Promise<{
+  authorized: boolean;
+  errorResponse?: NextResponse;
+}> {
+  // Rate limit
+  const rateLimit = checkRateLimit(req, 60, 60 * 1000);
+  if (!rateLimit.allowed) {
+    return {
+      authorized: false,
+      errorResponse: NextResponse.json(
+        { error: "Limite de requisições excedido. Tente novamente mais tarde." },
+        { status: 429 }
+      ),
+    };
+  }
+
+  const { isAdmin } = await getAuthenticatedUser(req);
+  const isDev = process.env.NODE_ENV === "development";
+
+  if (!isAdmin && !isDev) {
+    return {
+      authorized: false,
+      errorResponse: NextResponse.json(
+        { error: "Acesso não autorizado. Requer privilégios de administrador." },
+        { status: 401 }
+      ),
+    };
+  }
+
+  return { authorized: true };
+}
+
+/**
  * Input sanitization helper to strip control characters & basic XSS vectors
  */
 export function sanitizeString(val: unknown, maxLength = 500): string {
@@ -160,3 +208,4 @@ export function isValidEmail(email: unknown): boolean {
   const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return regex.test(email.trim());
 }
+
