@@ -200,7 +200,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const trimmedEmail = email.trim().toLowerCase();
 
-      // 1. Prioritize unified client login endpoint (fast, works server-side, validates default password)
+      // 1. Direct Supabase Auth attempt (validates user's registered credentials securely)
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: trimmedEmail,
+          password,
+        });
+
+        if (!error && data.user) {
+          setUser(data.user);
+          const resolvedProfile = await fetchProfile(data.user.id, data.user.email);
+          if (typeof window !== "undefined") {
+            localStorage.setItem(
+              "portfolio_client_session_v1",
+              JSON.stringify({ user: data.user, profile: resolvedProfile })
+            );
+          }
+          return { user: data.user, profile: resolvedProfile, error: null };
+        }
+      } catch (authErr) {
+        console.warn("Direct Supabase auth error, evaluating portal login API fallback:", authErr);
+      }
+
+      // 2. Fallback to server-side portal login endpoint (for portal-only clients)
       try {
         const res = await fetch("/api/auth/client-login", {
           method: "POST",
@@ -228,31 +250,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return { user: null, profile: null, error: new Error(apiData.error) };
         }
       } catch (apiErr) {
-        console.warn("Client login API failed:", apiErr);
-      }
-
-      // 2. Standard Supabase Auth attempt fallback
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: trimmedEmail,
-        password,
-      });
-
-      if (!error && data.user) {
-        setUser(data.user);
-        const resolvedProfile = await fetchProfile(data.user.id, data.user.email);
-        if (typeof window !== "undefined") {
-          localStorage.setItem(
-            "portfolio_client_session_v1",
-            JSON.stringify({ user: data.user, profile: resolvedProfile })
-          );
-        }
-        return { user: data.user, profile: resolvedProfile, error: null };
+        console.warn("Portal client login API fallback failed:", apiErr);
       }
 
       return {
         user: null,
         profile: null,
-        error: error || new Error("E-mail ou senha incorretos. Verifique suas credenciais de acesso."),
+        error: new Error("E-mail ou senha incorretos. Verifique suas credenciais de acesso."),
       };
     } catch (err: any) {
       return { user: null, profile: null, error: err };

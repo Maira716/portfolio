@@ -160,10 +160,10 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // 2.4 Admin password was provided but did not match
+      // 2.4 Admin credentials did not match
       return NextResponse.json(
         {
-          error: "Senha incorreta para a conta de administradora. Verifique sua senha ou utilize a senha de acesso (Admin@123).",
+          error: "E-mail ou senha incorretos. Verifique suas credenciais de acesso.",
         },
         { status: 401 }
       );
