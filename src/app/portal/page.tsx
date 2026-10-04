@@ -135,6 +135,29 @@ export const getPaymentMethodLabel = (method: PaymentMethod) => {
   }
 };
 
+export const formatDateBR = (dateStr?: string | null): string => {
+  if (!dateStr) return "";
+  const cleanStr = String(dateStr).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(cleanStr)) {
+    const [year, month, day] = cleanStr.split("-");
+    return `${day}/${month}/${year}`;
+  }
+  if (cleanStr.includes("T")) {
+    const datePart = cleanStr.split("T")[0];
+    if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+      const [year, month, day] = datePart.split("-");
+      return `${day}/${month}/${year}`;
+    }
+  }
+  try {
+    const d = new Date(cleanStr.includes("T") ? cleanStr : `${cleanStr}T12:00:00`);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString("pt-BR");
+    }
+  } catch {}
+  return cleanStr;
+};
+
 export const getInstallmentStatus = (inst: ProjectInstallment) => {
   if (inst.paid_at) {
     return {
@@ -145,8 +168,14 @@ export const getInstallmentStatus = (inst: ProjectInstallment) => {
     };
   }
 
-  const todayStr = new Date().toISOString().split("T")[0];
-  if (inst.due_date && inst.due_date < todayStr) {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  const todayStr = `${year}-${month}-${day}`;
+
+  const dueStr = inst.due_date ? inst.due_date.split("T")[0] : "";
+  if (dueStr && dueStr < todayStr) {
     return {
       status: "vencido" as const,
       label: "Vencido",
@@ -155,17 +184,19 @@ export const getInstallmentStatus = (inst: ProjectInstallment) => {
     };
   }
 
-  const dueDate = new Date(inst.due_date);
-  const today = new Date();
-  const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  if (dueStr) {
+    const [dYear, dMonth, dDay] = dueStr.split("-").map(Number);
+    const dueDate = new Date(dYear, dMonth - 1, dDay, 12, 0, 0);
+    const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
-  if (diffDays <= 7 && diffDays >= 0) {
-    return {
-      status: "em_dia" as const,
-      label: "Em dia (Vence em breve)",
-      badgeClass: "bg-amber-500/15 text-amber-300 border-amber-500/30",
-      dotClass: "bg-amber-400 ring-amber-500/30",
-    };
+    if (diffDays <= 7 && diffDays >= 0) {
+      return {
+        status: "em_dia" as const,
+        label: "Em dia (Vence em breve)",
+        badgeClass: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+        dotClass: "bg-amber-400 ring-amber-500/30",
+      };
+    }
   }
 
   return {
@@ -2787,7 +2818,7 @@ function ClientPortalContent() {
                           {nextMilestone.due_date && (
                             <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-pink-500/10 text-pink-300 border border-pink-500/20 text-xs font-semibold self-start sm:self-auto">
                               <Clock size={13} />
-                              <span>Previsão: {new Date(nextMilestone.due_date).toLocaleDateString("pt-BR")}</span>
+                              <span>Previsão: {formatDateBR(nextMilestone.due_date)}</span>
                             </div>
                           )}
                         </div>
@@ -2881,7 +2912,7 @@ function ClientPortalContent() {
                               </div>
                               <p className="text-xs text-gray-400 truncate">
                                 {nextUnpaidInst
-                                  ? `Próxima: ${formatBRL(nextUnpaidInst.amount)} (${nextUnpaidInst.due_date ? new Date(nextUnpaidInst.due_date).toLocaleDateString("pt-BR") : "A vencer"})`
+                                  ? `Próxima: ${formatBRL(nextUnpaidInst.amount)} (${nextUnpaidInst.due_date ? formatDateBR(nextUnpaidInst.due_date) : "A vencer"})`
                                   : `${formatBRL(finSummary.totalPaid)} de ${formatBRL(finSummary.contractValue)}`}
                               </p>
                             </div>
@@ -4233,7 +4264,7 @@ function ClientPortalContent() {
                                       <Calendar size={13} className="text-gray-400" />
                                       <span>
                                         {inst.due_date
-                                          ? new Date(inst.due_date).toLocaleDateString("pt-BR")
+                                          ? formatDateBR(inst.due_date)
                                           : "A combinar"}
                                       </span>
                                     </div>
@@ -4255,7 +4286,7 @@ function ClientPortalContent() {
                                       <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
                                         <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
                                         <span>
-                                          Quitado em {new Date(inst.paid_at).toLocaleDateString("pt-BR")}
+                                          Quitado em {formatDateBR(inst.paid_at)}
                                         </span>
                                       </div>
                                     ) : (
@@ -4383,7 +4414,7 @@ function ClientPortalContent() {
                                 <div>
                                   <span className="text-[10px] text-gray-400 uppercase block font-medium">Vencimento</span>
                                   <span className="font-semibold text-gray-200 text-xs">
-                                    {inst.due_date ? new Date(inst.due_date).toLocaleDateString("pt-BR") : "A combinar"}
+                                    {inst.due_date ? formatDateBR(inst.due_date) : "A combinar"}
                                   </span>
                                 </div>
                                 <div>
@@ -4393,7 +4424,7 @@ function ClientPortalContent() {
                                 <div>
                                   <span className="text-[10px] text-gray-400 uppercase block font-medium">Quitação</span>
                                   <span className={`font-semibold text-xs ${isPaid ? "text-emerald-400" : "text-gray-500"}`}>
-                                    {isPaid && inst.paid_at ? new Date(inst.paid_at).toLocaleDateString("pt-BR") : "Pendente"}
+                                    {isPaid && inst.paid_at ? formatDateBR(inst.paid_at) : "Pendente"}
                                   </span>
                                 </div>
                               </div>
@@ -5699,7 +5730,7 @@ function ClientPortalContent() {
                     <span className="text-[11px] text-gray-400 uppercase font-semibold block">Vencimento</span>
                     <span className="text-xs sm:text-sm font-bold text-purple-200">
                       {activePayingInstallment.due_date
-                        ? new Date(activePayingInstallment.due_date).toLocaleDateString("pt-BR")
+                        ? formatDateBR(activePayingInstallment.due_date)
                         : "Imediato"}
                     </span>
                   </div>
