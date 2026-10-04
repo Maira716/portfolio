@@ -94,6 +94,8 @@ import {
   FileCheck,
   Package,
   ChevronDown,
+  LayoutGrid,
+  Table,
 } from "lucide-react";
 import { useAuth, Profile } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -122,6 +124,7 @@ import { ReportsModule } from "@/components/admin/ReportsModule";
 import { ProposalsModule } from "@/components/admin/ProposalsModule";
 import { KanbanModule } from "@/components/admin/KanbanModule";
 import { SettingsModule } from "@/components/admin/SettingsModule";
+import { ProjectWorkspaceView } from "@/components/admin/ProjectWorkspaceView";
 
 export type ProjectStatus =
   | "planejamento"
@@ -1281,6 +1284,26 @@ export default function AdminDashboardPage() {
 
   const [activeTab, setActiveTabState] = useState<TabKey>("overview");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("portfolio_admin_sidebar_collapsed_v1");
+      if (saved !== null) {
+        setSidebarCollapsed(saved === "true");
+      }
+    } catch (e) {}
+  }, []);
+
+  const toggleSidebarCollapse = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("portfolio_admin_sidebar_collapsed_v1", String(next));
+      } catch (e) {}
+      return next;
+    });
+  };
 
   const setActiveTab = (tab: TabKey) => {
     setActiveTabState(tab);
@@ -1476,6 +1499,8 @@ export default function AdminDashboardPage() {
     "all" | "planejamento" | "em_andamento" | "homologacao" | "concluido" | "pausado"
   >("all");
   const [projectClientFilter, setProjectClientFilter] = useState<string>("all");
+  const [projectViewMode, setProjectViewMode] = useState<"grid" | "table">("grid");
+  const [projectSortBy, setProjectSortBy] = useState<"recent" | "deadline" | "progress" | "name" | "value">("recent");
 
   const isDbUuid = (id?: string | null): boolean =>
     !!id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
@@ -1494,10 +1519,11 @@ export default function AdminDashboardPage() {
 
   const handleOpenProjectDetails = (proj: Project) => {
     setSelectedProject(proj);
+    setActiveTab("projects");
     setMilestones([]);
     setUpdates([]);
     fetchProjectDetails(proj.id);
-    setProjectDetailsModalOpen(true);
+    setProjectDetailsModalOpen(false);
   };
 
   // Form states for project
@@ -4916,6 +4942,32 @@ export default function AdminDashboardPage() {
   const activeProjects = projects.filter((p) => p.status !== "concluido").length;
   const totalClients = clients.length;
 
+  // Projects Financial KPIs
+  const projectsTotalContractSum = projects.reduce((acc, p) => {
+    const fin = projectFinances[p.id] || generateDefaultProjectFinances(p);
+    const sum = calculateFinancialSummary(fin);
+    return acc + (sum.contractValue || 0);
+  }, 0);
+
+  const projectsTotalPaidSum = projects.reduce((acc, p) => {
+    const fin = projectFinances[p.id] || generateDefaultProjectFinances(p);
+    const sum = calculateFinancialSummary(fin);
+    return acc + (sum.totalPaid || 0);
+  }, 0);
+
+  const getProjectEffectiveProgress = (proj: Project): number => {
+    const projM = allProjectMilestones[proj.id] || milestones.filter((m) => m.project_id === proj.id);
+    if (projM && projM.length > 0) {
+      return calculateSprintProgress(projM).percent;
+    }
+    return proj.progress || 0;
+  };
+
+  const projectsAvgProgress =
+    projects.length > 0
+      ? Math.round(projects.reduce((acc, p) => acc + getProjectEffectiveProgress(p), 0) / projects.length)
+      : 0;
+
   const filteredProjects = projects.filter((p) => {
     const client = clients.find((c) => c.id === p.client_id);
     const searchTarget = (activeTab === "projects" ? projectSearchQuery : searchQuery).toLowerCase().trim();
@@ -4947,6 +4999,26 @@ export default function AdminDashboardPage() {
     return matchesSearch && matchesStatus && matchesClient;
   });
 
+  const sortedAndFilteredProjects = [...filteredProjects].sort((a, b) => {
+    if (projectSortBy === "deadline") {
+      if (!a.deadline) return 1;
+      if (!b.deadline) return -1;
+      return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+    }
+    if (projectSortBy === "progress") {
+      return getProjectEffectiveProgress(b) - getProjectEffectiveProgress(a);
+    }
+    if (projectSortBy === "name") {
+      return a.title.localeCompare(b.title);
+    }
+    if (projectSortBy === "value") {
+      const aVal = (projectFinances[a.id]?.total_contract_value || 0);
+      const bVal = (projectFinances[b.id]?.total_contract_value || 0);
+      return bVal - aVal;
+    }
+    return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+  });
+
   return (
     <div className="min-h-screen bg-[#070913] text-white flex selection:bg-indigo-500 selection:text-white">
       
@@ -4960,24 +5032,36 @@ export default function AdminDashboardPage() {
 
       {/* ================= LEFT SIDEBAR ================= */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-50 w-72 bg-[#090c19] border-r border-white/10 flex flex-col justify-between transition-transform duration-300 lg:translate-x-0 ${
+        className={`fixed top-0 bottom-0 left-0 z-50 bg-[#090c19] border-r border-white/10 flex flex-col justify-between transition-all duration-300 lg:translate-x-0 overflow-hidden ${
           mobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+        } ${sidebarCollapsed ? "lg:w-20 w-72" : "w-72"}`}
       >
         {/* Sidebar Header */}
-        <div className="p-5 border-b border-white/10 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-3 group">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20 group-hover:scale-105 transition-transform">
+        <div className={`p-4 border-b border-white/10 flex items-center ${sidebarCollapsed ? "lg:flex-col lg:gap-3 lg:justify-center justify-between" : "justify-between"}`}>
+          <Link href="/" className={`flex items-center gap-3 group ${sidebarCollapsed ? "lg:justify-center" : ""}`} title="Maira Reis Admin">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20 group-hover:scale-105 transition-transform shrink-0">
               <ShieldCheck size={20} />
             </div>
-            <div>
-              <span className="font-bold text-base leading-tight text-white block">
-                Maira Reis <span className="text-gradient">Admin</span>
-              </span>
-              <span className="text-[11px] text-purple-300">Gestão & Clientes</span>
-            </div>
+            {!sidebarCollapsed && (
+              <div className="transition-opacity duration-200">
+                <span className="font-bold text-base leading-tight text-white block">
+                  Maira Reis <span className="text-gradient">Admin</span>
+                </span>
+                <span className="text-[11px] text-purple-300">Gestão & Clientes</span>
+              </div>
+            )}
           </Link>
 
+          {/* Desktop Arrow Toggle Button */}
+          <button
+            onClick={toggleSidebarCollapse}
+            className="hidden lg:flex p-1.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer border border-white/5 hover:border-white/20"
+            title={sidebarCollapsed ? "Expandir menu" : "Recolher menu"}
+          >
+            {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+          </button>
+
+          {/* Mobile Close Button */}
           <button
             onClick={() => setMobileSidebarOpen(false)}
             className="lg:hidden p-1.5 rounded-lg text-gray-400 hover:text-white bg-white/5"
@@ -4987,15 +5071,56 @@ export default function AdminDashboardPage() {
         </div>
 
         {/* Sidebar Navigation Items */}
-        <div className="flex-1 px-3 py-5 overflow-y-auto space-y-1.5">
-          <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">
-            Módulos & Recursos
-          </div>
+        <div className={`flex-1 overflow-y-auto overflow-x-hidden no-scrollbar space-y-1.5 ${sidebarCollapsed ? "lg:px-2 px-3 py-4" : "px-3 py-5"}`}>
+          {!sidebarCollapsed ? (
+            <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+              Módulos & Recursos
+            </div>
+          ) : (
+            <div className="hidden lg:block w-8 h-px bg-white/10 mx-auto my-2" />
+          )}
 
           {navItems.map((item) => {
             const hasSubItems = Boolean(item.subItems && item.subItems.length > 0);
             const isChildActive = hasSubItems && item.subItems?.some((sub) => sub.id === activeTab);
             const isActive = activeTab === item.id || isChildActive;
+
+            if (sidebarCollapsed) {
+              return (
+                <div key={item.id} className="relative group/tooltip flex justify-center">
+                  <button
+                    onClick={() => {
+                      setActiveTab(item.id as TabKey);
+                      setMobileSidebarOpen(false);
+                    }}
+                    className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all cursor-pointer relative ${
+                      isActive
+                        ? "bg-gradient-to-r from-indigo-600/90 to-purple-600/90 text-white shadow-lg shadow-indigo-600/25 border border-indigo-500/30"
+                        : "text-gray-400 hover:text-white hover:bg-white/[0.06]"
+                    }`}
+                    title={item.label}
+                  >
+                    <div className={isActive ? "text-white" : "text-gray-400 group-hover/tooltip:text-indigo-400 transition-colors"}>
+                      {item.icon}
+                    </div>
+
+                    {item.badge && (
+                      <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-indigo-500 ring-2 ring-[#090c19]" />
+                    )}
+                  </button>
+
+                  {/* Tooltip on Hover in Collapsed Mode */}
+                  <div className="hidden lg:group-hover/tooltip:flex absolute left-full ml-3 top-1/2 -translate-y-1/2 z-50 px-3 py-1.5 rounded-xl bg-slate-900/95 border border-white/15 text-xs font-semibold text-white shadow-2xl backdrop-blur-xl whitespace-nowrap pointer-events-none items-center gap-2 animate-in fade-in zoom-in-95 duration-150">
+                    <span>{item.label}</span>
+                    {item.badge && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-bold border border-indigo-500/30">
+                        {item.badge}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            }
 
             return (
               <div key={item.id} className="space-y-1">
@@ -5080,47 +5205,79 @@ export default function AdminDashboardPage() {
         </div>
 
         {/* Sidebar Footer */}
-        <div className="p-4 border-t border-white/10 bg-black/20 space-y-3">
-          <Link
-            href="/portal"
-            className="w-full px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-semibold border border-white/10 transition-colors flex items-center justify-between"
-          >
-            <div className="flex items-center gap-2">
-              <Smartphone size={14} className="text-indigo-400" />
-              <span>Visão do Cliente</span>
-            </div>
-            <ArrowUpRight size={13} className="text-gray-400" />
-          </Link>
+        <div className={`p-4 border-t border-white/10 bg-black/20 ${sidebarCollapsed ? "lg:px-2 space-y-3" : "space-y-3"}`}>
+          {sidebarCollapsed ? (
+            <div className="flex flex-col items-center gap-3">
+              <Link
+                href="/portal"
+                className="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 text-indigo-400 hover:text-white border border-white/10 flex items-center justify-center transition-colors group relative"
+                title="Visão do Cliente"
+              >
+                <Smartphone size={16} />
+                <div className="hidden lg:group-hover:flex absolute left-full ml-3 top-1/2 -translate-y-1/2 z-50 px-3 py-1.5 rounded-xl bg-slate-900/95 border border-white/15 text-xs font-semibold text-white shadow-2xl backdrop-blur-xl whitespace-nowrap pointer-events-none">
+                  Visão do Cliente
+                </div>
+              </Link>
 
-          <div className="flex items-center justify-between pt-1">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center font-bold text-xs text-white shrink-0">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center font-bold text-xs text-white shrink-0" title="Maira Reis (Administradora)">
                 MR
               </div>
-              <div className="truncate">
-                <p className="text-xs font-bold text-white leading-tight truncate">
-                  {profile?.full_name || "Maira Reis"}
-                </p>
-                <p className="text-[10px] text-purple-400 truncate">Administradora</p>
-              </div>
-            </div>
 
-            <button
-              onClick={() => {
-                signOut();
-                router.push("/login");
-              }}
-              className="p-2 rounded-xl text-gray-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
-              title="Sair da Conta"
-            >
-              <LogOut size={16} />
-            </button>
-          </div>
+              <button
+                onClick={() => {
+                  signOut();
+                  router.push("/login");
+                }}
+                className="p-2 rounded-xl text-gray-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                title="Sair da Conta"
+              >
+                <LogOut size={16} />
+              </button>
+            </div>
+          ) : (
+            <>
+              <Link
+                href="/portal"
+                className="w-full px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-semibold border border-white/10 transition-colors flex items-center justify-between"
+              >
+                <div className="flex items-center gap-2">
+                  <Smartphone size={14} className="text-indigo-400" />
+                  <span>Visão do Cliente</span>
+                </div>
+                <ArrowUpRight size={13} className="text-gray-400" />
+              </Link>
+
+              <div className="flex items-center justify-between pt-1">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center font-bold text-xs text-white shrink-0">
+                    MR
+                  </div>
+                  <div className="truncate">
+                    <p className="text-xs font-bold text-white leading-tight truncate">
+                      {profile?.full_name || "Maira Reis"}
+                    </p>
+                    <p className="text-[10px] text-purple-400 truncate">Administradora</p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    signOut();
+                    router.push("/login");
+                  }}
+                  className="p-2 rounded-xl text-gray-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                  title="Sair da Conta"
+                >
+                  <LogOut size={16} />
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </aside>
 
       {/* ================= MAIN CONTENT AREA ================= */}
-      <div className="flex-1 flex flex-col lg:pl-72 min-w-0">
+      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${sidebarCollapsed ? "lg:pl-20" : "lg:pl-72"}`}>
         
         {/* Top Header Bar */}
         <header className="sticky top-0 z-30 bg-[#070913]/90 backdrop-blur-xl border-b border-white/10 px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between gap-4">
@@ -5130,6 +5287,15 @@ export default function AdminDashboardPage() {
               className="lg:hidden p-2 rounded-xl bg-slate-900 border border-white/10 text-white"
             >
               <Menu size={20} />
+            </button>
+
+            {/* Quick Toggle Sidebar Arrow in Header */}
+            <button
+              onClick={toggleSidebarCollapse}
+              className="hidden lg:flex items-center justify-center p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-gray-400 hover:text-white transition-all cursor-pointer"
+              title={sidebarCollapsed ? "Expandir menu lateral" : "Recolher menu lateral"}
+            >
+              {sidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
             </button>
 
             <div ref={searchContainerRef} className="relative w-64 sm:w-80 md:w-96">
@@ -6214,165 +6380,527 @@ export default function AdminDashboardPage() {
             </div>
           )}
 
-          {/* TAB: PROJECTS MANAGEMENT & SCOPE */}
+          {/* TAB: PROJECTS MANAGEMENT & SCOPE (INTEGRATED FULL PAGE WORKSPACE) */}
           {activeTab === "projects" && (
-            <div className="space-y-6">
-              {/* Header & Controls Bar */}
-              <div className="p-6 sm:p-7 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-                    <FolderKanban size={20} className="text-indigo-400" />
-                    <span>Gestão de Projetos & Escopo ({projects.length})</span>
-                  </h3>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    Cadastre escopos, controle prazos de entrega e parametrize status de desenvolvimento em tempo real.
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => handleOpenProjectModal()}
-                    className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-600/30 transition-all active:scale-95 cursor-pointer"
-                  >
-                    <Plus size={16} />
-                    <span>Cadastrar Novo Projeto</span>
-                  </button>
+            selectedProject ? (
+              <ProjectWorkspaceView
+                selectedProject={selectedProject}
+                clients={clients}
+                milestones={milestones}
+                updates={updates}
+                projectQuickLinks={projectQuickLinks}
+                projectFinances={projectFinances}
+                projectDocuments={projectDocuments}
+                projectUpdates={projectUpdates}
+                milestoneMonthFilter={milestoneMonthFilter}
+                setMilestoneMonthFilter={setMilestoneMonthFilter}
+                onBack={() => setSelectedProject(null)}
+                onOpenClientPreview={handleOpenClientPreview}
+                onOpenProjectModal={handleOpenProjectModal}
+                onDeleteProject={handleDeleteProject}
+                onOpenClientDetails={handleOpenClientDetails}
+                onQuickUpdateStatus={handleQuickUpdateStatus}
+                onQuickUpdateNextUpdateAt={handleQuickUpdateNextUpdateAt}
+                onToggleCountdownReleased={handleToggleCountdownReleased}
+                onOpenQuickLinkModal={handleOpenQuickLinkModal}
+                onToggleQuickLinkActive={handleToggleQuickLinkActive}
+                onDeleteQuickLink={handleDeleteQuickLink}
+                onSaveQuickLinksToStorage={saveQuickLinksToStorage}
+                onOpenMilestoneModal={handleOpenMilestoneModal}
+                onQuickUpdateMilestoneStatus={handleQuickUpdateMilestoneStatus}
+                onDeleteMilestone={handleDeleteMilestone}
+                onToggleMilestoneTask={handleToggleMilestoneTask}
+                onOpenSplitGenerator={handleOpenSplitGenerator}
+                onOpenInstallmentModal={handleOpenInstallmentModal}
+                onOpenContractValueModal={handleOpenContractValueModal}
+                onQuickPayInstallment={handleQuickPayInstallment}
+                onDeleteInstallment={handleDeleteInstallment}
+                onOpenDocGenerator={handleOpenDocGenerator}
+                onOpenDocumentModal={handleOpenDocumentModal}
+                onOpenPdfViewer={handleOpenPdfViewer}
+                onDeleteDocument={handleDeleteDocument}
+                onOpenUpdateModal={handleOpenUpdateModal}
+                onDeleteUpdate={handleDeleteUpdate}
+              />
+            ) : (
+              <div className="space-y-6 animate-in fade-in duration-300">
+                {/* Header & Controls Bar */}
+              <div className="p-6 sm:p-7 rounded-3xl bg-gradient-to-r from-slate-900/90 via-indigo-950/30 to-slate-900/90 border border-white/10 backdrop-blur-xl shadow-2xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-96 h-full bg-gradient-to-l from-indigo-500/10 via-purple-500/5 to-transparent pointer-events-none" />
+                
+                <div className="relative z-10">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-600/30">
+                      <FolderKanban size={20} />
+                    </div>
+                    <div>
+                      <h3 className="text-lg sm:text-xl font-extrabold text-white tracking-tight flex items-center gap-2">
+                        <span>Gestão de Projetos & Escopo</span>
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                          {projects.length} {projects.length === 1 ? "projeto" : "projetos"}
+                        </span>
+                      </h3>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        Cadastre escopos, controle prazos de entrega, monitore sprints e parametrize status em tempo real.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Filters Bar: Text Search, Status Pills & Client Dropdown */}
-              <div className="p-4 sm:p-5 rounded-3xl bg-slate-900/60 border border-white/10 backdrop-blur-md space-y-3.5">
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+              {/* Executive Metrics KPI Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* 1. Status Operacional */}
+                <div className="p-5 rounded-3xl bg-slate-900/80 border border-white/10 hover:border-indigo-500/30 transition-all backdrop-blur-xl shadow-lg relative overflow-hidden group">
+                  <div className="flex items-center justify-between mb-2.5">
+                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Operação & Status</span>
+                    <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 group-hover:scale-110 transition-transform">
+                      <Layers size={16} />
+                    </div>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <p className="text-2xl sm:text-3xl font-black text-white tracking-tight">{activeProjects}</p>
+                    <span className="text-xs text-indigo-300 font-semibold">ativos ({totalProjects} total)</span>
+                  </div>
+                  <div className="mt-3 pt-2.5 border-t border-white/5 flex items-center gap-1.5 flex-wrap text-[10px] text-gray-400">
+                    <span className="px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-300 border border-blue-500/20 font-medium">
+                      {countEmAndamento} em andamento
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/20 font-medium">
+                      {countPlanejamento} planejando
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 font-medium">
+                      {countHomologacao} testes
+                    </span>
+                  </div>
+                </div>
+
+                {/* 2. Volume Financeiro em Contratos */}
+                <div className="p-5 rounded-3xl bg-slate-900/80 border border-white/10 hover:border-emerald-500/30 transition-all backdrop-blur-xl shadow-lg relative overflow-hidden group">
+                  <div className="flex items-center justify-between mb-2.5">
+                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Volume em Contratos</span>
+                    <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group-hover:scale-110 transition-transform">
+                      <DollarSign size={16} />
+                    </div>
+                  </div>
+                  <div className="flex items-baseline gap-1.5">
+                    <p className="text-xl sm:text-2xl font-black text-emerald-400 tracking-tight">{formatBRL(projectsTotalContractSum)}</p>
+                  </div>
+                  <div className="mt-3 pt-2.5 border-t border-white/5 flex items-center justify-between text-[11px] text-gray-400">
+                    <span className="text-gray-300 font-medium">{formatBRL(projectsTotalPaidSum)} recebidos</span>
+                    <span className="text-emerald-400 font-bold font-mono">
+                      {projectsTotalContractSum > 0 ? Math.round((projectsTotalPaidSum / projectsTotalContractSum) * 100) : 0}%
+                    </span>
+                  </div>
+                </div>
+
+                {/* 3. Prazos & Entregas Iminentes */}
+                {(() => {
+                  const upcomingProject = projects
+                    .filter((p) => p.deadline && p.status !== "concluido")
+                    .sort((a, b) => new Date(a.deadline!).getTime() - new Date(b.deadline!).getTime())[0];
+
+                  const deadlineDate = upcomingProject?.deadline ? new Date(upcomingProject.deadline) : null;
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  const diffDays = deadlineDate ? Math.ceil((deadlineDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) : null;
+
+                  return (
+                    <div className="p-5 rounded-3xl bg-slate-900/80 border border-white/10 hover:border-purple-500/30 transition-all backdrop-blur-xl shadow-lg relative overflow-hidden group">
+                      <div className="flex items-center justify-between mb-2.5">
+                        <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Próxima Entrega</span>
+                        <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20 group-hover:scale-110 transition-transform">
+                          <Calendar size={16} />
+                        </div>
+                      </div>
+                      <div className="truncate">
+                        <p className="text-base sm:text-lg font-bold text-white truncate">
+                          {upcomingProject?.title || "Todos em dia"}
+                        </p>
+                        <p className="text-xs text-purple-300/90 font-medium">
+                          {deadlineDate
+                            ? `Prazo: ${deadlineDate.toLocaleDateString("pt-BR")}`
+                            : "Sem prazos pendentes"}
+                        </p>
+                      </div>
+                      <div className="mt-3 pt-2.5 border-t border-white/5 flex items-center justify-between text-[11px]">
+                        <span className="text-gray-400">Tempo restante:</span>
+                        <span className={`font-bold px-2 py-0.5 rounded-md ${
+                          diffDays !== null && diffDays < 0
+                            ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                            : diffDays !== null && diffDays <= 7
+                            ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                            : "bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                        }`}>
+                          {diffDays !== null ? (diffDays < 0 ? `Atrasado ${Math.abs(diffDays)}d` : diffDays === 0 ? "Hoje" : `${diffDays} dias`) : "N/A"}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* 4. Média de Conclusão */}
+                <div className="p-5 rounded-3xl bg-slate-900/80 border border-white/10 hover:border-pink-500/30 transition-all backdrop-blur-xl shadow-lg relative overflow-hidden group">
+                  <div className="flex items-center justify-between mb-2.5">
+                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Média de Conclusão</span>
+                    <div className="p-2 rounded-xl bg-pink-500/10 text-pink-400 border border-pink-500/20 group-hover:scale-110 transition-transform">
+                      <TrendingUp size={16} />
+                    </div>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <p className="text-2xl sm:text-3xl font-black text-pink-400 tracking-tight font-mono">{projectsAvgProgress}%</p>
+                    <span className="text-xs text-pink-300/80 font-semibold">{completedProjects} concluídos</span>
+                  </div>
+                  <div className="mt-3 pt-2.5 border-t border-white/5">
+                    <div className="w-full h-1.5 bg-black/60 rounded-full overflow-hidden border border-white/5">
+                      <div
+                        className="h-full bg-gradient-to-r from-purple-500 via-pink-500 to-indigo-500 rounded-full transition-all duration-500"
+                        style={{ width: `${projectsAvgProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Filters Bar: Text Search, Status, Client, Sort & View Mode Switcher in a Single Clean Line */}
+              <div className="p-3 sm:p-4 rounded-3xl bg-slate-900/60 border border-white/10 backdrop-blur-md shadow-xl">
+                <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-2.5">
                   {/* Text Search */}
-                  <div className="md:col-span-7 relative">
-                    <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <div className="flex-1 relative min-w-[200px]">
+                    <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                     <input
                       type="text"
                       value={projectSearchQuery}
                       onChange={(e) => setProjectSearchQuery(e.target.value)}
                       placeholder="Buscar por título, escopo, categoria, cliente ou empresa..."
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-black/40 border border-white/10 text-xs sm:text-sm text-white placeholder-gray-500 outline-none focus:border-indigo-500 transition-colors"
+                      className="w-full pl-9 pr-8 py-2 rounded-xl bg-black/40 border border-white/10 text-xs sm:text-sm text-white placeholder-gray-500 outline-none focus:border-indigo-500 hover:border-white/20 transition-colors"
                     />
                     {projectSearchQuery && (
                       <button
                         onClick={() => setProjectSearchQuery("")}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white text-xs p-1"
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white text-xs p-1"
                       >
                         <X size={14} />
                       </button>
                     )}
                   </div>
 
-                  {/* Client Filter Dropdown */}
-                  <div className="md:col-span-5 relative">
-                    <div className="relative">
-                      <User size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-indigo-400 pointer-events-none" />
+                  {/* Dropdowns and Actions: Status, Client, Sort, View, Clear */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:flex items-center gap-2.5">
+                    {/* Status Filter Dropdown */}
+                    <div className="relative lg:w-44">
+                      <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-cyan-400 pointer-events-none" />
+                      <select
+                        value={projectStatusFilter}
+                        onChange={(e) => setProjectStatusFilter(e.target.value as any)}
+                        className="w-full pl-8 pr-7 py-2 rounded-xl bg-black/40 border border-white/10 text-xs sm:text-sm text-white outline-none focus:border-cyan-500 cursor-pointer appearance-none truncate hover:border-white/20 transition-colors"
+                      >
+                        <option value="all">Status: Todos ({projects.length})</option>
+                        <option value="planejamento">Planejamento ({countPlanejamento})</option>
+                        <option value="em_andamento">Em Andamento ({countEmAndamento})</option>
+                        <option value="homologacao">Homologação ({countHomologacao})</option>
+                        <option value="concluido">Concluídos ({completedProjects})</option>
+                        <option value="pausado">Pausados ({countPausados})</option>
+                      </select>
+                      <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400" />
+                    </div>
+
+                    {/* Client Filter Dropdown */}
+                    <div className="relative lg:w-48">
+                      <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400 pointer-events-none" />
                       <select
                         value={projectClientFilter}
                         onChange={(e) => setProjectClientFilter(e.target.value)}
-                        className="w-full pl-9 pr-8 py-2.5 rounded-xl bg-black/40 border border-white/10 text-xs sm:text-sm text-white outline-none focus:border-indigo-500 cursor-pointer appearance-none"
+                        className="w-full pl-8 pr-7 py-2 rounded-xl bg-black/40 border border-white/10 text-xs sm:text-sm text-white outline-none focus:border-indigo-500 cursor-pointer appearance-none truncate hover:border-white/20 transition-colors"
                       >
-                        <option value="all">Filtrar por Cliente: Todos ({projects.length} projetos)</option>
+                        <option value="all">Clientes: Todos ({projects.length})</option>
                         {clients.map((c) => {
                           const clientProjectCount = projects.filter((p) => p.client_id === c.id).length;
                           return (
                             <option key={c.id} value={c.id}>
-                              {c.full_name || c.email} {c.company ? `(${c.company})` : ""} — {clientProjectCount} {clientProjectCount === 1 ? "projeto" : "projetos"}
+                              {c.full_name || c.email} ({clientProjectCount})
                             </option>
                           );
                         })}
                       </select>
-                      <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 text-xs">
-                        ▼
-                      </div>
+                      <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400" />
                     </div>
+
+                    {/* Sort Filter Dropdown */}
+                    <div className="relative lg:w-40">
+                      <ArrowDownUp size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-400 pointer-events-none" />
+                      <select
+                        value={projectSortBy}
+                        onChange={(e) => setProjectSortBy(e.target.value as any)}
+                        className="w-full pl-8 pr-7 py-2 rounded-xl bg-black/40 border border-white/10 text-xs sm:text-sm text-white outline-none focus:border-purple-500 cursor-pointer appearance-none truncate hover:border-white/20 transition-colors"
+                      >
+                        <option value="recent">Mais Recentes</option>
+                        <option value="deadline">Prazo Próximo</option>
+                        <option value="progress">Maior Progresso</option>
+                        <option value="value">Maior Valor</option>
+                        <option value="name">Nome (A-Z)</option>
+                      </select>
+                      <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400" />
+                    </div>
+
+                    {/* View Mode Toggle (Grid vs Table) */}
+                    <div className="flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/10">
+                      <button
+                        onClick={() => setProjectViewMode("grid")}
+                        className={`flex-1 lg:flex-none py-1.5 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                          projectViewMode === "grid"
+                            ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
+                            : "text-gray-400 hover:text-white hover:bg-white/5"
+                        }`}
+                        title="Visualização em Grade de Cards"
+                      >
+                        <LayoutGrid size={14} />
+                        <span className="hidden xl:inline">Grade</span>
+                      </button>
+                      <button
+                        onClick={() => setProjectViewMode("table")}
+                        className={`flex-1 lg:flex-none py-1.5 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                          projectViewMode === "table"
+                            ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
+                            : "text-gray-400 hover:text-white hover:bg-white/5"
+                        }`}
+                        title="Visualização em Tabela Executiva"
+                      >
+                        <Table size={14} />
+                        <span className="hidden xl:inline">Tabela</span>
+                      </button>
+                    </div>
+
+                    {/* Clear Filters (if active) */}
+                    {(projectSearchQuery || projectStatusFilter !== "all" || projectClientFilter !== "all") && (
+                      <button
+                        onClick={() => {
+                          setProjectSearchQuery("");
+                          setProjectStatusFilter("all");
+                          setProjectClientFilter("all");
+                        }}
+                        className="col-span-2 sm:col-span-1 lg:col-span-auto text-xs text-rose-400 hover:text-rose-300 font-semibold flex items-center justify-center gap-1 cursor-pointer py-2 px-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-colors"
+                        title="Limpar filtros aplicados"
+                      >
+                        <RotateCcw size={12} />
+                        <span>Limpar</span>
+                      </button>
+                    )}
                   </div>
-                </div>
-
-                {/* Status Filter Pills */}
-                <div className="flex items-center justify-between gap-2 flex-wrap pt-1 border-t border-white/5">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mr-1 flex items-center gap-1">
-                      <Filter size={12} />
-                      Status:
-                    </span>
-
-                    {[
-                      { key: "all", label: `Todos (${projects.length})` },
-                      { key: "planejamento", label: `Planejamento (${countPlanejamento})`, dot: "bg-amber-400" },
-                      { key: "em_andamento", label: `Em Andamento (${countEmAndamento})`, dot: "bg-blue-400" },
-                      { key: "homologacao", label: `Homologação (${countHomologacao})`, dot: "bg-cyan-400" },
-                      { key: "concluido", label: `Concluídos (${completedProjects})`, dot: "bg-emerald-400" },
-                      { key: "pausado", label: `Pausados (${countPausados})`, dot: "bg-rose-400" },
-                    ].map((pill) => {
-                      const isActive = projectStatusFilter === pill.key;
-                      return (
-                        <button
-                          key={pill.key}
-                          onClick={() => setProjectStatusFilter(pill.key as any)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border flex items-center gap-1.5 cursor-pointer ${
-                            isActive
-                              ? "bg-indigo-600 text-white border-indigo-400 shadow-md shadow-indigo-600/20"
-                              : "bg-black/30 text-gray-400 border-white/10 hover:text-white hover:bg-white/5"
-                          }`}
-                        >
-                          {pill.dot && <span className={`w-2 h-2 rounded-full ${pill.dot}`} />}
-                          <span>{pill.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {(projectSearchQuery || projectStatusFilter !== "all" || projectClientFilter !== "all") && (
-                    <button
-                      onClick={() => {
-                        setProjectSearchQuery("");
-                        setProjectStatusFilter("all");
-                        setProjectClientFilter("all");
-                      }}
-                      className="text-xs text-rose-400 hover:text-rose-300 font-semibold flex items-center gap-1 cursor-pointer py-1 px-2 rounded-lg hover:bg-rose-500/10 transition-colors"
-                    >
-                      <RotateCcw size={12} />
-                      <span>Limpar Filtros</span>
-                    </button>
-                  )}
                 </div>
               </div>
 
-              {/* Main Content: Projects Grid */}
+              {/* Main Content: Projects View (Grid or Table) */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between px-1">
-                  <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                    Resultados ({filteredProjects.length})
+                  <span className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                    <span>Resultados ({sortedAndFilteredProjects.length})</span>
+                    {projectSortBy !== "recent" && (
+                      <span className="text-[10px] text-purple-400 font-normal lowercase">
+                        • ordenado por {projectSortBy}
+                      </span>
+                    )}
                   </span>
                   <span className="text-xs text-gray-500">
                     Clique em um projeto para abrir o console de gestão completo
                   </span>
                 </div>
 
-                {filteredProjects.length === 0 ? (
-                  <div className="p-12 text-center rounded-3xl bg-slate-900/50 border border-white/10">
-                    <FolderKanban size={40} className="mx-auto text-gray-600 mb-3" />
-                    <p className="text-sm font-semibold text-gray-300">Nenhum projeto encontrado</p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Tente ajustar os termos de busca ou os filtros de status e cliente.
+                {sortedAndFilteredProjects.length === 0 ? (
+                  <div className="p-12 text-center rounded-3xl bg-slate-900/50 border border-white/10 shadow-xl">
+                    <FolderKanban size={44} className="mx-auto text-gray-600 mb-3 animate-pulse" />
+                    <p className="text-base font-bold text-gray-200">Nenhum projeto encontrado</p>
+                    <p className="text-xs text-gray-400 mt-1 max-w-sm mx-auto">
+                      Não encontramos projetos correspondentes aos filtros aplicados. Tente ajustar os termos de busca ou redefinir os filtros.
                     </p>
-                    <button
-                      onClick={() => handleOpenProjectModal()}
-                      className="mt-4 px-4 py-2 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 text-xs font-bold border border-indigo-500/30 inline-flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Plus size={14} />
-                      <span>Cadastrar Projeto</span>
-                    </button>
+                    <div className="mt-5 flex items-center justify-center gap-3">
+                      <button
+                        onClick={() => {
+                          setProjectSearchQuery("");
+                          setProjectStatusFilter("all");
+                          setProjectClientFilter("all");
+                        }}
+                        className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-bold border border-white/10 transition-all cursor-pointer"
+                      >
+                        Limpar Filtros
+                      </button>
+                      <button
+                        onClick={() => handleOpenProjectModal()}
+                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/30 transition-all cursor-pointer"
+                      >
+                        + Cadastrar Projeto
+                      </button>
+                    </div>
+                  </div>
+                ) : projectViewMode === "table" ? (
+                  /* ================= TABLE / LIST VIEW ================= */
+                  <div className="rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl overflow-hidden shadow-2xl">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-white/10 bg-black/40 text-gray-400 font-bold uppercase tracking-wider text-[11px]">
+                            <th className="py-3.5 px-4">Projeto & Categoria</th>
+                            <th className="py-3.5 px-4">Cliente Vinculado</th>
+                            <th className="py-3.5 px-4">Status</th>
+                            <th className="py-3.5 px-4">Prazo de Entrega</th>
+                            <th className="py-3.5 px-4">Progresso Geral</th>
+                            <th className="py-3.5 px-4">Financeiro</th>
+                            <th className="py-3.5 px-4 text-right">Ações Rápidas</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5 text-gray-300">
+                          {sortedAndFilteredProjects.map((proj) => {
+                            const client = clients.find((c) => matchProjectToClient(proj, c));
+                            const statusCfg = getStatusConfig(proj.status);
+                            const projMilestones = allProjectMilestones[proj.id] || milestones.filter((m) => m.project_id === proj.id);
+                            const completedM = projMilestones.filter((m) => m.completed || getMilestoneStatus(m) === "concluido").length;
+                            const effectiveProg = getProjectEffectiveProgress(proj);
+                            const fin = projectFinances[proj.id] || generateDefaultProjectFinances(proj);
+                            const finSummary = calculateFinancialSummary(fin);
+                            const cat = (proj.category || "").toLowerCase();
+
+                            const isMobile = cat.includes("mobile") || cat.includes("app") || cat.includes("react native");
+                            const isWeb = cat.includes("saas") || cat.includes("painel") || cat.includes("web") || cat.includes("plataforma");
+                            const isDesign = cat.includes("design") || cat.includes("ui") || cat.includes("ux");
+
+                            return (
+                              <tr
+                                key={proj.id}
+                                onClick={() => handleOpenProjectDetails(proj)}
+                                className="hover:bg-white/[0.04] transition-colors cursor-pointer group"
+                              >
+                                {/* Projeto & Categoria */}
+                                <td className="py-3.5 px-4">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-700 flex items-center justify-center text-white shrink-0 shadow-md">
+                                      {isMobile ? <Smartphone size={16} /> : isWeb ? <Globe size={16} /> : isDesign ? <Palette size={16} /> : <FolderKanban size={16} />}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="font-bold text-white text-sm group-hover:text-indigo-300 transition-colors truncate">
+                                        {proj.title}
+                                      </p>
+                                      <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">
+                                        {proj.category || "Desenvolvimento"}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </td>
+
+                                {/* Cliente */}
+                                <td className="py-3.5 px-4">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-purple-500 to-indigo-500 flex items-center justify-center text-[10px] font-bold text-white shrink-0">
+                                      {client?.full_name?.charAt(0) || client?.email?.charAt(0).toUpperCase() || "C"}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="font-semibold text-white truncate">{client?.full_name || client?.email || "Sem cliente"}</p>
+                                      {client?.company && <p className="text-[10px] text-indigo-300 truncate">{client.company}</p>}
+                                    </div>
+                                  </div>
+                                </td>
+
+                                {/* Status */}
+                                <td className="py-3.5 px-4">
+                                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${statusCfg.badgeClass}`}>
+                                    <span className={`w-1.5 h-1.5 rounded-full ${statusCfg.dotClass} animate-pulse`} />
+                                    {statusCfg.label}
+                                  </span>
+                                </td>
+
+                                {/* Prazo */}
+                                <td className="py-3.5 px-4 text-xs font-medium text-gray-300">
+                                  {proj.deadline ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <Calendar size={13} className="text-gray-400" />
+                                      <span>{new Date(proj.deadline).toLocaleDateString("pt-BR")}</span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-gray-500">—</span>
+                                  )}
+                                </td>
+
+                                {/* Progresso */}
+                                <td className="py-3.5 px-4 min-w-[140px]">
+                                  <div className="space-y-1">
+                                    <div className="flex justify-between text-[10px] font-mono">
+                                      <span className="text-gray-400">{completedM}/{projMilestones.length || 0} etapas</span>
+                                      <span className="font-bold text-indigo-300">{effectiveProg}%</span>
+                                    </div>
+                                    <div className="w-full h-1.5 bg-black/60 rounded-full overflow-hidden border border-white/5">
+                                      <div
+                                        className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-500"
+                                        style={{ width: `${effectiveProg}%` }}
+                                      />
+                                    </div>
+                                  </div>
+                                </td>
+
+                                {/* Financeiro */}
+                                <td className="py-3.5 px-4">
+                                  {finSummary.contractValue > 0 ? (
+                                    <div>
+                                      <p className="font-bold text-emerald-400 font-mono text-xs">
+                                        {formatBRL(finSummary.contractValue)}
+                                      </p>
+                                      <p className="text-[10px] text-gray-400">
+                                        {finSummary.paidCount}/{finSummary.installmentsCount} parcelas pagas
+                                      </p>
+                                    </div>
+                                  ) : (
+                                    <span className="text-gray-500 text-xs">—</span>
+                                  )}
+                                </td>
+
+                                {/* Ações Rápidas */}
+                                <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <button
+                                      onClick={() => handleOpenProjectDetails(proj)}
+                                      className="p-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/30 transition-colors"
+                                      title="Abrir Console do Projeto"
+                                    >
+                                      <Layers size={14} />
+                                    </button>
+                                    <button
+                                      onClick={() => handleOpenClientPreview(proj)}
+                                      className="p-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 border border-purple-500/30 transition-colors"
+                                      title="Ver como Cliente"
+                                    >
+                                      <Eye size={14} />
+                                    </button>
+                                    <button
+                                      onClick={() => handleOpenProjectModal(proj)}
+                                      className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 transition-colors"
+                                      title="Editar Projeto"
+                                    >
+                                      <Edit2 size={14} />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteProject(proj.id)}
+                                      className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/25 text-rose-400 border border-rose-500/20 transition-colors"
+                                      title="Excluir Projeto"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 ) : (
+                  /* ================= GRID VIEW (CARDS ULTRA-PREMIUM) ================= */
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                    {filteredProjects.map((proj) => {
+                    {sortedAndFilteredProjects.map((proj) => {
                       const client = clients.find((c) => matchProjectToClient(proj, c));
-                      const isSelected = selectedProject?.id === proj.id;
                       const statusCfg = getStatusConfig(proj.status);
-                      const projMilestones = milestones.filter((m) => m.project_id === proj.id);
+                      const projMilestones = allProjectMilestones[proj.id] || milestones.filter((m) => m.project_id === proj.id);
                       const completedMilestones = projMilestones.filter((m) => m.completed).length;
+                      const fin = projectFinances[proj.id] || generateDefaultProjectFinances(proj);
+                      const finSummary = calculateFinancialSummary(fin);
                       const cat = (proj.category || "").toLowerCase();
 
                       // Category visual identity
@@ -6392,9 +6920,12 @@ export default function AdminDashboardPage() {
                         <div
                           key={proj.id}
                           onClick={() => handleOpenProjectDetails(proj)}
-                          className="p-5 rounded-3xl bg-slate-900/80 border border-white/10 hover:border-indigo-500/50 hover:bg-slate-900/95 transition-all duration-200 cursor-pointer shadow-lg hover:shadow-indigo-500/10 flex flex-col justify-between group space-y-4"
+                          className="p-5 sm:p-6 rounded-3xl bg-slate-900/80 border border-white/10 hover:border-indigo-500/50 hover:bg-slate-900/95 transition-all duration-300 cursor-pointer shadow-xl hover:shadow-2xl hover:shadow-indigo-500/10 flex flex-col justify-between group space-y-4 relative overflow-hidden backdrop-blur-xl"
                         >
-                          <div className="space-y-3.5">
+                          {/* Ambient Glow Accent on Card Top */}
+                          <div className="absolute -top-16 -right-16 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none group-hover:bg-indigo-500/20 transition-colors" />
+
+                          <div className="space-y-4 relative z-10">
                             {/* Card Top: Icon, Category & Status */}
                             <div className="flex items-start justify-between gap-3">
                               <div className="flex items-center gap-3 min-w-0">
@@ -6415,7 +6946,7 @@ export default function AdminDashboardPage() {
                                   <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block truncate">
                                     {proj.category || "Desenvolvimento"}
                                   </span>
-                                  <h4 className="text-base font-bold text-white truncate group-hover:text-indigo-300 transition-colors">
+                                  <h4 className="text-base sm:text-lg font-bold text-white truncate group-hover:text-indigo-300 transition-colors">
                                     {proj.title}
                                   </h4>
                                 </div>
@@ -6430,10 +6961,10 @@ export default function AdminDashboardPage() {
                             </div>
 
                             {/* Client & Deadline Context */}
-                            <div className="p-3 rounded-2xl bg-black/40 border border-white/5 space-y-2 text-xs">
+                            <div className="p-3.5 rounded-2xl bg-black/40 border border-white/5 space-y-2.5 text-xs">
                               <div className="flex items-center justify-between gap-2 flex-wrap">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-purple-500 to-indigo-500 flex items-center justify-center text-[11px] font-bold text-white shrink-0">
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <div className="w-7 h-7 rounded-xl bg-gradient-to-tr from-purple-500 to-indigo-500 flex items-center justify-center text-xs font-bold text-white shrink-0 shadow-sm">
                                     {client?.full_name?.charAt(0) || client?.email?.charAt(0).toUpperCase() || "C"}
                                   </div>
                                   <div className="min-w-0">
@@ -6448,8 +6979,8 @@ export default function AdminDashboardPage() {
                                   </div>
                                 </div>
 
-                                <div className="flex items-center gap-1 text-[11px] text-gray-400 font-medium">
-                                  <Calendar size={12} className="text-gray-500" />
+                                <div className="flex items-center gap-1 text-[11px] text-gray-300 font-medium bg-white/5 px-2 py-0.5 rounded-lg border border-white/5">
+                                  <Calendar size={12} className="text-purple-400" />
                                   <span>
                                     {proj.deadline
                                       ? `Prazo: ${new Date(proj.deadline).toLocaleDateString("pt-BR")}`
@@ -6458,23 +6989,53 @@ export default function AdminDashboardPage() {
                                 </div>
                               </div>
 
-                              {/* Quick Stats Pills */}
+                              {/* Financial Badge if available */}
+                              {finSummary.contractValue > 0 && (
+                                <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px]">
+                                  <span className="text-gray-400 flex items-center gap-1">
+                                    <DollarSign size={12} className="text-emerald-400" />
+                                    <span>Contrato:</span>
+                                  </span>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-bold text-emerald-400 font-mono">
+                                      {formatBRL(finSummary.contractValue)}
+                                    </span>
+                                    <span className="text-[10px] text-gray-400">
+                                      ({finSummary.paidCount}/{finSummary.installmentsCount} pagas)
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Quick Stats & Links Pills */}
                               <div className="pt-2 border-t border-white/5 flex items-center gap-2 flex-wrap text-[11px] text-gray-400">
                                 <span className="px-2 py-0.5 rounded-lg bg-white/5 border border-white/5 flex items-center gap-1 text-gray-300 font-medium">
                                   <Sparkles size={11} className="text-amber-400" />
                                   <span>{projMilestones.length > 0 ? `${completedMilestones}/${projMilestones.length} etapas` : "Etapas a definir"}</span>
                                 </span>
                                 {proj.preview_url && (
-                                  <span className="px-2 py-0.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 flex items-center gap-1 font-medium">
+                                  <a
+                                    href={proj.preview_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="px-2 py-0.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 hover:bg-cyan-500/20 flex items-center gap-1 font-medium transition-colors"
+                                  >
                                     <Globe size={11} />
                                     <span>Link Ativo</span>
-                                  </span>
+                                  </a>
                                 )}
                                 {proj.figma_url && (
-                                  <span className="px-2 py-0.5 rounded-lg bg-pink-500/10 border border-pink-500/20 text-pink-300 flex items-center gap-1 font-medium">
+                                  <a
+                                    href={proj.figma_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="px-2 py-0.5 rounded-lg bg-pink-500/10 border border-pink-500/20 text-pink-300 hover:bg-pink-500/20 flex items-center gap-1 font-medium transition-colors"
+                                  >
                                     <Palette size={11} />
                                     <span>Figma</span>
-                                  </span>
+                                  </a>
                                 )}
                               </div>
                             </div>
@@ -6529,7 +7090,7 @@ export default function AdminDashboardPage() {
                           </div>
 
                           {/* Action Footer */}
-                          <div className="pt-3 border-t border-white/5 flex items-center gap-2">
+                          <div className="pt-3 border-t border-white/5 flex items-center gap-2 relative z-10">
                             <button
                               type="button"
                               onClick={(e) => {
@@ -6587,7 +7148,8 @@ export default function AdminDashboardPage() {
                 )}
               </div>
             </div>
-          )}
+          )
+        )}
 
           {/* TAB: CLIENTS MANAGEMENT */}
           {activeTab === "clients" && (
@@ -7834,1952 +8396,6 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* ================= MODALS ================= */}
-
-      {/* Modal: Project Scope & Full Management Console (Full Screen Workspace Experience) */}
-      <AnimatePresence>
-        {projectDetailsModalOpen && selectedProject && (
-          <div className="fixed inset-0 z-50 flex flex-col bg-slate-950 overflow-hidden animate-fadeIn">
-            <motion.div
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 15 }}
-              transition={{ duration: 0.18 }}
-              className="w-full h-full flex flex-col overflow-hidden bg-slate-950"
-            >
-              {/* Full Width Sticky Top Navigation Header */}
-              {(() => {
-                const selectedClient = clients.find((c) => matchProjectToClient(selectedProject, c));
-                const statusCfg = getStatusConfig(selectedProject.status);
-
-                return (
-                  <div className="px-4 sm:px-8 py-3.5 sm:py-4 bg-slate-900/95 border-b border-white/10 flex items-center justify-between gap-4 backdrop-blur-xl shrink-0 z-20 shadow-xl">
-                    <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                      <button
-                        type="button"
-                        onClick={() => setProjectDetailsModalOpen(false)}
-                        className="p-2 sm:px-3 sm:py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold shrink-0 border border-white/10"
-                        title="Voltar aos Projetos (ESC)"
-                      >
-                        <ChevronLeft size={16} />
-                        <span className="hidden sm:inline">Voltar (ESC)</span>
-                      </button>
-
-                      <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-600 flex items-center justify-center text-white shrink-0 shadow-lg shadow-indigo-500/20">
-                        <FolderKanban size={20} />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="text-base sm:text-xl font-black text-white truncate">
-                            {selectedProject.title}
-                          </h3>
-                          <span
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border ${statusCfg.badgeClass}`}
-                          >
-                            <span className={`w-1.5 h-1.5 rounded-full ${statusCfg.dotClass} animate-pulse`} />
-                            {statusCfg.label}
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-2 flex-wrap">
-                          <span className="text-indigo-300 font-medium">{selectedProject.category || "Software"}</span>
-                          <span>•</span>
-                          <span>Criado em {new Date(selectedProject.created_at).toLocaleDateString("pt-BR")}</span>
-                          {selectedProject.next_update_at && (
-                            <>
-                              <span>•</span>
-                              <span className="text-purple-300 font-mono flex items-center gap-1">
-                                <Clock size={11} className="text-purple-400" />
-                                Release: {new Date(selectedProject.next_update_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                              </span>
-                            </>
-                          )}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenClientPreview(selectedProject)}
-                        className="hidden md:flex px-3.5 py-2 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 text-purple-300 text-xs font-bold border border-purple-500/40 items-center gap-1.5 transition-colors cursor-pointer shadow-lg shadow-purple-900/20"
-                        title="Simular visualização do cliente no Portal"
-                      >
-                        <Eye size={14} />
-                        <span>Ver como Cliente</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenProjectModal(selectedProject)}
-                        className="px-3.5 sm:px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/30 flex items-center gap-1.5 transition-colors cursor-pointer"
-                      >
-                        <Edit2 size={14} />
-                        <span>Editar Escopo</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteProject(selectedProject.id)}
-                        className="p-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 transition-colors cursor-pointer"
-                        title="Excluir projeto"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setProjectDetailsModalOpen(false)}
-                        className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer ml-1"
-                        title="Fechar Workspace (ESC)"
-                      >
-                        <X size={20} />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Wide Scrollable Full-Page Body */}
-              <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-6 space-y-6 max-w-7xl mx-auto w-full custom-scrollbar">
-                {(() => {
-                  const selectedClient = clients.find((c) => matchProjectToClient(selectedProject, c));
-                  const statusCfg = getStatusConfig(selectedProject.status);
-
-                  return (
-                    <>
-                      {/* Client Association Card */}
-                      <div className="p-4 rounded-2xl bg-black/40 border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white font-bold text-sm">
-                            {selectedClient?.full_name?.charAt(0) || "C"}
-                          </div>
-                          <div>
-                            <span className="text-[10px] uppercase font-bold text-gray-400 block">
-                              Cliente Associado:
-                            </span>
-                            <p className="text-xs sm:text-sm font-bold text-white">
-                              {selectedClient?.full_name || "Nenhum cliente vinculado (Projeto Geral/Admin)"}
-                            </p>
-                            {selectedClient?.company && (
-                              <p className="text-[11px] text-purple-300">{selectedClient.company}</p>
-                            )}
-                          </div>
-                        </div>
-
-                        {selectedClient && (
-                          <div className="flex items-center gap-2">
-                            {selectedClient.phone && (
-                              <a
-                                href={`https://wa.me/${selectedClient.phone.replace(/\D/g, "")}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs font-bold border border-emerald-500/30 flex items-center gap-1.5 transition-colors"
-                              >
-                                <MessageCircle size={13} />
-                                <span>WhatsApp</span>
-                              </a>
-                            )}
-                            <button
-                              onClick={() => handleOpenClientDetails(selectedClient)}
-                              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-semibold transition-colors cursor-pointer"
-                            >
-                              Ver Cliente
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Scope & Description Panel */}
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
-                            <FileText size={14} className="text-indigo-400" />
-                            Descrição & Escopo do Projeto
-                          </span>
-                        </div>
-                        <div className="p-4 rounded-2xl bg-black/40 border border-white/5">
-                          {selectedProject.description ? (
-                            <p className="text-xs sm:text-sm text-gray-300 whitespace-pre-line leading-relaxed">
-                              {selectedProject.description}
-                            </p>
-                          ) : (
-                            <p className="text-xs text-gray-500 italic">
-                              Nenhum escopo detalhado foi inserido. Clique em "Editar Escopo" para cadastrar os requisitos e entregáveis.
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Quick Status Selector Buttons */}
-                      <div className="space-y-2.5">
-                        <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block">
-                          Alterar Status do Projeto:
-                        </span>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                          {[
-                            { key: "planejamento", label: "Planejamento", color: "hover:border-amber-500/60", activeBg: "bg-amber-500/20 border-amber-500 text-amber-300" },
-                            { key: "em_andamento", label: "Em Andamento", color: "hover:border-blue-500/60", activeBg: "bg-blue-500/20 border-blue-500 text-blue-300" },
-                            { key: "homologacao", label: "Homologação", color: "hover:border-cyan-500/60", activeBg: "bg-cyan-500/20 border-cyan-500 text-cyan-300" },
-                            { key: "concluido", label: "Concluído", color: "hover:border-emerald-500/60", activeBg: "bg-emerald-500/20 border-emerald-500 text-emerald-300" },
-                          ].map((st) => {
-                            const isCurrent =
-                              selectedProject.status === st.key ||
-                              (st.key === "em_andamento" && (selectedProject.status === "desenvolvimento" || selectedProject.status === "design")) ||
-                              (st.key === "homologacao" && selectedProject.status === "testes");
-
-                            return (
-                              <button
-                                key={st.key}
-                                onClick={() => handleQuickUpdateStatus(selectedProject.id, st.key as ProjectStatus)}
-                                className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                                  isCurrent
-                                    ? `${st.activeBg} shadow-md`
-                                    : `bg-black/30 border-white/5 text-gray-400 hover:text-white ${st.color}`
-                                }`}
-                              >
-                                {isCurrent && <Check size={13} />}
-                                <span>{st.label}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Dates and Dual Progress Stats */}
-                      <div className="space-y-3">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5">
-                            <span className="text-[10px] text-gray-400 uppercase font-bold block mb-0.5">
-                              Data de Início
-                            </span>
-                            <p className="text-xs font-semibold text-white">
-                              {selectedProject.start_date
-                                ? new Date(selectedProject.start_date).toLocaleDateString("pt-BR")
-                                : "Não definida"}
-                            </p>
-                          </div>
-
-                          <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5">
-                            <span className="text-[10px] text-gray-400 uppercase font-bold block mb-0.5">
-                              Prazo Estimado de Conclusão
-                            </span>
-                            <p className="text-xs font-semibold text-white">
-                              {selectedProject.deadline
-                                ? new Date(selectedProject.deadline).toLocaleDateString("pt-BR")
-                                : "Não definido"}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* DATA & HORA DA PRÓXIMA PUBLICAÇÃO (TIMER NO PORTAL) - Visão Geral */}
-                        {(() => {
-                          const rawVal = selectedProject.next_update_at;
-                          let localInputVal = "";
-                          if (rawVal) {
-                            try {
-                              const d = new Date(rawVal);
-                              if (!isNaN(d.getTime())) {
-                                const pad = (n: number) => String(n).padStart(2, "0");
-                                localInputVal = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-                              }
-                            } catch {}
-                          }
-
-                          const hasDate = Boolean(rawVal && !isNaN(new Date(rawVal).getTime()));
-                          const targetTime = hasDate ? new Date(rawVal!).getTime() : 0;
-                          const diff = targetTime - Date.now();
-                          const isPast = hasDate && diff <= 0;
-
-                          const days = Math.floor(Math.max(0, diff) / (1000 * 60 * 60 * 24));
-                          const hours = Math.floor((Math.max(0, diff) / (1000 * 60 * 60)) % 24);
-                          const minutes = Math.floor((Math.max(0, diff) / (1000 * 60)) % 60);
-
-                          const isReleased = Boolean(
-                            selectedProject.countdown_released ||
-                            (typeof window !== "undefined" && (
-                              localStorage.getItem(`portfolio_project_countdown_released_${selectedProject.id}`) === "true" ||
-                              (selectedProject.title && localStorage.getItem(`portfolio_project_countdown_released_title_${selectedProject.title.toLowerCase().trim()}`) === "true")
-                            ))
-                          );
-
-                          return (
-                            <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-black/60 border-2 border-purple-500/40 space-y-3.5 shadow-xl shadow-purple-950/30">
-                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                                <label className="text-xs font-bold text-purple-300 uppercase tracking-wider flex items-center gap-2">
-                                  <Clock size={16} className="text-purple-400 animate-pulse shrink-0" />
-                                  <span>DATA &amp; HORA DA PRÓXIMA PUBLICAÇÃO (TIMER NO PORTAL)</span>
-                                </label>
-                                {hasDate ? (
-                                  isPast ? (
-                                    <span className="text-[11px] font-semibold px-3 py-1 rounded-full bg-purple-900/60 text-purple-200 border border-purple-400/40 self-start sm:self-auto shrink-0 shadow-sm">
-                                      Data Atingida
-                                    </span>
-                                  ) : isReleased ? (
-                                    <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-500/50 flex items-center gap-1.5 self-start sm:self-auto shrink-0 shadow-sm shadow-emerald-950/40">
-                                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                                      Liberada no Portal
-                                    </span>
-                                  ) : (
-                                    <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-amber-950/80 text-amber-300 border border-amber-500/50 flex items-center gap-1.5 self-start sm:self-auto shrink-0 shadow-sm shadow-amber-950/40">
-                                      <AlertCircle size={12} className="text-amber-400" />
-                                      Aguardando Liberação
-                                    </span>
-                                  )
-                                ) : (
-                                  <span className="text-[11px] font-semibold px-3 py-1 rounded-full bg-purple-900/40 text-purple-300 border border-purple-400/30 self-start sm:self-auto shrink-0 shadow-sm">
-                                    Sem Data Definida
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-xs text-gray-300 leading-relaxed">
-                                Defina o dia e horário previstos para a próxima entrega/release e clique em <strong className="text-purple-200">Liberar Contagem</strong> para sincronizar instantaneamente com a tela do cliente.
-                              </p>
-
-                              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-1">
-                                <input
-                                  type="datetime-local"
-                                  defaultValue={localInputVal}
-                                  key={selectedProject.id + (selectedProject.next_update_at || "")}
-                                  onChange={(e) => handleQuickUpdateNextUpdateAt(selectedProject.id, e.target.value)}
-                                  onInput={(e) => handleQuickUpdateNextUpdateAt(selectedProject.id, (e.target as HTMLInputElement).value)}
-                                  onBlur={(e) => handleQuickUpdateNextUpdateAt(selectedProject.id, (e.target as HTMLInputElement).value)}
-                                  className="flex-1 px-4 py-3 rounded-xl bg-black/70 border border-purple-500/40 text-white text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-500/30 font-mono transition-all shadow-inner"
-                                />
-
-                                {hasDate && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleToggleCountdownReleased(selectedProject.id, !isReleased)}
-                                    className={`px-4 py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shrink-0 shadow-lg ${
-                                      isReleased
-                                        ? "bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 shadow-emerald-950/30"
-                                        : "bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white border border-purple-400/40 shadow-purple-950/50 active:scale-95 animate-pulse hover:animate-none"
-                                    }`}
-                                    title={isReleased ? "Clique para pausar ou ocultar a contagem no portal do cliente" : "Liberar contagem regressiva no portal do cliente"}
-                                  >
-                                    {isReleased ? (
-                                      <>
-                                        <CheckCircle2 size={15} className="text-emerald-400" />
-                                        <span>Liberada (Pausar)</span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Rocket size={15} className="text-white animate-bounce" />
-                                        <span>Liberar Contagem para o Cliente</span>
-                                      </>
-                                    )}
-                                  </button>
-                                )}
-
-                                {hasDate && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      handleQuickUpdateNextUpdateAt(selectedProject.id, "");
-                                      handleToggleCountdownReleased(selectedProject.id, false);
-                                    }}
-                                    className="px-4 py-3 rounded-xl bg-white/5 hover:bg-rose-500/20 text-gray-300 hover:text-rose-300 border border-white/10 hover:border-rose-500/30 text-xs font-semibold transition-colors cursor-pointer shrink-0"
-                                    title="Limpar agendamento"
-                                  >
-                                    Limpar Data
-                                  </button>
-                                )}
-                              </div>
-
-                              {hasDate && !isPast && (
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-mono bg-purple-950/40 px-3.5 py-2.5 rounded-xl border border-purple-500/30 text-purple-200">
-                                  <div className="flex items-center gap-2">
-                                    <Sparkles size={14} className="text-pink-400 shrink-0 animate-bounce" />
-                                    <span>Faltam: <strong>{days}d {hours}h {minutes}m</strong> para a publicação.</span>
-                                  </div>
-                                  <span className={`text-[11px] font-sans px-2 py-0.5 rounded-md ${isReleased ? "bg-emerald-950/70 text-emerald-300 border border-emerald-500/30" : "bg-amber-950/70 text-amber-300 border border-amber-500/30"}`}>
-                                    {isReleased ? "● Visível para o cliente no Portal" : "○ Não visível para o cliente (Clique no botão acima para liberar)"}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })()}
-
-                        {/* Dual Progress Bars */}
-                        {(() => {
-                          const modalTimelineProg = calculateTimelineProgress(selectedProject.start_date, selectedProject.deadline);
-                          const modalSprintProg = calculateSprintProgress(milestones);
-
-                          return (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              {/* 1. Cronograma / Meses */}
-                              <div className="p-3.5 rounded-2xl bg-indigo-950/20 border border-indigo-500/20 space-y-2">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                                    <Calendar size={13} className="text-indigo-400" />
-                                    <span>1. Cronograma Geral</span>
-                                  </span>
-                                  <span className="text-xs font-mono font-bold text-indigo-300">
-                                    {modalTimelineProg.percent}%
-                                  </span>
-                                </div>
-                                <p className="text-[10px] text-gray-400">{modalTimelineProg.detail}</p>
-                                <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden border border-white/5">
-                                  <div
-                                    className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full transition-all duration-300"
-                                    style={{ width: `${modalTimelineProg.percent}%` }}
-                                  />
-                                </div>
-                              </div>
-
-                              {/* 2. Sprint / Checks */}
-                              <div className="p-3.5 rounded-2xl bg-purple-950/20 border border-purple-500/20 space-y-2">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                                    <CheckSquare size={13} className="text-purple-400" />
-                                    <span>2. Sprint Mensal (Checks)</span>
-                                  </span>
-                                  <span className="text-xs font-mono font-bold text-purple-300">
-                                    {modalSprintProg.percent}%
-                                  </span>
-                                </div>
-                                <p className="text-[10px] text-gray-400">{modalSprintProg.detail}</p>
-                                <div className="h-2 w-full bg-black/40 rounded-full overflow-hidden border border-white/5">
-                                  <div
-                                    className="h-full bg-gradient-to-r from-purple-500 to-emerald-400 rounded-full transition-all duration-300"
-                                    style={{ width: `${modalSprintProg.percent}%` }}
-                                  />
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })()}
-                      </div>
-
-                      {/* URLs Links */}
-                      <div className="flex flex-wrap gap-2 pt-2 border-t border-white/10">
-                        {selectedProject.figma_url && (
-                          <a
-                            href={selectedProject.figma_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-3 py-1.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-semibold flex items-center gap-1.5 hover:bg-purple-500/20 transition-colors"
-                          >
-                            <Palette size={13} />
-                            <span>Figma Protótipo</span>
-                          </a>
-                        )}
-                        {selectedProject.preview_url && (
-                          <a
-                            href={selectedProject.preview_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-3 py-1.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-xs font-semibold flex items-center gap-1.5 hover:bg-cyan-500/20 transition-colors"
-                          >
-                            <Globe size={13} />
-                            <span>Staging Web Preview</span>
-                          </a>
-                        )}
-                        {selectedProject.repo_url && (
-                          <a
-                            href={selectedProject.repo_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-gray-300 text-xs font-semibold flex items-center gap-1.5 hover:bg-white/10 transition-colors"
-                          >
-                            <FolderGit2 size={13} />
-                            <span>Repositório GitHub</span>
-                          </a>
-                        )}
-                      </div>
-
-                      {/* Painel de Gestão de Links Rápidos & Ambientes */}
-                      {(() => {
-                        const links = projectQuickLinks[selectedProject.id] || [];
-                        return (
-                          <div className="p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-4">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                                    <Link2 size={16} className="text-indigo-400" />
-                                    <span>Painel de Links Rápidos & Ambientes</span>
-                                  </h3>
-                                  <span className="px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[10px] font-bold border border-indigo-500/30">
-                                    {links.length} {links.length === 1 ? "link" : "links"}
-                                  </span>
-                                </div>
-                                <p className="text-xs text-gray-400 mt-0.5">
-                                  Cadastre pares de (Rótulo + URL) para Protótipo (Figma), Ambiente de Testes (Staging) e Documentação Técnica.
-                                </p>
-                              </div>
-
-                              <button
-                                type="button"
-                                onClick={() => handleOpenQuickLinkModal(selectedProject.id)}
-                                className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white text-xs font-bold shadow-lg shadow-indigo-900/30 border border-indigo-400/30 flex items-center justify-center gap-1.5 cursor-pointer transition-all shrink-0 active:scale-95"
-                              >
-                                <Plus size={14} />
-                                <span>+ Adicionar Link Rápido</span>
-                              </button>
-                            </div>
-
-                            {links.length === 0 ? (
-                              <div className="p-6 rounded-2xl bg-white/[0.02] border border-white/5 text-center space-y-2">
-                                <Link2 size={24} className="text-gray-600 mx-auto" />
-                                <p className="text-xs text-gray-400">Nenhum atalho rápido cadastrado para este projeto.</p>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const defaultLinks = generateDefaultProjectQuickLinks(selectedProject);
-                                    saveQuickLinksToStorage({
-                                      ...projectQuickLinks,
-                                      [selectedProject.id]: defaultLinks,
-                                    });
-                                  }}
-                                  className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-indigo-300 text-xs font-semibold border border-white/10 transition-colors cursor-pointer"
-                                >
-                                  Gerar Atalhos Padrão (Figma, Staging, Docs)
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                                {links.map((item) => {
-                                  const catInfo = getQuickLinkCategoryInfo(item.category);
-                                  const IconComponent = catInfo.icon;
-
-                                  return (
-                                    <div
-                                      key={item.id}
-                                      className={`p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3 ${
-                                        item.is_active
-                                          ? "bg-black/40 border-white/10 hover:border-indigo-500/40"
-                                          : "bg-black/20 border-white/5 opacity-60"
-                                      }`}
-                                    >
-                                      <div>
-                                        <div className="flex items-start justify-between gap-2 mb-2">
-                                          <div className="flex items-center gap-2.5 overflow-hidden">
-                                            <div
-                                              className={`w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 ${catInfo.iconColor}`}
-                                            >
-                                              <IconComponent size={16} />
-                                            </div>
-                                            <div className="overflow-hidden">
-                                              <h4 className="text-xs font-bold text-white truncate">
-                                                {item.label}
-                                              </h4>
-                                              <p className="text-[10px] text-gray-400 truncate">{catInfo.label}</p>
-                                            </div>
-                                          </div>
-
-                                          <span
-                                            className={`text-[9px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${
-                                              item.is_active ? catInfo.badgeClass : "bg-gray-500/10 text-gray-400 border-gray-500/20"
-                                            }`}
-                                          >
-                                            {item.is_active ? "Ativo" : "Inativo"}
-                                          </span>
-                                        </div>
-
-                                        {item.description && (
-                                          <p className="text-[11px] text-gray-400 leading-relaxed mb-2 line-clamp-2">
-                                            {item.description}
-                                          </p>
-                                        )}
-
-                                        <p className="text-[10px] text-indigo-300 font-mono truncate bg-black/40 px-2 py-1 rounded-lg border border-white/5">
-                                          {item.url}
-                                        </p>
-                                      </div>
-
-                                      <div className="pt-2.5 border-t border-white/5 flex items-center justify-between gap-2">
-                                        <div className="flex items-center gap-1.5">
-                                          <button
-                                            type="button"
-                                            onClick={() => handleToggleQuickLinkActive(selectedProject.id, item.id)}
-                                            className={`p-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
-                                              item.is_active
-                                                ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20 hover:bg-emerald-500/20"
-                                                : "bg-white/5 text-gray-400 border-white/10 hover:text-white"
-                                            }`}
-                                            title={item.is_active ? "Desativar atalho no portal" : "Ativar atalho no portal"}
-                                          >
-                                            {item.is_active ? <Check size={12} /> : <X size={12} />}
-                                          </button>
-                                          <a
-                                            href={item.url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 transition-colors"
-                                            title="Testar URL em nova aba"
-                                          >
-                                            <ExternalLink size={12} />
-                                          </a>
-                                        </div>
-
-                                        <div className="flex items-center gap-1.5">
-                                          <button
-                                            type="button"
-                                            onClick={() => handleOpenQuickLinkModal(selectedProject.id, item)}
-                                            className="px-2.5 py-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 text-[11px] font-bold border border-indigo-500/20 transition-colors cursor-pointer flex items-center gap-1"
-                                          >
-                                            <Edit2 size={11} />
-                                            <span>Editar</span>
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => handleDeleteQuickLink(selectedProject.id, item.id)}
-                                            className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/20 transition-colors cursor-pointer"
-                                            title="Remover link"
-                                          >
-                                            <Trash2 size={12} />
-                                          </button>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
-
-                      {/* Central de Feedbacks & Aceites Formais dos Clientes */}
-                      {(() => {
-                        const feedbacks = deliveryFeedbacks[selectedProject.id] || [];
-                        const pendingCount = feedbacks.filter((f) => f.status === "pending_review").length;
-                        const approvalsCount = feedbacks.filter((f) => f.type === "approval").length;
-                        const changesCount = feedbacks.filter((f) => f.type === "change_request").length;
-
-                        return (
-                          <div className="p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-4">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                                    <MessageSquare size={16} className="text-indigo-400" />
-                                    <span>Central de Feedbacks & Aceites Formais</span>
-                                  </h3>
-                                  <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[10px] font-bold border border-purple-500/30">
-                                    {feedbacks.length} {feedbacks.length === 1 ? "interação" : "interações"}
-                                  </span>
-                                  {pendingCount > 0 && (
-                                    <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold border border-amber-500/30 animate-pulse">
-                                      {pendingCount} pendente{pendingCount > 1 ? "s" : ""}
-                                    </span>
-                                  )}
-                                </div>
-                                <p className="text-xs text-gray-400 mt-0.5">
-                                  Histórico cronológico de aceites de entregas e solicitações de ajuste enviadas pelos clientes pelo portal.
-                                </p>
-                              </div>
-
-                              <div className="flex items-center gap-2 text-xs">
-                                <span className="px-2.5 py-1 rounded-xl bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-bold">
-                                  ✅ {approvalsCount} Aceites
-                                </span>
-                                <span className="px-2.5 py-1 rounded-xl bg-amber-500/10 text-amber-300 border border-amber-500/20 font-bold">
-                                  ⚠️ {changesCount} Ajustes
-                                </span>
-                              </div>
-                            </div>
-
-                            {feedbacks.length === 0 ? (
-                              <div className="p-6 rounded-2xl bg-white/[0.02] border border-white/5 text-center text-xs text-gray-400 space-y-1">
-                                <MessageSquare size={24} className="text-gray-600 mx-auto mb-1" />
-                                <p className="font-semibold text-gray-300">Nenhum feedback registrado ainda para este projeto.</p>
-                                <p className="text-[10px]">Quando o cliente aprovar entregas ou solicitar ajustes no portal, as considerações aparecerão aqui em tempo real.</p>
-                              </div>
-                            ) : (
-                              <div className="space-y-3">
-                                {feedbacks.map((fb) => (
-                                  <div
-                                    key={fb.id}
-                                    className={`p-4 sm:p-5 rounded-2xl border transition-all flex flex-col gap-3 ${
-                                      fb.type === "approval"
-                                        ? "bg-emerald-950/15 border-emerald-500/30"
-                                        : "bg-amber-950/15 border-amber-500/30"
-                                    }`}
-                                  >
-                                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
-                                      <div className="flex items-start gap-3">
-                                        <div
-                                          className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 mt-0.5 ${
-                                            fb.type === "approval"
-                                              ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
-                                              : "bg-amber-500/20 text-amber-400 border-amber-500/30"
-                                          }`}
-                                        >
-                                          {fb.type === "approval" ? (
-                                            <CheckCheck size={18} />
-                                          ) : (
-                                            <AlertCircle size={18} />
-                                          )}
-                                        </div>
-                                        <div>
-                                          <div className="flex items-center gap-2 flex-wrap">
-                                            <span
-                                              className={`text-[10px] font-bold px-2 py-0.5 rounded-md border uppercase tracking-wider ${
-                                                fb.type === "approval"
-                                                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
-                                                  : "bg-amber-500/20 text-amber-300 border-amber-500/30"
-                                              }`}
-                                            >
-                                              {fb.type === "approval" ? "Aceite Formal (Aprovado)" : "Ajuste Solicitado"}
-                                            </span>
-                                            <span className="text-xs font-bold text-white">
-                                              {fb.milestone_title}
-                                            </span>
-                                          </div>
-                                          <p className="text-[11px] text-gray-400 mt-1 flex items-center gap-2">
-                                            <span>Por: <strong className="text-gray-300">{fb.author_name}</strong> ({fb.author_email})</span>
-                                            <span>•</span>
-                                            <span>{new Date(fb.created_at).toLocaleString("pt-BR")}</span>
-                                          </p>
-                                        </div>
-                                      </div>
-
-                                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-                                        <button
-                                          type="button"
-                                          onClick={() => handleToggleFeedbackStatus(selectedProject.id, fb.id)}
-                                          className={`px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-colors cursor-pointer ${
-                                            fb.status === "resolved"
-                                              ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
-                                              : "bg-amber-500/20 text-amber-300 border-amber-500/30 hover:bg-amber-500/30"
-                                          }`}
-                                          title="Alternar status de resolução"
-                                        >
-                                          {fb.status === "resolved" ? "✅ Resolvido" : "⏳ Pendente de Ação"}
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleDeleteFeedback(selectedProject.id, fb.id)}
-                                          className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/20 transition-colors cursor-pointer"
-                                          title="Excluir feedback"
-                                        >
-                                          <Trash2 size={13} />
-                                        </button>
-                                      </div>
-                                    </div>
-
-                                    {/* Considerations text */}
-                                    <div className="p-3 rounded-xl bg-black/40 border border-white/5">
-                                      <span className="text-[10px] font-bold uppercase text-gray-400 block mb-1">
-                                        Considerações Pontuais do Cliente:
-                                      </span>
-                                      <p className="text-xs text-gray-200 whitespace-pre-line leading-relaxed">
-                                        "{fb.notes}"
-                                      </p>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
-
-                      {/* Checklist de Etapas do Projeto */}
-                      <div className="p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-5">
-                        {/* Header */}
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                                <ListTodo size={16} className="text-emerald-400" />
-                                <span>Etapas & Entregáveis</span>
-                              </h3>
-                              <span className="px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[10px] font-bold border border-indigo-500/30">
-                                {milestones.filter((m) => m.completed || getMilestoneStatus(m) === "concluido").length}/{milestones.length} concluídas
-                              </span>
-                            </div>
-                            <p className="text-xs text-gray-400 mt-0.5">
-                              Lista de entregas do projeto com status e prazo previsto.
-                            </p>
-                          </div>
-
-                          <button
-                            onClick={() => handleOpenMilestoneModal()}
-                            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-900/30 border border-emerald-400/30 flex items-center justify-center gap-1.5 cursor-pointer transition-all shrink-0"
-                          >
-                            <Plus size={14} />
-                            <span>Nova Etapa</span>
-                          </button>
-                        </div>
-
-                        {/* Month Filter & Progress Bars */}
-                        {milestones.length > 0 && (() => {
-                          const monthMap = new Map<string, { key: string; label: string; count: number; completed: number }>();
-                          milestones.forEach((m) => {
-                            const key = getMilestoneMonthKey(m.due_date);
-                            const label = formatMonthKeyLabel(key);
-                            const isDone = m.completed || getMilestoneStatus(m) === "concluido";
-                            if (!monthMap.has(key)) {
-                              monthMap.set(key, { key, label, count: 0, completed: 0 });
-                            }
-                            const curr = monthMap.get(key)!;
-                            curr.count += 1;
-                            if (isDone) curr.completed += 1;
-                          });
-
-                          const monthList = Array.from(monthMap.values()).sort((a, b) => {
-                            if (a.key === "sem_data") return 1;
-                            if (b.key === "sem_data") return -1;
-                            return a.key.localeCompare(b.key);
-                          });
-
-                          const totalCompleted = milestones.filter((m) => m.completed || getMilestoneStatus(m) === "concluido").length;
-                          const totalProgressPct = Math.round((totalCompleted / milestones.length) * 100);
-
-                          const displayedList = milestoneMonthFilter === "all"
-                            ? milestones
-                            : milestones.filter((m) => getMilestoneMonthKey(m.due_date) === milestoneMonthFilter);
-
-                          const activeMonthObj = monthList.find((m) => m.key === milestoneMonthFilter);
-                          const activeMonthCompleted = displayedList.filter((m) => m.completed || getMilestoneStatus(m) === "concluido").length;
-                          const activeMonthPct = displayedList.length > 0
-                            ? Math.round((activeMonthCompleted / displayedList.length) * 100)
-                            : 0;
-
-                          return (
-                            <div className="space-y-4">
-                              {/* Month Filter Tabs Bar */}
-                              {monthList.length > 0 && (
-                                <div className="space-y-2 p-3.5 rounded-2xl bg-black/30 border border-white/10">
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
-                                      <Calendar size={13} className="text-indigo-400" />
-                                      <span>Filtro por Mês (Prazo das Etapas):</span>
-                                    </span>
-                                    {milestoneMonthFilter !== "all" && (
-                                      <button
-                                        type="button"
-                                        onClick={() => setMilestoneMonthFilter("all")}
-                                        className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer underline"
-                                      >
-                                        Mostrar todos os meses
-                                      </button>
-                                    )}
-                                  </div>
-
-                                  <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-1 scrollbar-thin">
-                                    <button
-                                      type="button"
-                                      onClick={() => setMilestoneMonthFilter("all")}
-                                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-                                        milestoneMonthFilter === "all"
-                                          ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 border border-indigo-400"
-                                          : "bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 border border-white/10"
-                                      }`}
-                                    >
-                                      <ListTodo size={13} />
-                                      <span>Todas as Etapas</span>
-                                      <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-black/40 text-gray-300 font-mono">
-                                        {milestones.length}
-                                      </span>
-                                    </button>
-
-                                    {monthList.map((mMonth) => {
-                                      const isSelected = milestoneMonthFilter === mMonth.key;
-                                      return (
-                                        <button
-                                          key={mMonth.key}
-                                          type="button"
-                                          onClick={() => setMilestoneMonthFilter(mMonth.key)}
-                                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-                                            isSelected
-                                              ? "bg-emerald-600 text-white shadow-lg shadow-emerald-600/30 border border-emerald-400"
-                                              : "bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 border border-white/10"
-                                          }`}
-                                        >
-                                          <Calendar size={13} className={isSelected ? "text-white" : "text-emerald-400"} />
-                                          <span>{mMonth.label}</span>
-                                          <span
-                                            className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-                                              isSelected ? "bg-black/30 text-white" : "bg-black/40 text-emerald-400"
-                                            }`}
-                                          >
-                                            {mMonth.completed}/{mMonth.count}
-                                          </span>
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Progress Bar */}
-                              <div className="p-4 rounded-2xl bg-black/40 border border-white/10 space-y-2">
-                                <div className="flex items-center justify-between text-xs">
-                                  <span className="font-bold text-gray-300 flex items-center gap-1.5">
-                                    <CheckCircle2 size={14} className="text-emerald-400" />
-                                    <span>
-                                      {milestoneMonthFilter === "all"
-                                        ? "Progresso Geral do Projeto"
-                                        : `Progresso de ${activeMonthObj?.label || "Mês Selecionado"}`}
-                                    </span>
-                                  </span>
-                                  <span className="font-mono font-bold text-emerald-300">
-                                    {milestoneMonthFilter === "all"
-                                      ? `${totalProgressPct}% (${totalCompleted} de ${milestones.length} etapas)`
-                                      : `${activeMonthPct}% (${activeMonthCompleted} de ${displayedList.length} etapas)`}
-                                  </span>
-                                </div>
-                                <div className="h-2.5 w-full bg-white/5 rounded-full overflow-hidden">
-                                  <div
-                                    className="h-full bg-gradient-to-r from-emerald-500 via-teal-500 to-indigo-500 transition-all duration-500 rounded-full"
-                                    style={{
-                                      width: `${milestoneMonthFilter === "all" ? totalProgressPct : activeMonthPct}%`,
-                                    }}
-                                  />
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })()}
-
-                        {/* Checklist Items */}
-                        {milestones.length === 0 ? (
-                          <div className="p-8 rounded-2xl bg-black/30 border border-dashed border-white/10 text-center space-y-2">
-                            <ListTodo size={28} className="mx-auto text-gray-600" />
-                            <p className="text-xs text-gray-400">
-                              Nenhuma etapa cadastrada para este projeto.
-                            </p>
-                            <button
-                              onClick={() => handleOpenMilestoneModal()}
-                              className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer inline-flex items-center gap-1 pt-1"
-                            >
-                              <Plus size={13} />
-                              <span>Criar primeira etapa</span>
-                            </button>
-                          </div>
-                        ) : (() => {
-                          const displayedMilestones = milestoneMonthFilter === "all"
-                            ? milestones
-                            : milestones.filter((m) => getMilestoneMonthKey(m.due_date) === milestoneMonthFilter);
-
-                          if (displayedMilestones.length === 0) {
-                            return (
-                              <div className="p-8 rounded-2xl bg-black/30 border border-dashed border-white/10 text-center space-y-2">
-                                <Calendar size={28} className="mx-auto text-gray-600" />
-                                <p className="text-xs text-gray-400">
-                                  Nenhuma etapa encontrada com prazo para este mês.
-                                </p>
-                                <button
-                                  type="button"
-                                  onClick={() => setMilestoneMonthFilter("all")}
-                                  className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer underline"
-                                >
-                                  Mostrar todas as etapas
-                                </button>
-                              </div>
-                            );
-                          }
-
-                          return (
-                            <div className="space-y-3">
-                              {displayedMilestones.map((m) => {
-                                const status = getMilestoneStatus(m);
-                                const statusCfg = getMilestoneStatusConfig(status);
-                                const cleanDesc = getMilestoneCleanDescription(m);
-                                const tasks = parseMilestoneTasks(m);
-                                const milestoneProg = getMilestoneProgress(m);
-                                const isDone = status === "concluido" || milestoneProg === 100;
-                                const isActive = status === "em_andamento" || (milestoneProg > 0 && !isDone);
-                                const completedTasksCount = tasks.filter((t) => t.completed).length;
-
-                                return (
-                                  <div
-                                    key={m.id}
-                                    className={`p-4 sm:p-5 rounded-2xl border transition-all space-y-3.5 ${
-                                      isDone
-                                        ? "bg-emerald-950/15 border-emerald-500/25 shadow-sm shadow-emerald-950/30"
-                                        : isActive
-                                        ? "bg-blue-950/15 border-blue-500/25 shadow-sm shadow-blue-950/30"
-                                        : "bg-white/[0.02] border-white/5 hover:border-white/10"
-                                    }`}
-                                  >
-                                    {/* Top Header: Status icon + Info + Actions */}
-                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                                      {/* Left: Status icon + Title + Due Date */}
-                                      <div className="flex items-start gap-3 min-w-0 flex-1">
-                                        <div className="pt-0.5">
-                                          {isDone ? (
-                                            <div className="w-6 h-6 rounded-lg bg-emerald-500 text-white flex items-center justify-center shadow-md shadow-emerald-500/30">
-                                              <Check size={14} />
-                                            </div>
-                                          ) : isActive ? (
-                                            <div className="w-6 h-6 rounded-lg bg-blue-500/20 text-blue-300 border border-blue-500/40 flex items-center justify-center">
-                                              <Zap size={13} />
-                                            </div>
-                                          ) : (
-                                            <div className="w-6 h-6 rounded-lg bg-white/5 border border-white/20 flex items-center justify-center text-gray-400">
-                                              <Clock size={13} />
-                                            </div>
-                                          )}
-                                        </div>
-
-                                        <div className="min-w-0 space-y-1">
-                                          <div className="flex items-center gap-2 flex-wrap">
-                                            <h4 className={`text-xs sm:text-sm font-bold truncate ${isDone ? "text-emerald-300 line-through" : "text-white"}`}>
-                                              {m.title}
-                                            </h4>
-                                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${isDone ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30" : isActive ? "bg-blue-500/10 text-blue-300 border-blue-500/30" : "bg-amber-500/10 text-amber-300 border-amber-500/30"}`}>
-                                              {statusCfg.label}
-                                            </span>
-                                          </div>
-
-                                          {cleanDesc && (
-                                            <p className="text-[11px] text-gray-400 line-clamp-2 leading-relaxed">{cleanDesc}</p>
-                                          )}
-
-                                          <div className="flex flex-wrap items-center gap-3 text-[10px] text-gray-400 pt-0.5">
-                                            {m.due_date && (
-                                              <span className="flex items-center gap-1">
-                                                <Calendar size={10} className="text-gray-500" />
-                                                <span>Prazo: <strong className="text-gray-300">{new Date(m.due_date.includes("T") ? m.due_date : `${m.due_date}T12:00:00`).toLocaleDateString("pt-BR")}</strong></span>
-                                              </span>
-                                            )}
-                                            {isDone && m.completed_at && (
-                                              <span className="flex items-center gap-1 text-emerald-400">
-                                                <ShieldCheck size={10} />
-                                                <span>Concluído em {new Date(m.completed_at).toLocaleDateString("pt-BR")}</span>
-                                              </span>
-                                            )}
-                                          </div>
-                                        </div>
-                                      </div>
-
-                                      {/* Right: Status Switcher + Actions */}
-                                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                                        {/* Status Switcher */}
-                                        <div className="flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/10">
-                                          <button
-                                            type="button"
-                                            onClick={() => handleQuickUpdateMilestoneStatus(m, "pendente")}
-                                            className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${
-                                              status === "pendente"
-                                                ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-                                                : "text-gray-400 hover:text-white"
-                                            }`}
-                                            title="Marcar como Pendente"
-                                          >
-                                            Pendente
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => handleQuickUpdateMilestoneStatus(m, "em_andamento")}
-                                            className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${
-                                              status === "em_andamento"
-                                                ? "bg-blue-500/20 text-blue-300 border border-blue-500/30"
-                                                : "text-gray-400 hover:text-white"
-                                            }`}
-                                            title="Marcar como Em Andamento"
-                                          >
-                                            Em Andamento
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => handleQuickUpdateMilestoneStatus(m, "concluido")}
-                                            className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${
-                                              status === "concluido"
-                                                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                                                : "text-gray-400 hover:text-white"
-                                            }`}
-                                            title="Marcar como Concluído"
-                                          >
-                                            Concluído
-                                          </button>
-                                        </div>
-
-                                        {/* Edit */}
-                                        <button
-                                          type="button"
-                                          onClick={() => handleOpenMilestoneModal(m)}
-                                          className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-colors cursor-pointer"
-                                          title="Editar etapa e checks"
-                                        >
-                                          <Edit2 size={13} />
-                                        </button>
-
-                                        {/* Delete */}
-                                        <button
-                                          type="button"
-                                          onClick={() => handleDeleteMilestone(m.id)}
-                                          className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer"
-                                          title="Excluir etapa"
-                                        >
-                                          <Trash2 size={13} />
-                                        </button>
-                                      </div>
-                                    </div>
-
-                                    {/* Milestone Individual Progress Bar */}
-                                    <div className="p-3 rounded-xl bg-black/40 border border-white/5 space-y-1.5">
-                                      <div className="flex items-center justify-between text-[11px]">
-                                        <span className="text-gray-300 font-semibold flex items-center gap-1.5">
-                                          <TrendingUp size={12} className={isDone ? "text-emerald-400" : "text-indigo-400"} />
-                                          <span>Conclusão da Etapa:</span>
-                                        </span>
-                                        <span className={`font-mono font-bold ${
-                                          isDone
-                                            ? "text-emerald-400"
-                                            : milestoneProg > 0
-                                            ? "text-indigo-300"
-                                            : "text-gray-400"
-                                        }`}>
-                                          {milestoneProg}% Concluído {tasks.length > 0 && `(${completedTasksCount}/${tasks.length} itens)`}
-                                        </span>
-                                      </div>
-                                      <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
-                                        <div
-                                          className={`h-full transition-all duration-500 rounded-full ${
-                                            isDone
-                                              ? "bg-gradient-to-r from-teal-500 to-emerald-500 shadow-sm shadow-emerald-500/40"
-                                              : milestoneProg > 0
-                                              ? "bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
-                                              : "bg-transparent"
-                                          }`}
-                                          style={{ width: `${milestoneProg}%` }}
-                                        />
-                                      </div>
-                                    </div>
-
-                                    {/* Checklist Items of what will be done */}
-                                    {tasks.length > 0 ? (
-                                      <div className="space-y-2 pt-1">
-                                        <div className="flex items-center justify-between text-[10px] uppercase font-bold text-gray-400 tracking-wider">
-                                          <span className="flex items-center gap-1 text-gray-300">
-                                            <CheckSquare size={11} className="text-indigo-400" />
-                                            O que será feito nesta etapa (Checklist)
-                                          </span>
-                                          <span className="text-indigo-300">
-                                            {completedTasksCount} de {tasks.length} checks finalizados
-                                          </span>
-                                        </div>
-
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                          {tasks.map((task) => (
-                                            <button
-                                              key={task.id}
-                                              type="button"
-                                              onClick={() => handleToggleMilestoneTask(m, task.id)}
-                                              className={`p-2.5 rounded-xl border text-left transition-all flex items-start gap-2.5 cursor-pointer group ${
-                                                task.completed
-                                                  ? "bg-emerald-950/20 border-emerald-500/30 text-emerald-300 hover:bg-emerald-950/30"
-                                                  : "bg-black/30 border-white/5 hover:border-indigo-500/30 text-gray-300 hover:bg-white/[0.02]"
-                                              }`}
-                                              title={task.completed ? "Clique para desmarcar check" : "Clique para marcar check como concluído"}
-                                            >
-                                              <div
-                                                className={`w-4 h-4 rounded-md flex items-center justify-center text-[10px] shrink-0 mt-0.5 transition-colors ${
-                                                  task.completed
-                                                    ? "bg-emerald-500 text-white shadow-sm shadow-emerald-500/50"
-                                                    : "bg-white/5 border border-white/20 text-transparent group-hover:border-indigo-400"
-                                                }`}
-                                              >
-                                                <Check size={11} />
-                                              </div>
-                                              <span
-                                                className={`text-xs leading-tight select-none ${
-                                                  task.completed ? "line-through text-gray-400" : "text-white"
-                                                }`}
-                                              >
-                                                {task.text}
-                                              </span>
-                                            </button>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <div className="flex items-center justify-between pt-1 text-[11px] text-gray-500">
-                                        <span>Nenhum check detalhado cadastrado ainda.</span>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleOpenMilestoneModal(m)}
-                                          className="text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer flex items-center gap-1 hover:underline"
-                                        >
-                                          <Plus size={12} />
-                                          <span>Adicionar campos de check</span>
-                                        </button>
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          );
-                        })()}
-                      </div>
-
-                      {/* Gestão Manual de Pagamentos e Faturamento */}
-                      {(() => {
-                        const projectFin =
-                          projectFinances[selectedProject.id] ||
-                          generateDefaultProjectFinances(selectedProject);
-                        const finSummary = calculateFinancialSummary(projectFin);
-
-                        return (
-                          <div className="p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-5">
-                            {/* Section Header */}
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                                    <DollarSign size={16} className="text-emerald-400" />
-                                    <span>Gestão de Pagamentos & Faturamento</span>
-                                  </h3>
-                                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30">
-                                    {finSummary.installmentsCount}{" "}
-                                    {finSummary.installmentsCount === 1 ? "parcela" : "parcelas"}
-                                  </span>
-                                </div>
-                                <p className="text-xs text-gray-400 mt-0.5">
-                                  Acompanhamento manual de contrato, parcelas, vencimentos, quitação e comprovantes.
-                                </p>
-                              </div>
-
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenSplitGenerator(selectedProject.id)}
-                                  className="px-3 py-1.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 text-xs font-bold border border-purple-500/30 flex items-center gap-1.5 cursor-pointer transition-colors"
-                                  title="Gerar parcelamento automático (ex: 2x, 3x, 4x, 6x)"
-                                >
-                                  <Zap size={13} className="text-purple-400" />
-                                  <span>Gerar Parcelas</span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenInstallmentModal(selectedProject.id)}
-                                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-900/30 border border-emerald-400/30 flex items-center gap-1.5 cursor-pointer transition-all shrink-0"
-                                >
-                                  <Plus size={14} />
-                                  <span>Nova Parcela</span>
-                                </button>
-                              </div>
-                            </div>
-
-                            {/* Financial Totalizers Cards */}
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                              {/* 1. Valor Total do Contrato */}
-                              <div className="p-3.5 rounded-2xl bg-black/40 border border-white/10 relative group">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[10px] text-gray-400 uppercase font-bold block">
-                                    Valor do Contrato
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenContractValueModal(selectedProject.id)}
-                                    className="text-gray-400 hover:text-white p-0.5"
-                                    title="Editar Valor Total do Contrato"
-                                  >
-                                    <Edit2 size={11} />
-                                  </button>
-                                </div>
-                                <p className="text-sm sm:text-base font-extrabold text-white mt-1">
-                                  {formatBRL(finSummary.contractValue)}
-                                </p>
-                                <span className="text-[10px] text-indigo-400 font-semibold block mt-0.5">
-                                  {finSummary.installmentsCount} parcelas configuradas
-                                </span>
-                              </div>
-
-                              {/* 2. Total Quitado (Pago) */}
-                              <div className="p-3.5 rounded-2xl bg-emerald-950/20 border border-emerald-500/20">
-                                <span className="text-[10px] text-emerald-400/80 uppercase font-bold block">
-                                  Total Pago
-                                </span>
-                                <p className="text-sm sm:text-base font-extrabold text-emerald-400 mt-1">
-                                  {formatBRL(finSummary.totalPaid)}
-                                </p>
-                                <span className="text-[10px] text-emerald-300 font-semibold block mt-0.5">
-                                  {finSummary.percentPaid}% liquidado ({finSummary.paidCount} pagas)
-                                </span>
-                              </div>
-
-                              {/* 3. Saldo Restante */}
-                              <div className="p-3.5 rounded-2xl bg-purple-950/20 border border-purple-500/20">
-                                <span className="text-[10px] text-purple-300/80 uppercase font-bold block">
-                                  Saldo Restante
-                                </span>
-                                <p className="text-sm sm:text-base font-extrabold text-purple-300 mt-1">
-                                  {formatBRL(finSummary.remainingBalance)}
-                                </p>
-                                <span className="text-[10px] text-gray-400 block mt-0.5">
-                                  {100 - finSummary.percentPaid}% a faturar
-                                </span>
-                              </div>
-
-                              {/* 4. Em Atraso / Vencido */}
-                              <div
-                                className={`p-3.5 rounded-2xl border ${
-                                  finSummary.totalOverdue > 0
-                                    ? "bg-rose-950/20 border-rose-500/30"
-                                    : "bg-black/40 border-white/10"
-                                }`}
-                              >
-                                <span
-                                  className={`text-[10px] uppercase font-bold block ${
-                                    finSummary.totalOverdue > 0 ? "text-rose-400" : "text-gray-400"
-                                  }`}
-                                >
-                                  Em Atraso / Vencido
-                                </span>
-                                <p
-                                  className={`text-sm sm:text-base font-extrabold mt-1 ${
-                                    finSummary.totalOverdue > 0 ? "text-rose-400" : "text-gray-300"
-                                  }`}
-                                >
-                                  {formatBRL(finSummary.totalOverdue)}
-                                </p>
-                                <span className="text-[10px] text-gray-400 block mt-0.5">
-                                  {finSummary.totalOverdue > 0
-                                    ? "⚠️ Requer cobrança"
-                                    : "Nenhum atraso"}
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Financial Progress Bar */}
-                            <div className="p-3.5 rounded-2xl bg-black/40 border border-white/5 space-y-1.5">
-                              <div className="flex items-center justify-between text-xs font-semibold text-gray-300">
-                                <span>Taxa de Quitação do Contrato</span>
-                                <span className="font-mono text-emerald-400 font-bold">
-                                  {finSummary.percentPaid}% ({formatBRL(finSummary.totalPaid)} de{" "}
-                                  {formatBRL(finSummary.contractValue)})
-                                </span>
-                              </div>
-                              <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden flex">
-                                <div
-                                  className="h-full bg-gradient-to-r from-emerald-500 via-teal-500 to-indigo-500 rounded-full transition-all duration-500"
-                                  style={{ width: `${finSummary.percentPaid}%` }}
-                                />
-                              </div>
-                            </div>
-
-                            {/* Tabela de Parcelas */}
-                            <div>
-                              {projectFin.installments.length === 0 ? (
-                                <div className="p-8 rounded-2xl bg-black/30 border border-dashed border-white/10 text-center space-y-2">
-                                  <DollarSign size={28} className="mx-auto text-gray-600" />
-                                  <p className="text-xs text-gray-400">
-                                    Nenhuma parcela cadastrada para este contrato.
-                                  </p>
-                                  <div className="flex items-center justify-center gap-2 pt-1">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleOpenSplitGenerator(selectedProject.id)}
-                                      className="px-3 py-1.5 rounded-xl bg-purple-600/30 hover:bg-purple-600/40 text-purple-300 text-xs font-semibold cursor-pointer flex items-center gap-1"
-                                    >
-                                      <Zap size={12} />
-                                      <span>Gerar 3x Automático</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleOpenInstallmentModal(selectedProject.id)}
-                                      className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white text-xs font-semibold cursor-pointer flex items-center gap-1"
-                                    >
-                                      <Plus size={12} />
-                                      <span>Criar Parcela Manual</span>
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="overflow-x-auto rounded-2xl border border-white/10">
-                                  <table className="w-full text-left text-xs text-gray-300 min-w-[700px]">
-                                    <thead className="bg-black/60 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-white/10">
-                                      <tr>
-                                        <th className="py-3 px-3.5">Parcela / Título</th>
-                                        <th className="py-3 px-3.5">Valor (R$)</th>
-                                        <th className="py-3 px-3.5">Vencimento</th>
-                                        <th className="py-3 px-3.5">Quitação</th>
-                                        <th className="py-3 px-3.5">Método</th>
-                                        <th className="py-3 px-3.5">Status</th>
-                                        <th className="py-3 px-3.5">Comprovante</th>
-                                        <th className="py-3 px-3.5 text-right">Ações</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-white/5 bg-black/20">
-                                      {projectFin.installments.map((inst, idx) => {
-                                        const st = getInstallmentStatus(inst);
-                                        const isPaid = st.status === "pago";
-
-                                        return (
-                                          <tr
-                                            key={inst.id}
-                                            className={`hover:bg-white/[0.02] transition-colors ${
-                                              isPaid ? "bg-emerald-950/5" : ""
-                                            }`}
-                                          >
-                                            {/* Title */}
-                                            <td className="py-3 px-3.5">
-                                              <div className="font-bold text-white flex items-center gap-2">
-                                                <span className="w-5 h-5 rounded-lg bg-white/5 border border-white/10 text-[10px] font-mono flex items-center justify-center text-gray-300">
-                                                  {idx + 1}
-                                                </span>
-                                                <span>{inst.title}</span>
-                                              </div>
-                                              {inst.notes && (
-                                                <p className="text-[10px] text-gray-500 mt-0.5 pl-7">
-                                                  {inst.notes}
-                                                </p>
-                                              )}
-                                            </td>
-
-                                            {/* Amount */}
-                                            <td className="py-3 px-3.5 font-extrabold text-white font-mono">
-                                              {formatBRL(inst.amount)}
-                                            </td>
-
-                                            {/* Due Date */}
-                                            <td className="py-3 px-3.5 font-medium">
-                                              <span
-                                                className={
-                                                  st.status === "vencido"
-                                                    ? "text-rose-400 font-bold"
-                                                    : "text-gray-300"
-                                                }
-                                              >
-                                                {inst.due_date
-                                                  ? new Date(inst.due_date).toLocaleDateString("pt-BR")
-                                                  : "Não definida"}
-                                              </span>
-                                            </td>
-
-                                            {/* Paid At */}
-                                            <td className="py-3 px-3.5">
-                                              {inst.paid_at ? (
-                                                <span className="text-emerald-400 font-semibold flex items-center gap-1">
-                                                  <CheckCircle2 size={12} />
-                                                  <span>
-                                                    {new Date(inst.paid_at).toLocaleDateString("pt-BR")}
-                                                  </span>
-                                                </span>
-                                              ) : (
-                                                <span className="text-gray-500 italic text-[11px]">
-                                                  Pendente
-                                                </span>
-                                              )}
-                                            </td>
-
-                                            {/* Payment Method */}
-                                            <td className="py-3 px-3.5">
-                                              <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[11px] font-semibold text-gray-300">
-                                                {getPaymentMethodLabel(inst.payment_method)}
-                                              </span>
-                                            </td>
-
-                                            {/* Status Badge */}
-                                            <td className="py-3 px-3.5">
-                                              <span
-                                                className={`px-2.5 py-1 rounded-full text-[10px] font-bold border inline-flex items-center gap-1 ${st.badgeClass}`}
-                                              >
-                                                <span className={`w-1.5 h-1.5 rounded-full ${st.dotClass}`} />
-                                                <span>{st.label}</span>
-                                              </span>
-                                            </td>
-
-                                            {/* Receipt */}
-                                            <td className="py-3 px-3.5">
-                                              {inst.receipt_url ? (
-                                                <a
-                                                  href={
-                                                    inst.receipt_url.startsWith("http")
-                                                      ? inst.receipt_url
-                                                      : undefined
-                                                  }
-                                                  target="_blank"
-                                                  rel="noopener noreferrer"
-                                                  onClick={(e) => {
-                                                    if (!inst.receipt_url?.startsWith("http")) {
-                                                      e.preventDefault();
-                                                      alert(`Comprovante / Código:\n${inst.receipt_url}`);
-                                                    }
-                                                  }}
-                                                  className="px-2 py-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/20 text-[10px] font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer"
-                                                  title={inst.receipt_url}
-                                                >
-                                                  <FileText size={11} />
-                                                  <span className="max-w-[80px] truncate">
-                                                    {inst.receipt_url}
-                                                  </span>
-                                                </a>
-                                              ) : (
-                                                <span className="text-gray-600 text-[11px]">—</span>
-                                              )}
-                                            </td>
-
-                                            {/* Actions */}
-                                            <td className="py-3 px-3.5 text-right">
-                                              <div className="flex items-center justify-end gap-1.5">
-                                                <button
-                                                  type="button"
-                                                  onClick={() =>
-                                                    handleQuickPayInstallment(selectedProject.id, inst.id)
-                                                  }
-                                                  className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer flex items-center gap-1 ${
-                                                    isPaid
-                                                      ? "bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/20"
-                                                      : "bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500"
-                                                  }`}
-                                                  title={
-                                                    isPaid
-                                                      ? "Reabrir parcela (Desmarcar Quitação)"
-                                                      : "Quitar parcela com 1 clique"
-                                                  }
-                                                >
-                                                  <Check size={11} />
-                                                  <span>{isPaid ? "Reabrir" : "Quitar"}</span>
-                                                </button>
-
-                                                <button
-                                                  type="button"
-                                                  onClick={() =>
-                                                    handleOpenInstallmentModal(selectedProject.id, inst)
-                                                  }
-                                                  className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-colors cursor-pointer"
-                                                  title="Editar Parcela"
-                                                >
-                                                  <Edit2 size={12} />
-                                                </button>
-
-                                                <button
-                                                  type="button"
-                                                  onClick={() =>
-                                                    handleDeleteInstallment(selectedProject.id, inst.id)
-                                                  }
-                                                  className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer"
-                                                  title="Excluir Parcela"
-                                                >
-                                                  <Trash2 size={12} />
-                                                </button>
-                                              </div>
-                                            </td>
-                                          </tr>
-                                        );
-                                      })}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })()}
-
-                      {/* Contratos, Termos & Documentos do Projeto */}
-                      {(() => {
-                        const allDocs =
-                          projectDocuments[selectedProject.id] ||
-                          generateDefaultProjectDocuments(selectedProject);
-                        const filteredDocs = allDocs.filter((d) => {
-                          const matchesCat =
-                            docCategoryFilter === "all" || d.category === docCategoryFilter;
-                          const matchesVis =
-                            docVisibilityFilter === "all" || d.visibility === docVisibilityFilter;
-                          return matchesCat && matchesVis;
-                        });
-
-                        const clientVisibleCount = allDocs.filter((d) => d.visibility === "client").length;
-                        const internalCount = allDocs.filter((d) => d.visibility === "internal").length;
-
-                        return (
-                          <div className="p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-5">
-                            {/* Section Header */}
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                                    <FileText size={16} className="text-rose-400" />
-                                    <span>Contratos & Documentos Oficiais (PDF)</span>
-                                  </h3>
-                                  <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-[10px] font-bold border border-rose-500/30">
-                                    {allDocs.length} {allDocs.length === 1 ? "arquivo" : "arquivos"}
-                                  </span>
-                                </div>
-                                <p className="text-xs text-gray-400 mt-0.5">
-                                  Upload de PDFs com controle de visibilidade (Visível para o Cliente vs. Uso Interno).
-                                </p>
-                              </div>
-
-                              <button
-                                type="button"
-                                onClick={() => handleOpenDocumentModal(selectedProject.id)}
-                                className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white text-xs font-bold shadow-lg shadow-rose-900/30 border border-rose-400/30 flex items-center gap-1.5 cursor-pointer transition-all shrink-0"
-                              >
-                                <Plus size={14} />
-                                <span>Upload de Documento (PDF)</span>
-                              </button>
-                            </div>
-
-                            {/* Summary Badges & Filters */}
-                            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-                              {/* Quick Stats */}
-                              <div className="flex items-center gap-2 text-[11px]">
-                                <span className="px-2.5 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 font-semibold flex items-center gap-1.5">
-                                  <Eye size={12} />
-                                  <span>{clientVisibleCount} Visíveis ao Cliente</span>
-                                </span>
-                                <span className="px-2.5 py-1 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-300 font-semibold flex items-center gap-1.5">
-                                  <Lock size={12} />
-                                  <span>{internalCount} Uso Interno</span>
-                                </span>
-                              </div>
-
-                              {/* Filter Controls */}
-                              <div className="flex flex-wrap items-center gap-2">
-                                {/* Category Filter */}
-                                <select
-                                  value={docCategoryFilter}
-                                  onChange={(e) => setDocCategoryFilter(e.target.value)}
-                                  className="px-2.5 py-1.5 rounded-xl bg-black/40 border border-white/10 text-xs text-white outline-none focus:border-rose-500 cursor-pointer"
-                                >
-                                  <option value="all">Todas as Categorias</option>
-                                  <option value="contrato">Contratos</option>
-                                  <option value="proposta">Propostas</option>
-                                  <option value="termo_aceite">Termos de Aceite</option>
-                                  <option value="briefing">Briefing Técnico</option>
-                                  <option value="nda">Acordo NDA</option>
-                                  <option value="recibo">Recibos Fiscais</option>
-                                </select>
-
-                                {/* Visibility Filter */}
-                                <div className="flex items-center gap-1 bg-black/40 p-0.5 rounded-xl border border-white/10">
-                                  <button
-                                    type="button"
-                                    onClick={() => setDocVisibilityFilter("all")}
-                                    className={`px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors cursor-pointer ${
-                                      docVisibilityFilter === "all"
-                                        ? "bg-white/15 text-white"
-                                        : "text-gray-400 hover:text-white"
-                                    }`}
-                                  >
-                                    Todos
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setDocVisibilityFilter("client")}
-                                    className={`px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors cursor-pointer ${
-                                      docVisibilityFilter === "client"
-                                        ? "bg-emerald-600 text-white"
-                                        : "text-gray-400 hover:text-white"
-                                    }`}
-                                  >
-                                    Cliente
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setDocVisibilityFilter("internal")}
-                                    className={`px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors cursor-pointer ${
-                                      docVisibilityFilter === "internal"
-                                        ? "bg-purple-600 text-white"
-                                        : "text-gray-400 hover:text-white"
-                                    }`}
-                                  >
-                                    Interno
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Documents Grid / List */}
-                            {filteredDocs.length === 0 ? (
-                              <div className="p-8 rounded-2xl bg-black/30 border border-dashed border-white/10 text-center space-y-2">
-                                <FileText size={28} className="mx-auto text-gray-600" />
-                                <p className="text-xs text-gray-400">
-                                  Nenhum documento encontrado com os filtros selecionados.
-                                </p>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenDocumentModal(selectedProject.id)}
-                                  className="text-xs text-rose-400 hover:text-rose-300 font-semibold cursor-pointer inline-flex items-center gap-1 pt-1"
-                                >
-                                  <Plus size={13} />
-                                  <span>Fazer upload de um arquivo PDF</span>
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                {filteredDocs.map((doc) => {
-                                  const catInfo = getDocumentCategoryInfo(doc.category);
-                                  const isClientVisible = doc.visibility === "client";
-
-                                  return (
-                                    <div
-                                      key={doc.id}
-                                      className={`p-4 rounded-2xl border transition-all space-y-3 ${
-                                        isClientVisible
-                                          ? "bg-white/[0.02] border-white/10 hover:border-white/20"
-                                          : "bg-purple-950/10 border-purple-500/20"
-                                      }`}
-                                    >
-                                      {/* Header: Title, Category & Visibility */}
-                                      <div className="flex items-start justify-between gap-3">
-                                        <div className="flex items-start gap-3">
-                                          {/* PDF Icon */}
-                                          <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex flex-col items-center justify-center shrink-0">
-                                            <FileText size={18} />
-                                            <span className="text-[8px] font-extrabold uppercase">PDF</span>
-                                          </div>
-
-                                          <div className="space-y-1">
-                                            <h4 className="text-xs font-bold text-white leading-tight">
-                                              {doc.title}
-                                            </h4>
-                                            <div className="flex items-center gap-1.5 flex-wrap">
-                                              <span
-                                                className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border ${catInfo.badgeClass}`}
-                                              >
-                                                {catInfo.label}
-                                              </span>
-                                              <span className="text-[10px] text-gray-500">
-                                                {doc.file_size_formatted}
-                                              </span>
-                                            </div>
-                                          </div>
-                                        </div>
-
-                                        {/* Visibility Toggle Button */}
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            handleToggleDocumentVisibility(selectedProject.id, doc.id)
-                                          }
-                                          className={`px-2.5 py-1 rounded-xl text-[10px] font-bold border transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                                            isClientVisible
-                                              ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25"
-                                              : "bg-purple-500/15 border-purple-500/30 text-purple-300 hover:bg-purple-500/25"
-                                          }`}
-                                          title={
-                                            isClientVisible
-                                              ? "Clique para mudar para Uso Interno (Ocultar do cliente)"
-                                              : "Clique para tornar Visível para o Cliente"
-                                          }
-                                        >
-                                          {isClientVisible ? (
-                                            <>
-                                              <Eye size={11} className="text-emerald-400" />
-                                              <span>Visível ao Cliente</span>
-                                            </>
-                                          ) : (
-                                            <>
-                                              <Lock size={11} className="text-purple-400" />
-                                              <span>Uso Interno</span>
-                                            </>
-                                          )}
-                                        </button>
-                                      </div>
-
-                                      {/* Document Notes & Metadata */}
-                                      {doc.notes && (
-                                        <p className="text-[11px] text-gray-400 pl-1">
-                                          {doc.notes}
-                                        </p>
-                                      )}
-
-                                      {/* Footer: Date & Action Buttons */}
-                                      <div className="pt-2 border-t border-white/5 flex items-center justify-between gap-2 text-[10px] text-gray-400">
-                                        <span className="flex items-center gap-1">
-                                          <Calendar size={11} className="text-gray-500" />
-                                          <span>
-                                            Enviado em:{" "}
-                                            <strong className="text-gray-300">
-                                              {new Date(doc.uploaded_at).toLocaleDateString("pt-BR")}
-                                            </strong>
-                                          </span>
-                                        </span>
-
-                                        <div className="flex items-center gap-1.5">
-                                          {/* View PDF */}
-                                          <button
-                                            type="button"
-                                            onClick={() => handleOpenPdfViewer(doc)}
-                                            className="px-2.5 py-1 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/25 text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
-                                            title="Visualizar PDF"
-                                          >
-                                            <Eye size={11} />
-                                            <span>Visualizar</span>
-                                          </button>
-
-                                          {/* Download */}
-                                          <a
-                                            href={doc.file_url !== "#" ? doc.file_url : undefined}
-                                            download={doc.filename}
-                                            onClick={(e) => {
-                                              if (doc.file_url === "#") {
-                                                e.preventDefault();
-                                                alert(
-                                                  `Download Simulado:\nArquivo: ${doc.filename}\nTamanho: ${doc.file_size_formatted}\n\nPara arquivos reais enviados via upload, o download inicia imediatamente.`
-                                                );
-                                              }
-                                            }}
-                                            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-colors cursor-pointer"
-                                            title="Download PDF"
-                                          >
-                                            <ExternalLink size={12} />
-                                          </a>
-
-                                          {/* Edit */}
-                                          <button
-                                            type="button"
-                                            onClick={() => handleOpenDocumentModal(selectedProject.id, doc)}
-                                            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-colors cursor-pointer"
-                                            title="Editar Documento"
-                                          >
-                                            <Edit2 size={12} />
-                                          </button>
-
-                                          {/* Delete */}
-                                          <button
-                                            type="button"
-                                            onClick={() => handleDeleteDocument(selectedProject.id, doc.id)}
-                                            className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer"
-                                            title="Excluir Documento"
-                                          >
-                                            <Trash2 size={12} />
-                                          </button>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
-
-                      {/* Timeline Updates & Notas */}
-                      {(() => {
-                        const projUpdates =
-                          projectUpdates[selectedProject.id] ||
-                          updates.length > 0
-                            ? (projectUpdates[selectedProject.id] || updates)
-                            : generateDefaultProjectUpdates(selectedProject);
-
-                        return (
-                          <div className="p-6 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-xl space-y-5">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                                    <Send size={16} className="text-purple-400" />
-                                    <span>Timeline de Alinhamentos & Notas de Versão</span>
-                                  </h3>
-                                  <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[10px] font-bold border border-purple-500/30">
-                                    {projUpdates.length} {projUpdates.length === 1 ? "evento" : "eventos"}
-                                  </span>
-                                </div>
-                                <p className="text-xs text-gray-400 mt-0.5">
-                                  Linha do tempo pública visível no Portal do Cliente com atas, comunicados e notas de release.
-                                </p>
-                              </div>
-
-                              <button
-                                type="button"
-                                onClick={() => handleOpenUpdateModal(selectedProject.id)}
-                                className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-purple-900/30 border border-purple-400/30 flex items-center gap-1.5 cursor-pointer transition-all shrink-0"
-                              >
-                                <Plus size={14} />
-                                <span>Publicar na Timeline</span>
-                              </button>
-                            </div>
-
-                            {projUpdates.length === 0 ? (
-                              <div className="p-8 rounded-2xl bg-black/30 border border-dashed border-white/10 text-center space-y-2">
-                                <Send size={28} className="mx-auto text-gray-600" />
-                                <p className="text-xs text-gray-400">
-                                  Nenhum registro postado na timeline deste projeto ainda.
-                                </p>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenUpdateModal(selectedProject.id)}
-                                  className="text-xs text-purple-400 hover:text-purple-300 font-semibold cursor-pointer inline-flex items-center gap-1 pt-1"
-                                >
-                                  <Plus size={13} />
-                                  <span>Publicar primeiro comunicado ou reunião</span>
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="relative pl-6 space-y-5 before:content-[''] before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-gradient-to-b before:from-purple-500 via-indigo-500 to-pink-500">
-                                {projUpdates.map((u) => {
-                                  const typeInfo = getUpdateTypeInfo(u.category);
-                                  const IconComp = typeInfo.icon;
-
-                                  return (
-                                    <div key={u.id} className="relative group">
-                                      <div
-                                        className={`absolute -left-6 top-1.5 w-6 h-6 rounded-lg bg-slate-950 border border-white/15 flex items-center justify-center text-white ring-4 ring-[#070913] shadow-md ${typeInfo.colorText}`}
-                                      >
-                                        <IconComp size={12} />
-                                      </div>
-
-                                      <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:border-purple-500/25 transition-all space-y-2.5">
-                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                                          <div className="flex flex-wrap items-center gap-2">
-                                            <span
-                                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${typeInfo.badgeClass}`}
-                                            >
-                                              {typeInfo.label}
-                                            </span>
-                                            {u.version_tag && (
-                                              <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold border border-emerald-500/30">
-                                                {u.version_tag}
-                                              </span>
-                                            )}
-                                            <span className="text-[11px] text-gray-400 font-medium">
-                                              {new Date(u.created_at).toLocaleString("pt-BR", {
-                                                dateStyle: "short",
-                                                timeStyle: "short",
-                                              })}
-                                            </span>
-                                          </div>
-
-                                          <div className="flex items-center gap-1">
-                                            <button
-                                              type="button"
-                                              onClick={() => handleOpenUpdateModal(selectedProject.id, u)}
-                                              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer"
-                                              title="Editar Update"
-                                            >
-                                              <Edit2 size={12} />
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() => handleDeleteUpdate(selectedProject.id, u.id)}
-                                              className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer"
-                                              title="Remover Update"
-                                            >
-                                              <Trash2 size={12} />
-                                            </button>
-                                          </div>
-                                        </div>
-
-                                        <h5 className="text-sm font-bold text-white">{u.title}</h5>
-
-                                        {u.meeting_attendees && (
-                                          <div className="p-2 rounded-xl bg-blue-950/20 border border-blue-500/20 text-[11px] text-blue-200">
-                                            <strong>Participantes:</strong> {u.meeting_attendees}
-                                          </div>
-                                        )}
-
-                                        <div className="text-xs text-gray-300">
-                                          {renderRichMarkdown(u.content)}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </>
-                  );
-                })()}
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
       {/* Modal: Project Form (Create / Edit - Viewport Fitted & Fully Scrollable) */}
       <AnimatePresence>
